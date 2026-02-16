@@ -24,7 +24,33 @@ module {
 // CHECK: dsdl.align {bits = 8 : i32, step_index = 0 : i64}
 // CHECK: dsdl.io
 // CHECK-SAME: lowered_bits = 8 : i64
+// CHECK-SAME: lowered_deser_unsigned_helper = "__llvmdsdl_plan_scalar_unsigned__test_Type_1_0__1__deser"
+// CHECK-SAME: lowered_ser_unsigned_helper = "__llvmdsdl_plan_scalar_unsigned__test_Type_1_0__1__ser"
 // CHECK-SAME: min_bits = 0 : i64
 // CHECK-SAME: step_index = 1 : i64
 // CHECK-NOT: dsdl.align {bits = 1 : i32
 // CHECK-NOT: kind = "padding"
+// CHECK: func.func @__llvmdsdl_plan_capacity_check__test_Type_1_0(%[[CAP:[^:]+]]: i64) -> i8 attributes {llvmdsdl.plan_capacity_check
+// CHECK: %[[C0:[^ ]+]] = arith.constant 0 : i64
+// CHECK: %[[C7:[^ ]+]] = arith.constant 7 : i64
+// CHECK: %[[C8:[^ ]+]] = arith.constant 8 : i64
+// CHECK: %[[A0:[^ ]+]] = arith.addi %[[C0]], %[[C7]] : i64
+// CHECK: %[[D0:[^ ]+]] = arith.divui %[[A0]], %[[C8]] : i64
+// CHECK: %[[M0:[^ ]+]] = arith.muli %[[D0]], %[[C8]] : i64
+// CHECK: %[[ADD:[^ ]+]] = arith.addi %[[M0]], %[[C8B:[^ ]+]] : i64
+// CHECK: %[[CMP:[^ ]+]] = arith.cmpi ugt, %[[ADD]], %[[CAP]] : i64
+// CHECK: %[[SEL:[^ ]+]] = scf.if %[[CMP]] -> (i8)
+// CHECK: return %[[SEL]] : i8
+// CHECK: func.func @__llvmdsdl_plan_validate_union_tag__test_Type_1_0(%[[TAG:[^:]+]]: i64) -> i8 attributes {llvmdsdl.plan_origin = "lower-dsdl-serialization", llvmdsdl.schema_sym = "test_Type_1_0", llvmdsdl.union_tag_validate
+// CHECK: %[[OPT:[^ ]+]] = arith.constant 3 : i64
+// CHECK: %[[EQ:[^ ]+]] = arith.cmpi eq, %[[TAG]], %[[OPT]] : i64
+// CHECK: %[[MASK:[^ ]+]] = arith.ori %[[ANY:[^ ]+]], %[[EQ]] : i1
+// CHECK: %[[TAGSEL:[^ ]+]] = scf.if %[[MASK]] -> (i8)
+// CHECK: return %[[TAGSEL]] : i8
+// CHECK: func.func @__llvmdsdl_plan_scalar_unsigned__test_Type_1_0__1__ser(%[[VAL:[^:]+]]: i64) -> i64 attributes {llvmdsdl.scalar_unsigned_helper
+// CHECK: %[[CM:[^ ]+]] = arith.cmpi ugt, %[[VAL]], %[[MASK63:[^ ]+]] : i64
+// CHECK: %[[SV:[^ ]+]] = arith.select %[[CM]], %[[MASK63]], %[[VAL]] : i64
+// CHECK: return %[[SV]] : i64
+// CHECK: func.func @__llvmdsdl_plan_scalar_unsigned__test_Type_1_0__1__deser(%[[DVAL:[^:]+]]: i64) -> i64 attributes {llvmdsdl.scalar_unsigned_helper
+// CHECK: %[[DM:[^ ]+]] = arith.andi %[[DVAL]], %[[DMASK:[^ ]+]] : i64
+// CHECK: return %[[DM]] : i64

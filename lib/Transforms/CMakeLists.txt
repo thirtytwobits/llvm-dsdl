@@ -11,6 +11,7 @@ target_link_libraries(llvmdsdlTransforms
   MLIREmitCDialect
   MLIRFuncDialect
   MLIRArithDialect
+  MLIRSCFDialect
 )
 
 target_include_directories(llvmdsdlTransforms PUBLIC

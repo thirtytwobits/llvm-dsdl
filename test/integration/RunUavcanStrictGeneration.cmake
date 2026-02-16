@@ -66,16 +66,76 @@ endif()
 
 file(GLOB_RECURSE generated_impls "${OUT_DIR}/*.c")
 set(generic_lowering_hits "")
+set(missing_capacity_call_hits "")
+set(missing_capacity_helper_hits "")
+set(found_union_tag_call 0)
+set(found_union_tag_helper 0)
+set(found_scalar_unsigned_call 0)
+set(found_scalar_unsigned_helper 0)
 foreach(c_file IN LISTS generated_impls)
   file(READ "${c_file}" impl_text)
   string(FIND "${impl_text}" "Generic bitstream mapping" hit_pos)
   if(NOT hit_pos EQUAL -1)
     list(APPEND generic_lowering_hits "${c_file}")
   endif()
+  string(FIND "${impl_text}" "_err_capacity = __llvmdsdl_plan_capacity_check__"
+         capacity_call_pos)
+  if(capacity_call_pos EQUAL -1)
+    list(APPEND missing_capacity_call_hits "${c_file}")
+  endif()
+  string(FIND "${impl_text}" "int8_t __llvmdsdl_plan_capacity_check__"
+         capacity_helper_pos)
+  if(capacity_helper_pos EQUAL -1)
+    list(APPEND missing_capacity_helper_hits "${c_file}")
+  endif()
+  string(FIND "${impl_text}" "_err_union_tag = __llvmdsdl_plan_validate_union_tag__"
+         union_tag_call_pos)
+  if(NOT union_tag_call_pos EQUAL -1)
+    set(found_union_tag_call 1)
+  endif()
+  string(FIND "${impl_text}" "int8_t __llvmdsdl_plan_validate_union_tag__"
+         union_tag_helper_pos)
+  if(NOT union_tag_helper_pos EQUAL -1)
+    set(found_union_tag_helper 1)
+  endif()
+  string(FIND "${impl_text}" "= (uint64_t)__llvmdsdl_plan_scalar_unsigned__"
+         scalar_call_pos)
+  if(NOT scalar_call_pos EQUAL -1)
+    set(found_scalar_unsigned_call 1)
+  endif()
+  string(FIND "${impl_text}" "int64_t __llvmdsdl_plan_scalar_unsigned__"
+         scalar_helper_pos)
+  if(NOT scalar_helper_pos EQUAL -1)
+    set(found_scalar_unsigned_helper 1)
+  endif()
 endforeach()
 if(generic_lowering_hits)
   message(FATAL_ERROR
     "generated C implementations unexpectedly used generic lowering: ${generic_lowering_hits}")
+endif()
+if(missing_capacity_call_hits)
+  message(FATAL_ERROR
+    "generated C implementations missing capacity-helper call: ${missing_capacity_call_hits}")
+endif()
+if(missing_capacity_helper_hits)
+  message(FATAL_ERROR
+    "generated C implementations missing lowered capacity-helper body: ${missing_capacity_helper_hits}")
+endif()
+if(NOT found_union_tag_call)
+  message(FATAL_ERROR
+    "generated C implementations did not use lowered union-tag validation helper")
+endif()
+if(NOT found_union_tag_helper)
+  message(FATAL_ERROR
+    "generated C implementations did not emit lowered union-tag validation helper body")
+endif()
+if(NOT found_scalar_unsigned_call)
+  message(FATAL_ERROR
+    "generated C implementations did not use lowered scalar unsigned helper")
+endif()
+if(NOT found_scalar_unsigned_helper)
+  message(FATAL_ERROR
+    "generated C implementations did not emit lowered scalar unsigned helper body")
 endif()
 
 set(scratch_dir "${OUT_DIR}/.compile-check")

@@ -1,6 +1,7 @@
 #include "llvmdsdl/Transforms/Passes.h"
 
 #include "mlir/Dialect/EmitC/IR/EmitC.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/Pass/Pass.h"
@@ -94,6 +95,8 @@ struct PlanStep final {
   std::int64_t unionOptionIndex{0};
   std::int64_t unionTagBits{0};
   std::string compositeCTypeName;
+  std::string serUnsignedHelper;
+  std::string deserUnsignedHelper;
 };
 
 std::vector<PlanStep> collectPlanSteps(mlir::Operation *plan) {
@@ -182,6 +185,20 @@ std::vector<PlanStep> collectPlanSteps(mlir::Operation *plan) {
                                          "composite_c_type_name")
                                          .getValue()
                                          .str()
+                                   : std::string{},
+                               op.getAttrOfType<mlir::StringAttr>(
+                                   "lowered_ser_unsigned_helper")
+                                   ? op.getAttrOfType<mlir::StringAttr>(
+                                         "lowered_ser_unsigned_helper")
+                                         .getValue()
+                                         .str()
+                                   : std::string{},
+                               op.getAttrOfType<mlir::StringAttr>(
+                                   "lowered_deser_unsigned_helper")
+                                   ? op.getAttrOfType<mlir::StringAttr>(
+                                         "lowered_deser_unsigned_helper")
+                                         .getValue()
+                                         .str()
                                    : std::string{}});
     } else {
       steps.push_back(PlanStep{PlanStepKind::Field,
@@ -247,6 +264,20 @@ std::vector<PlanStep> collectPlanSteps(mlir::Operation *plan) {
                                          "composite_c_type_name")
                                          .getValue()
                                          .str()
+                                   : std::string{},
+                               op.getAttrOfType<mlir::StringAttr>(
+                                   "lowered_ser_unsigned_helper")
+                                   ? op.getAttrOfType<mlir::StringAttr>(
+                                         "lowered_ser_unsigned_helper")
+                                         .getValue()
+                                         .str()
+                                   : std::string{},
+                               op.getAttrOfType<mlir::StringAttr>(
+                                   "lowered_deser_unsigned_helper")
+                                   ? op.getAttrOfType<mlir::StringAttr>(
+                                         "lowered_deser_unsigned_helper")
+                                         .getValue()
+                                         .str()
                                    : std::string{}});
     }
   }
@@ -257,7 +288,8 @@ std::string renderGenericSerializeFunction(
     llvm::StringRef functionName, llvm::StringRef cTypeName,
     llvm::StringRef cSerializeSymbol, llvm::StringRef fullName,
     llvm::StringRef sectionName, std::int64_t minBits, std::int64_t maxBits,
-    const std::vector<PlanStep> &steps) {
+    const std::vector<PlanStep> &steps,
+    llvm::StringRef capacityCheckSymbol) {
   const std::string functionNameText = functionName.str();
   const std::string cTypeNameText = cTypeName.str();
   const std::string cSerializeSymbolText = cSerializeSymbol.str();
@@ -289,10 +321,10 @@ std::string renderGenericSerializeFunction(
   out << "  }\n";
   out << "  const uint8_t* const obj_bytes = (const uint8_t*)obj;\n";
   out << "  const size_t capacity_bits = (*inout_buffer_size_bytes) * 8U;\n";
-  out << "  const size_t required_bits = " << nonNegative(maxBits) << "U;\n";
-  out << "  if (required_bits > capacity_bits) {\n";
-  out << "    return "
-         "-(int8_t)DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;\n";
+  out << "  const int8_t _err_capacity = " << capacityCheckSymbol.str()
+      << "((int64_t)capacity_bits);\n";
+  out << "  if (_err_capacity < 0) {\n";
+  out << "    return _err_capacity;\n";
   out << "  }\n";
   out << "  size_t offset_bits = 0U;\n";
   out << "  size_t obj_offset_bits = 0U;\n";
@@ -726,8 +758,14 @@ bool emitSerializeField(std::ostringstream &out, const PlanStep &step,
 
   if (step.scalarCategory == "byte" || step.scalarCategory == "unsigned") {
     std::string valueExpr = "(uint64_t)(" + expr + ")";
-    if (step.castMode == "saturated" && step.bitLength > 0 &&
-        step.bitLength < 64) {
+    if (!step.serUnsignedHelper.empty()) {
+      const auto normName = "_norm_" + std::to_string(index);
+      emitLine(out, indent,
+               "const uint64_t " + normName + " = (uint64_t)" +
+                   step.serUnsignedHelper + "((int64_t)(" + valueExpr + "));");
+      valueExpr = normName;
+    } else if (step.castMode == "saturated" && step.bitLength > 0 &&
+               step.bitLength < 64) {
       const auto satName = "_sat_" + std::to_string(index);
       const auto maxValue = (UINT64_C(1) << step.bitLength) - UINT64_C(1);
       emitLine(out, indent,
@@ -849,11 +887,19 @@ bool emitDeserializeField(std::ostringstream &out, const PlanStep &step,
   }
 
   if (step.scalarCategory == "byte" || step.scalarCategory == "unsigned") {
+    const auto rawName = "_raw_" + std::to_string(index);
     emitLine(out, indent,
-             expr + " = (uint64_t)" +
+             "const uint64_t " + rawName + " = (uint64_t)" +
                  unsignedGetterForBits(step.bitLength) +
                  "(buffer, capacity_bytes, offset_bits, (uint8_t)" +
                  std::to_string(nonNegative(step.bitLength)) + "U);");
+    if (!step.deserUnsignedHelper.empty()) {
+      emitLine(out, indent,
+               expr + " = (uint64_t)" + step.deserUnsignedHelper +
+                   "((int64_t)" + rawName + ");");
+    } else {
+      emitLine(out, indent, expr + " = " + rawName + ";");
+    }
     emitLine(out, indent,
              "offset_bits += " + std::to_string(nonNegative(step.bitLength)) +
                  "U;");
@@ -900,7 +946,8 @@ std::string renderTypedSerializeFunction(
     llvm::StringRef cSerializeSymbol, llvm::StringRef fullName,
     llvm::StringRef sectionName, std::int64_t minBits, std::int64_t maxBits,
     const std::vector<PlanStep> &steps, const bool isUnion,
-    const std::int64_t unionTagBits) {
+    const std::int64_t unionTagBits, llvm::StringRef capacityCheckSymbol,
+    llvm::StringRef unionTagValidateSymbol) {
   const std::string functionNameText = functionName.str();
   const std::string cTypeNameText = cTypeName.str();
   const std::string cSerializeSymbolText = cSerializeSymbol.str();
@@ -931,14 +978,22 @@ std::string renderTypedSerializeFunction(
   emitLine(out, 2, "return -(int8_t)DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
   emitLine(out, 1, "}");
   emitLine(out, 1, "const size_t capacity_bytes = *inout_buffer_size_bytes;");
-  emitLine(out, 1, "if ((capacity_bytes * 8U) < " +
-                       std::to_string(nonNegative(maxBits)) + "ULL) {");
-  emitLine(out, 2, "return -(int8_t)DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;");
+  emitLine(out, 1,
+           "const int8_t _err_capacity = " + capacityCheckSymbol.str() +
+               "((int64_t)(capacity_bytes * 8U));");
+  emitLine(out, 1, "if (_err_capacity < 0) {");
+  emitLine(out, 2, "return _err_capacity;");
   emitLine(out, 1, "}");
   emitLine(out, 1, "size_t offset_bits = 0U;");
 
   if (isUnion) {
     const auto tagBits = nonNegative(unionTagBits);
+    emitLine(out, 1,
+             "const int8_t _err_union_tag = " + unionTagValidateSymbol.str() +
+                 "((int64_t)(obj->_tag_));");
+    emitLine(out, 1, "if (_err_union_tag < 0) {");
+    emitLine(out, 2, "return _err_union_tag;");
+    emitLine(out, 1, "}");
     emitLine(out, 1,
              "const int8_t _err_tag_ = dsdl_runtime_set_uxx(buffer, "
              "capacity_bytes, offset_bits, (uint64_t)(obj->_tag_), (uint8_t)" +
@@ -1001,7 +1056,7 @@ std::string renderTypedDeserializeFunction(
     llvm::StringRef cDeserializeSymbol, llvm::StringRef fullName,
     llvm::StringRef sectionName, std::int64_t minBits, std::int64_t maxBits,
     const std::vector<PlanStep> &steps, const bool isUnion,
-    const std::int64_t unionTagBits) {
+    const std::int64_t unionTagBits, llvm::StringRef unionTagValidateSymbol) {
   const std::string functionNameText = functionName.str();
   const std::string cTypeNameText = cTypeName.str();
   const std::string cDeserializeSymbolText = cDeserializeSymbol.str();
@@ -1046,6 +1101,12 @@ std::string renderTypedDeserializeFunction(
                          "(buffer, capacity_bytes, offset_bits, (uint8_t)" +
                          std::to_string(tagBits) + "U);");
     emitLine(out, 1, "out_obj->_tag_ = (uint8_t)_tag_value;");
+    emitLine(out, 1,
+             "const int8_t _err_union_tag = " + unionTagValidateSymbol.str() +
+                 "((int64_t)_tag_value);");
+    emitLine(out, 1, "if (_err_union_tag < 0) {");
+    emitLine(out, 2, "return _err_union_tag;");
+    emitLine(out, 1, "}");
     emitLine(out, 1, "offset_bits += " + std::to_string(tagBits) + "U;");
 
     std::vector<const PlanStep *> unionFields;
@@ -1107,6 +1168,9 @@ struct ConvertDSDLToEmitCPass
   llvm::StringRef getDescription() const final {
     return "Lower DSDL dialect schema ops into Func/Arith ops for EmitC lowering";
   }
+  void getDependentDialects(mlir::DialectRegistry &registry) const override {
+    registry.insert<mlir::emitc::EmitCDialect>();
+  }
 
   void runOnOperation() override {
     auto module = getOperation();
@@ -1134,6 +1198,9 @@ struct ConvertDSDLToEmitCPass
     std::vector<std::string> emittedFunctions;
     emittedFunctions.reserve(schemaOps.size() * 4U);
     std::set<std::string> forwardDeclaredTypes;
+    std::set<std::string> capacityCheckSymbols;
+    std::set<std::string> unionTagValidateSymbols;
+    std::set<std::string> scalarUnsignedHelperSymbols;
     std::set<std::string> typedHeaders;
 
     for (mlir::Operation *schema : schemaOps) {
@@ -1163,6 +1230,19 @@ struct ConvertDSDLToEmitCPass
             sectionAttr ? sectionAttr.getValue().str() : std::string{};
         const std::string fnStem =
             symNameAttr.getValue().str() + sectionSuffix(section);
+        const std::string capacityCheckSymbol =
+            "__llvmdsdl_plan_capacity_check__" + fnStem;
+        const bool hasCapacityCheck =
+            module.lookupSymbol<mlir::func::FuncOp>(capacityCheckSymbol) !=
+            nullptr;
+        if (!hasCapacityCheck) {
+          child.emitOpError("missing lowered capacity-check helper symbol: " +
+                            capacityCheckSymbol +
+                            "; run lower-dsdl-serialization before "
+                            "convert-dsdl-to-emitc");
+          signalPassFailure();
+          return;
+        }
         const std::int64_t minBits = inferPlanBits(&child, "min_bits");
         const std::int64_t maxBits = inferPlanBits(&child, "max_bits");
         const auto cTypeNameAttr =
@@ -1177,11 +1257,48 @@ struct ConvertDSDLToEmitCPass
           forwardDeclaredTypes.insert(cTypeName);
         }
         const auto steps = collectPlanSteps(&child);
+        for (const auto &step : steps) {
+          if (!step.serUnsignedHelper.empty()) {
+            if (!module.lookupSymbol<mlir::func::FuncOp>(step.serUnsignedHelper)) {
+              child.emitOpError("missing lowered scalar helper symbol: " +
+                                step.serUnsignedHelper);
+              signalPassFailure();
+              return;
+            }
+            scalarUnsignedHelperSymbols.insert(step.serUnsignedHelper);
+          }
+          if (!step.deserUnsignedHelper.empty()) {
+            if (!module.lookupSymbol<mlir::func::FuncOp>(step.deserUnsignedHelper)) {
+              child.emitOpError("missing lowered scalar helper symbol: " +
+                                step.deserUnsignedHelper);
+              signalPassFailure();
+              return;
+            }
+            scalarUnsignedHelperSymbols.insert(step.deserUnsignedHelper);
+          }
+        }
         const bool isUnion = child.hasAttr("is_union");
         const auto unionTagBitsAttr =
             child.getAttrOfType<mlir::IntegerAttr>("union_tag_bits");
         const std::int64_t unionTagBits =
             unionTagBitsAttr ? nonNegative(unionTagBitsAttr.getInt()) : 0;
+        std::string unionTagValidateSymbol;
+        if (isUnion) {
+          unionTagValidateSymbol =
+              "__llvmdsdl_plan_validate_union_tag__" + fnStem;
+          const bool hasUnionTagValidate =
+              module.lookupSymbol<mlir::func::FuncOp>(unionTagValidateSymbol) !=
+              nullptr;
+          if (!hasUnionTagValidate) {
+            child.emitOpError("missing lowered union-tag validation helper symbol: " +
+                              unionTagValidateSymbol +
+                              "; run lower-dsdl-serialization before "
+                              "convert-dsdl-to-emitc");
+            signalPassFailure();
+            return;
+          }
+          unionTagValidateSymbols.insert(unionTagValidateSymbol);
+        }
         const bool useTyped = headersAvailable &&
                               supportsTypedLowering(steps, isUnion, unionTagBits);
         if (requireTypedLowering && !useTyped) {
@@ -1203,6 +1320,7 @@ struct ConvertDSDLToEmitCPass
             typedHeaders.insert(headerPath);
           }
         }
+        capacityCheckSymbols.insert(capacityCheckSymbol);
 
         if (useTyped) {
           emittedFunctions.push_back(renderTypedSerializeFunction(
@@ -1210,19 +1328,20 @@ struct ConvertDSDLToEmitCPass
               cSerializeSymbolAttr ? cSerializeSymbolAttr.getValue()
                                    : llvm::StringRef{},
               fullName, section, minBits, maxBits, steps, isUnion,
-              unionTagBits));
+              unionTagBits, capacityCheckSymbol, unionTagValidateSymbol));
           emittedFunctions.push_back(renderTypedDeserializeFunction(
               fnStem + "__deserialize_ir_", cTypeName,
               cDeserializeSymbolAttr ? cDeserializeSymbolAttr.getValue()
                                      : llvm::StringRef{},
               fullName, section, minBits, maxBits, steps, isUnion,
-              unionTagBits));
+              unionTagBits, unionTagValidateSymbol));
         } else {
           emittedFunctions.push_back(renderGenericSerializeFunction(
               fnStem + "__serialize_ir_", cTypeName,
               cSerializeSymbolAttr ? cSerializeSymbolAttr.getValue()
                                    : llvm::StringRef{},
-              fullName, section, minBits, maxBits, steps));
+              fullName, section, minBits, maxBits, steps,
+              capacityCheckSymbol));
           emittedFunctions.push_back(renderGenericDeserializeFunction(
               fnStem + "__deserialize_ir_", cTypeName,
               cDeserializeSymbolAttr ? cDeserializeSymbolAttr.getValue()
@@ -1250,6 +1369,18 @@ struct ConvertDSDLToEmitCPass
       builder.create<mlir::emitc::VerbatimOp>(
           loc, "typedef struct " + typeName + " " + typeName + ";");
     }
+    for (const auto &symbol : capacityCheckSymbols) {
+      builder.create<mlir::emitc::VerbatimOp>(
+          loc, "int8_t " + symbol + "(int64_t);");
+    }
+    for (const auto &symbol : unionTagValidateSymbols) {
+      builder.create<mlir::emitc::VerbatimOp>(
+          loc, "int8_t " + symbol + "(int64_t);");
+    }
+    for (const auto &symbol : scalarUnsignedHelperSymbols) {
+      builder.create<mlir::emitc::VerbatimOp>(
+          loc, "int64_t " + symbol + "(int64_t);");
+    }
     for (const auto &fn : emittedFunctions) {
       builder.create<mlir::emitc::VerbatimOp>(loc, fn);
     }
@@ -1266,12 +1397,13 @@ std::unique_ptr<mlir::Pass> createConvertDSDLToEmitCPass() {
   return std::make_unique<ConvertDSDLToEmitCPass>();
 }
 
-namespace {
-struct ConvertPassRegistration {
-  ConvertPassRegistration() {
-    static mlir::PassRegistration<ConvertDSDLToEmitCPass> reg;
+void registerDSDLConvertPasses() {
+  static bool once = false;
+  if (once) {
+    return;
   }
-} gReg;
-} // namespace
+  once = true;
+  static mlir::PassRegistration<ConvertDSDLToEmitCPass> reg;
+}
 
 } // namespace llvmdsdl
