@@ -27,3 +27,19 @@ set_tests_properties(
   PROPERTIES
     LABELS "integration;uavcan;slow"
 )
+
+add_test(
+  NAME llvmdsdl-uavcan-rust-generation
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-rust-out
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanRustGeneration.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-uavcan-rust-generation
+  PROPERTIES
+    LABELS "integration;uavcan;rust"
+)

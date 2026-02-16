@@ -1,0 +1,1221 @@
+#include "llvmdsdl/CodeGen/RustEmitter.h"
+
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/raw_ostream.h"
+
+#include <algorithm>
+#include <cctype>
+#include <filesystem>
+#include <fstream>
+#include <map>
+#include <optional>
+#include <set>
+#include <sstream>
+#include <unordered_map>
+
+namespace llvmdsdl {
+namespace {
+
+std::string typeKey(const std::string &name, std::uint32_t major,
+                    std::uint32_t minor) {
+  return name + ":" + std::to_string(major) + ":" + std::to_string(minor);
+}
+
+bool isRustKeyword(const std::string &name) {
+  static const std::set<std::string> kKeywords = {
+      "as",       "break",    "const",   "continue", "crate", "else",
+      "enum",     "extern",   "false",   "fn",       "for",   "if",
+      "impl",     "in",       "let",     "loop",     "match", "mod",
+      "move",     "mut",      "pub",     "ref",      "return", "self",
+      "Self",     "static",   "struct",  "super",    "trait", "true",
+      "type",     "unsafe",   "use",     "where",    "while", "async",
+      "await",    "dyn",      "abstract", "become",   "box",   "do",
+      "final",    "macro",    "override", "priv",     "try",   "typeof",
+      "unsized",  "virtual",  "yield"};
+  return kKeywords.contains(name);
+}
+
+std::string sanitizeRustIdent(std::string name) {
+  if (name.empty()) {
+    return "_";
+  }
+  for (char &c : name) {
+    if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_')) {
+      c = '_';
+    }
+  }
+  if (std::isdigit(static_cast<unsigned char>(name.front()))) {
+    name.insert(name.begin(), '_');
+  }
+  if (isRustKeyword(name)) {
+    name += '_';
+  }
+  return name;
+}
+
+std::string toSnakeCase(const std::string &in) {
+  std::string out;
+  out.reserve(in.size() + 8);
+
+  bool prevUnderscore = false;
+  for (std::size_t i = 0; i < in.size(); ++i) {
+    const char c = in[i];
+    const char prev = (i > 0) ? in[i - 1] : '\0';
+    const char next = (i + 1 < in.size()) ? in[i + 1] : '\0';
+    if (!std::isalnum(static_cast<unsigned char>(c))) {
+      if (!out.empty() && !prevUnderscore) {
+        out.push_back('_');
+        prevUnderscore = true;
+      }
+      continue;
+    }
+
+    if (std::isupper(static_cast<unsigned char>(c))) {
+      const bool boundary =
+          std::islower(static_cast<unsigned char>(prev)) ||
+          (std::isupper(static_cast<unsigned char>(prev)) &&
+           std::islower(static_cast<unsigned char>(next)));
+      if (!out.empty() && !prevUnderscore && boundary) {
+        out.push_back('_');
+      }
+      out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+      prevUnderscore = false;
+    } else {
+      out.push_back(c);
+      prevUnderscore = (c == '_');
+    }
+  }
+
+  if (out.empty()) {
+    out = "_";
+  }
+  if (std::isdigit(static_cast<unsigned char>(out.front()))) {
+    out.insert(out.begin(), '_');
+  }
+  out = sanitizeRustIdent(out);
+  return out;
+}
+
+std::string toUpperSnake(const std::string &in) {
+  auto s = toSnakeCase(in);
+  for (char &c : s) {
+    c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+  }
+  return s;
+}
+
+bool isVariableArray(const ArrayKind k) {
+  return k == ArrayKind::VariableInclusive || k == ArrayKind::VariableExclusive;
+}
+
+std::uint32_t scalarStorageBits(const std::uint32_t bitLength) {
+  if (bitLength <= 8) {
+    return 8;
+  }
+  if (bitLength <= 16) {
+    return 16;
+  }
+  if (bitLength <= 32) {
+    return 32;
+  }
+  return 64;
+}
+
+std::string unsignedStorageType(const std::uint32_t bitLength) {
+  switch (scalarStorageBits(bitLength)) {
+  case 8:
+    return "u8";
+  case 16:
+    return "u16";
+  case 32:
+    return "u32";
+  default:
+    return "u64";
+  }
+}
+
+std::string signedStorageType(const std::uint32_t bitLength) {
+  switch (scalarStorageBits(bitLength)) {
+  case 8:
+    return "i8";
+  case 16:
+    return "i16";
+  case 32:
+    return "i32";
+  default:
+    return "i64";
+  }
+}
+
+std::string rustConstValue(const Value &value) {
+  if (const auto *b = std::get_if<bool>(&value.data)) {
+    return *b ? "true" : "false";
+  }
+  if (const auto *r = std::get_if<Rational>(&value.data)) {
+    if (r->isInteger()) {
+      return std::to_string(r->asInteger().value());
+    }
+    std::ostringstream out;
+    out << "(" << r->numerator() << "f64 / " << r->denominator() << "f64)";
+    return out.str();
+  }
+  if (const auto *s = std::get_if<std::string>(&value.data)) {
+    std::string escaped;
+    escaped.reserve(s->size() + 2);
+    escaped.push_back('"');
+    for (char c : *s) {
+      if (c == '\\' || c == '"') {
+        escaped.push_back('\\');
+      }
+      escaped.push_back(c);
+    }
+    escaped.push_back('"');
+    return escaped;
+  }
+  return value.str();
+}
+
+llvm::Error writeFile(const std::filesystem::path &p, llvm::StringRef content) {
+  std::error_code ec;
+  llvm::raw_fd_ostream os(p.string(), ec, llvm::sys::fs::OF_Text);
+  if (ec) {
+    return llvm::createStringError(ec, "failed to open %s", p.string().c_str());
+  }
+  os << content;
+  os.close();
+  return llvm::Error::success();
+}
+
+void emitLine(std::ostringstream &out, const int indent, const std::string &line) {
+  out << std::string(static_cast<std::size_t>(indent) * 4U, ' ') << line << '\n';
+}
+
+class EmitterContext final {
+public:
+  explicit EmitterContext(const SemanticModule &semantic) {
+    for (const auto &def : semantic.definitions) {
+      byKey_.emplace(typeKey(def.info.fullName, def.info.majorVersion,
+                             def.info.minorVersion),
+                     &def);
+    }
+  }
+
+  const SemanticDefinition *find(const SemanticTypeRef &ref) const {
+    const auto it = byKey_.find(
+        typeKey(ref.fullName, ref.majorVersion, ref.minorVersion));
+    if (it == byKey_.end()) {
+      return nullptr;
+    }
+    return it->second;
+  }
+
+  std::string rustModuleName(const DiscoveredDefinition &info) const {
+    return toSnakeCase(info.shortName) + "_" + std::to_string(info.majorVersion) +
+           "_" + std::to_string(info.minorVersion);
+  }
+
+  std::string rustTypeName(const DiscoveredDefinition &info) const {
+    std::string out;
+    for (std::size_t i = 0; i < info.namespaceComponents.size(); ++i) {
+      if (!out.empty()) {
+        out += "_";
+      }
+      out += sanitizeRustIdent(info.namespaceComponents[i]);
+    }
+    if (!out.empty()) {
+      out += "_";
+    }
+    out += sanitizeRustIdent(info.shortName);
+    out += "_" + std::to_string(info.majorVersion) + "_" +
+           std::to_string(info.minorVersion);
+    return sanitizeRustIdent(out);
+  }
+
+  std::string rustTypeName(const SemanticTypeRef &ref) const {
+    if (const auto *def = find(ref)) {
+      return rustTypeName(def->info);
+    }
+
+    DiscoveredDefinition tmp;
+    tmp.shortName = ref.shortName;
+    tmp.namespaceComponents = ref.namespaceComponents;
+    tmp.majorVersion = ref.majorVersion;
+    tmp.minorVersion = ref.minorVersion;
+    return rustTypeName(tmp);
+  }
+
+  std::string rustTypePath(const SemanticTypeRef &ref) const {
+    std::ostringstream out;
+    out << "crate";
+    for (const auto &ns : ref.namespaceComponents) {
+      out << "::" << sanitizeRustIdent(ns);
+    }
+
+    if (const auto *def = find(ref)) {
+      out << "::" << rustModuleName(def->info) << "::" << rustTypeName(def->info);
+      return out.str();
+    }
+
+    DiscoveredDefinition tmp;
+    tmp.shortName = ref.shortName;
+    tmp.namespaceComponents = ref.namespaceComponents;
+    tmp.majorVersion = ref.majorVersion;
+    tmp.minorVersion = ref.minorVersion;
+    out << "::" << rustModuleName(tmp) << "::" << rustTypeName(tmp);
+    return out.str();
+  }
+
+private:
+  std::unordered_map<std::string, const SemanticDefinition *> byKey_;
+};
+
+std::string rustFieldBaseType(const SemanticFieldType &type,
+                              const EmitterContext &ctx) {
+  switch (type.scalarCategory) {
+  case SemanticScalarCategory::Bool:
+    return "bool";
+  case SemanticScalarCategory::Byte:
+  case SemanticScalarCategory::Utf8:
+  case SemanticScalarCategory::UnsignedInt:
+    return unsignedStorageType(type.bitLength);
+  case SemanticScalarCategory::SignedInt:
+    return signedStorageType(type.bitLength);
+  case SemanticScalarCategory::Float:
+    return type.bitLength == 64 ? "f64" : "f32";
+  case SemanticScalarCategory::Void:
+    return "u8";
+  case SemanticScalarCategory::Composite:
+    if (type.compositeType) {
+      return ctx.rustTypeName(*type.compositeType);
+    }
+    return "u8";
+  }
+  return "u8";
+}
+
+std::string rustFieldType(const SemanticFieldType &type, const EmitterContext &ctx) {
+  const auto base = rustFieldBaseType(type, ctx);
+  if (type.arrayKind == ArrayKind::None) {
+    return base;
+  }
+  return "crate::dsdl_runtime::DsdlVec<" + base + ">";
+}
+
+std::string defaultExpr(const SemanticFieldType &type, const EmitterContext &ctx) {
+  if (type.arrayKind != ArrayKind::None) {
+    return "crate::dsdl_runtime::DsdlVec::new()";
+  }
+
+  switch (type.scalarCategory) {
+  case SemanticScalarCategory::Bool:
+    return "false";
+  case SemanticScalarCategory::Byte:
+  case SemanticScalarCategory::Utf8:
+  case SemanticScalarCategory::UnsignedInt:
+    return "0";
+  case SemanticScalarCategory::SignedInt:
+    return "0";
+  case SemanticScalarCategory::Float:
+    return type.bitLength == 64 ? "0.0f64" : "0.0f32";
+  case SemanticScalarCategory::Void:
+    return "0";
+  case SemanticScalarCategory::Composite:
+    if (type.compositeType) {
+      return ctx.rustTypeName(*type.compositeType) + "::default()";
+    }
+    return "0";
+  }
+  return "0";
+}
+
+class FunctionBodyEmitter final {
+public:
+  explicit FunctionBodyEmitter(const EmitterContext &ctx) : ctx_(ctx) {}
+
+  void emitSerialize(std::ostringstream &out, const std::string &typeName,
+                     const SemanticSection &section) {
+    emitLine(out, 1,
+             "pub fn serialize(&self, buffer: &mut [u8]) -> core::result::Result<usize, i8> {");
+    emitLine(out, 2,
+             "if buffer.len().saturating_mul(8) < Self::SERIALIZATION_BUFFER_SIZE_BYTES.saturating_mul(8) {");
+    emitLine(out, 3,
+             "return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL);");
+    emitLine(out, 2, "}");
+    emitLine(out, 2, "let capacity_bytes = buffer.len();");
+    emitLine(out, 2, "let mut offset_bits: usize = 0;");
+
+    if (section.isUnion) {
+      emitSerializeUnion(out, section, 2);
+    } else {
+      for (const auto &field : section.fields) {
+        emitAlign(out, field.resolvedType.alignmentBits, 2);
+        if (field.isPadding) {
+          emitSerializePadding(out, field.resolvedType, 2);
+        } else {
+          const auto fieldRef = "self." + sanitizeRustIdent(field.name);
+          emitSerializeAny(out, field.resolvedType, fieldRef, 2);
+        }
+      }
+    }
+
+    emitAlign(out, 8, 2);
+    emitLine(out, 2, "Ok(offset_bits / 8)");
+    emitLine(out, 1, "}");
+  }
+
+  void emitDeserialize(std::ostringstream &out, const std::string &typeName,
+                       const SemanticSection &section) {
+    (void)typeName;
+    emitLine(out, 1,
+             "pub fn deserialize(&mut self, buffer: &[u8]) -> core::result::Result<usize, i8> {");
+    emitLine(out, 2, "let capacity_bytes = buffer.len();");
+    emitLine(out, 2, "let capacity_bits = capacity_bytes.saturating_mul(8);\n");
+    emitLine(out, 2, "let mut offset_bits: usize = 0;");
+
+    if (section.isUnion) {
+      emitDeserializeUnion(out, section, 2);
+    } else {
+      for (const auto &field : section.fields) {
+        emitAlign(out, field.resolvedType.alignmentBits, 2);
+        if (field.isPadding) {
+          emitDeserializePadding(out, field.resolvedType, 2);
+        } else {
+          const auto fieldRef = "self." + sanitizeRustIdent(field.name);
+          emitDeserializeAny(out, field.resolvedType, fieldRef, 2);
+        }
+      }
+    }
+
+    emitAlign(out, 8, 2);
+    emitLine(out, 2,
+             "Ok(crate::dsdl_runtime::choose_min(offset_bits, capacity_bits) / 8)");
+    emitLine(out, 1, "}");
+  }
+
+private:
+  const EmitterContext &ctx_;
+  std::size_t id_{0};
+
+  std::string nextName(const std::string &prefix) {
+    return "_" + prefix + std::to_string(id_++) + "_";
+  }
+
+  void emitAlign(std::ostringstream &out, const std::int64_t alignmentBits,
+                 const int indent) {
+    if (alignmentBits <= 1) {
+      return;
+    }
+    emitLine(out, indent,
+             "offset_bits = (offset_bits + " + std::to_string(alignmentBits - 1) +
+                 ") & !" + std::to_string(alignmentBits - 1) + "usize;");
+  }
+
+  void emitSerializePadding(std::ostringstream &out, const SemanticFieldType &type,
+                            const int indent) {
+    if (type.bitLength == 0) {
+      return;
+    }
+    const auto err = nextName("err");
+    emitLine(out, indent,
+             "let " + err + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits, 0, " +
+                 std::to_string(type.bitLength) + "u8);");
+    emitLine(out, indent, "if " + err + " < 0 { return Err(" + err + "); }");
+    emitLine(out, indent,
+             "offset_bits += " + std::to_string(type.bitLength) + ";");
+  }
+
+  void emitDeserializePadding(std::ostringstream &out,
+                              const SemanticFieldType &type,
+                              const int indent) {
+    if (type.bitLength == 0) {
+      return;
+    }
+    emitLine(out, indent,
+             "offset_bits += " + std::to_string(type.bitLength) + ";");
+  }
+
+  void emitSerializeUnion(std::ostringstream &out, const SemanticSection &section,
+                          const int indent) {
+    std::uint32_t tagBits = 8;
+    for (const auto &f : section.fields) {
+      if (!f.isPadding) {
+        tagBits = std::max<std::uint32_t>(8U, f.unionTagBits);
+        break;
+      }
+    }
+
+    const auto tagErr = nextName("err");
+    emitLine(out, indent,
+             "let " + tagErr + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits, self._tag_ as u64, " +
+                 std::to_string(tagBits) + "u8);");
+    emitLine(out, indent, "if " + tagErr + " < 0 { return Err(" + tagErr + "); }");
+    emitLine(out, indent,
+             "offset_bits += " + std::to_string(tagBits) + ";");
+
+    emitLine(out, indent, "match self._tag_ {");
+    for (const auto &field : section.fields) {
+      if (field.isPadding) {
+        continue;
+      }
+      emitLine(out, indent + 1,
+               std::to_string(field.unionOptionIndex) + " => {");
+      emitAlign(out, field.resolvedType.alignmentBits, indent + 2);
+      emitSerializeAny(out, field.resolvedType,
+                       "self." + sanitizeRustIdent(field.name), indent + 2);
+      emitLine(out, indent + 1, "}");
+    }
+    emitLine(out, indent + 1,
+             "_ => return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG),");
+    emitLine(out, indent, "}");
+  }
+
+  void emitDeserializeUnion(std::ostringstream &out,
+                            const SemanticSection &section,
+                            const int indent) {
+    std::uint32_t tagBits = 8;
+    for (const auto &f : section.fields) {
+      if (!f.isPadding) {
+        tagBits = std::max<std::uint32_t>(8U, f.unionTagBits);
+        break;
+      }
+    }
+
+    emitLine(out, indent,
+             "self._tag_ = crate::dsdl_runtime::get_u8(buffer, offset_bits, " +
+                 std::to_string(tagBits) + "u8);");
+    emitLine(out, indent,
+             "offset_bits += " + std::to_string(tagBits) + ";");
+
+    emitLine(out, indent, "match self._tag_ {");
+    for (const auto &field : section.fields) {
+      if (field.isPadding) {
+        continue;
+      }
+      emitLine(out, indent + 1,
+               std::to_string(field.unionOptionIndex) + " => {");
+      emitAlign(out, field.resolvedType.alignmentBits, indent + 2);
+      emitDeserializeAny(out, field.resolvedType,
+                         "self." + sanitizeRustIdent(field.name), indent + 2);
+      emitLine(out, indent + 1, "}");
+    }
+    emitLine(out, indent + 1,
+             "_ => return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG),");
+    emitLine(out, indent, "}");
+  }
+
+  void emitSerializeAny(std::ostringstream &out, const SemanticFieldType &type,
+                        const std::string &expr, const int indent) {
+    if (type.arrayKind != ArrayKind::None) {
+      emitSerializeArray(out, type, expr, indent);
+      return;
+    }
+    emitSerializeScalar(out, type, expr, indent);
+  }
+
+  void emitDeserializeAny(std::ostringstream &out, const SemanticFieldType &type,
+                          const std::string &expr, const int indent) {
+    if (type.arrayKind != ArrayKind::None) {
+      emitDeserializeArray(out, type, expr, indent);
+      return;
+    }
+    emitDeserializeScalar(out, type, expr, indent);
+  }
+
+  void emitSerializeScalar(std::ostringstream &out, const SemanticFieldType &type,
+                           const std::string &expr, const int indent) {
+    switch (type.scalarCategory) {
+    case SemanticScalarCategory::Bool: {
+      const auto err = nextName("err");
+      emitLine(out, indent,
+               "let " + err + " = crate::dsdl_runtime::set_bit(buffer, offset_bits, " +
+                   expr + ");");
+      emitLine(out, indent, "if " + err + " < 0 { return Err(" + err + "); }");
+      emitLine(out, indent, "offset_bits += 1;");
+      break;
+    }
+    case SemanticScalarCategory::Byte:
+    case SemanticScalarCategory::Utf8:
+    case SemanticScalarCategory::UnsignedInt: {
+      std::string valueExpr = "(" + expr + " as u64)";
+      if (type.castMode == CastMode::Saturated && type.bitLength < 64U) {
+        const auto sat = nextName("sat");
+        const auto maxVal = (1ULL << type.bitLength) - 1ULL;
+        emitLine(out, indent, "let mut " + sat + " = " + valueExpr + ";");
+        emitLine(out, indent,
+                 "if " + sat + " > " + std::to_string(maxVal) + "u64 { " + sat +
+                     " = " + std::to_string(maxVal) + "u64; }");
+        valueExpr = sat;
+      }
+
+      const auto err = nextName("err");
+      emitLine(out, indent,
+               "let " + err + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits, " +
+                   valueExpr + ", " + std::to_string(type.bitLength) + "u8);");
+      emitLine(out, indent, "if " + err + " < 0 { return Err(" + err + "); }");
+      emitLine(out, indent,
+               "offset_bits += " + std::to_string(type.bitLength) + ";");
+      break;
+    }
+    case SemanticScalarCategory::SignedInt: {
+      std::string valueExpr = "(" + expr + " as i64)";
+      if (type.castMode == CastMode::Saturated && type.bitLength < 64U &&
+          type.bitLength > 0U) {
+        const auto sat = nextName("sat");
+        const auto minVal = -(1LL << (type.bitLength - 1U));
+        const auto maxVal = (1LL << (type.bitLength - 1U)) - 1LL;
+        emitLine(out, indent, "let mut " + sat + " = " + valueExpr + ";");
+        emitLine(out, indent,
+                 "if " + sat + " < " + std::to_string(minVal) + "i64 { " + sat +
+                     " = " + std::to_string(minVal) + "i64; }");
+        emitLine(out, indent,
+                 "if " + sat + " > " + std::to_string(maxVal) + "i64 { " + sat +
+                     " = " + std::to_string(maxVal) + "i64; }");
+        valueExpr = sat;
+      }
+
+      const auto err = nextName("err");
+      emitLine(out, indent,
+               "let " + err + " = crate::dsdl_runtime::set_ixx(buffer, offset_bits, " +
+                   valueExpr + ", " + std::to_string(type.bitLength) + "u8);");
+      emitLine(out, indent, "if " + err + " < 0 { return Err(" + err + "); }");
+      emitLine(out, indent,
+               "offset_bits += " + std::to_string(type.bitLength) + ";");
+      break;
+    }
+    case SemanticScalarCategory::Float: {
+      const auto err = nextName("err");
+      std::string setCall;
+      if (type.bitLength == 16U) {
+        setCall = "crate::dsdl_runtime::set_f16(buffer, offset_bits, " + expr + " as f32)";
+      } else if (type.bitLength == 32U) {
+        setCall = "crate::dsdl_runtime::set_f32(buffer, offset_bits, " + expr + " as f32)";
+      } else {
+        setCall = "crate::dsdl_runtime::set_f64(buffer, offset_bits, " + expr + " as f64)";
+      }
+      emitLine(out, indent, "let " + err + " = " + setCall + ";");
+      emitLine(out, indent, "if " + err + " < 0 { return Err(" + err + "); }");
+      emitLine(out, indent,
+               "offset_bits += " + std::to_string(type.bitLength) + ";");
+      break;
+    }
+    case SemanticScalarCategory::Void:
+      emitSerializePadding(out, type, indent);
+      break;
+    case SemanticScalarCategory::Composite:
+      emitSerializeComposite(out, type, expr, indent);
+      break;
+    }
+  }
+
+  void emitDeserializeScalar(std::ostringstream &out,
+                             const SemanticFieldType &type,
+                             const std::string &expr, const int indent) {
+    switch (type.scalarCategory) {
+    case SemanticScalarCategory::Bool:
+      emitLine(out, indent,
+               expr + " = crate::dsdl_runtime::get_bit(buffer, offset_bits);");
+      emitLine(out, indent, "offset_bits += 1;");
+      break;
+    case SemanticScalarCategory::Byte:
+    case SemanticScalarCategory::Utf8:
+    case SemanticScalarCategory::UnsignedInt: {
+      std::string getter = "get_u64";
+      switch (scalarStorageBits(type.bitLength)) {
+      case 8:
+        getter = "get_u8";
+        break;
+      case 16:
+        getter = "get_u16";
+        break;
+      case 32:
+        getter = "get_u32";
+        break;
+      default:
+        getter = "get_u64";
+        break;
+      }
+      emitLine(out, indent,
+               expr + " = crate::dsdl_runtime::" + getter +
+                   "(buffer, offset_bits, " + std::to_string(type.bitLength) +
+                   "u8) as " + unsignedStorageType(type.bitLength) + ";");
+      emitLine(out, indent,
+               "offset_bits += " + std::to_string(type.bitLength) + ";");
+      break;
+    }
+    case SemanticScalarCategory::SignedInt: {
+      std::string getter = "get_i64";
+      switch (scalarStorageBits(type.bitLength)) {
+      case 8:
+        getter = "get_i8";
+        break;
+      case 16:
+        getter = "get_i16";
+        break;
+      case 32:
+        getter = "get_i32";
+        break;
+      default:
+        getter = "get_i64";
+        break;
+      }
+      emitLine(out, indent,
+               expr + " = crate::dsdl_runtime::" + getter +
+                   "(buffer, offset_bits, " + std::to_string(type.bitLength) +
+                   "u8) as " + signedStorageType(type.bitLength) + ";");
+      emitLine(out, indent,
+               "offset_bits += " + std::to_string(type.bitLength) + ";");
+      break;
+    }
+    case SemanticScalarCategory::Float:
+      if (type.bitLength == 16U) {
+        emitLine(out, indent,
+                 expr + " = crate::dsdl_runtime::get_f16(buffer, offset_bits);");
+      } else if (type.bitLength == 32U) {
+        emitLine(out, indent,
+                 expr + " = crate::dsdl_runtime::get_f32(buffer, offset_bits);");
+      } else {
+        emitLine(out, indent,
+                 expr + " = crate::dsdl_runtime::get_f64(buffer, offset_bits);");
+      }
+      emitLine(out, indent,
+               "offset_bits += " + std::to_string(type.bitLength) + ";");
+      break;
+    case SemanticScalarCategory::Void:
+      emitDeserializePadding(out, type, indent);
+      break;
+    case SemanticScalarCategory::Composite:
+      emitDeserializeComposite(out, type, expr, indent);
+      break;
+    }
+  }
+
+  void emitSerializeArray(std::ostringstream &out, const SemanticFieldType &type,
+                          const std::string &expr, const int indent) {
+    const bool variable = isVariableArray(type.arrayKind);
+
+    if (type.arrayKind == ArrayKind::Fixed) {
+      emitLine(out, indent,
+               "if " + expr + ".len() != " + std::to_string(type.arrayCapacity) +
+                   "usize { return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH); }");
+    }
+
+    if (variable) {
+      emitLine(out, indent,
+               "if " + expr + ".len() > " + std::to_string(type.arrayCapacity) +
+                   "usize { return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH); }");
+      const auto err = nextName("err");
+      emitLine(out, indent,
+               "let " + err + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits, " +
+                   expr + ".len() as u64, " +
+                   std::to_string(type.arrayLengthPrefixBits) + "u8);");
+      emitLine(out, indent, "if " + err + " < 0 { return Err(" + err + "); }");
+      emitLine(out, indent,
+               "offset_bits += " + std::to_string(type.arrayLengthPrefixBits) + ";");
+    }
+
+    const auto index = nextName("index");
+    const auto count = variable ? (expr + ".len()")
+                                : std::to_string(type.arrayCapacity) + "usize";
+
+    emitLine(out, indent,
+             "for " + index + " in 0.." + count + " {");
+
+    SemanticFieldType itemType = type;
+    itemType.arrayKind = ArrayKind::None;
+    itemType.arrayCapacity = 0;
+    itemType.arrayLengthPrefixBits = 0;
+
+    if (itemType.scalarCategory == SemanticScalarCategory::Composite) {
+      emitSerializeScalar(out, itemType, "&" + expr + "[" + index + "]",
+                          indent + 1);
+    } else {
+      emitSerializeScalar(out, itemType, expr + "[" + index + "]", indent + 1);
+    }
+    emitLine(out, indent, "}");
+  }
+
+  void emitDeserializeArray(std::ostringstream &out,
+                            const SemanticFieldType &type,
+                            const std::string &expr, const int indent) {
+    const bool variable = isVariableArray(type.arrayKind);
+    const auto count = nextName("count");
+
+    if (variable) {
+      emitLine(out, indent,
+               "let " + count + " = crate::dsdl_runtime::get_u64(buffer, offset_bits, " +
+                   std::to_string(type.arrayLengthPrefixBits) + "u8) as usize;");
+      emitLine(out, indent,
+               "offset_bits += " + std::to_string(type.arrayLengthPrefixBits) + ";");
+      emitLine(out, indent,
+               "if " + count + " > " + std::to_string(type.arrayCapacity) +
+                   "usize { return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH); }");
+      emitLine(out, indent, expr + ".clear();");
+      emitLine(out, indent, expr + ".reserve(" + count + ");");
+    } else {
+      emitLine(out, indent, expr + ".clear();");
+      emitLine(out, indent,
+               expr + ".reserve(" + std::to_string(type.arrayCapacity) + "usize);");
+      emitLine(out, indent,
+               "let " + count + " = " + std::to_string(type.arrayCapacity) +
+                   "usize;");
+    }
+
+    const auto index = nextName("index");
+    emitLine(out, indent,
+             "for " + index + " in 0.." + count + " {");
+
+    SemanticFieldType itemType = type;
+    itemType.arrayKind = ArrayKind::None;
+    itemType.arrayCapacity = 0;
+    itemType.arrayLengthPrefixBits = 0;
+
+    const auto itemVar = nextName("item");
+    emitLine(out, indent + 1,
+             "let mut " + itemVar + " = " + defaultExpr(itemType, ctx_) + ";");
+    emitDeserializeScalar(out, itemType, itemVar, indent + 1);
+    emitLine(out, indent + 1, expr + ".push(" + itemVar + ");");
+    emitLine(out, indent, "}");
+  }
+
+  void emitSerializeComposite(std::ostringstream &out,
+                              const SemanticFieldType &type,
+                              const std::string &expr, const int indent) {
+    const auto sizeVar = nextName("size_bytes");
+    const auto errVar = nextName("err");
+
+    if (!type.compositeSealed) {
+      emitLine(out, indent, "offset_bits += 32;  // Delimiter header");
+    }
+
+    emitLine(out, indent,
+             "let mut " + sizeVar + " = " +
+                 std::to_string((type.bitLengthSet.max() + 7) / 8) + "usize;");
+    emitLine(out, indent, "let _start = offset_bits / 8;");
+    emitLine(out, indent,
+             "let _end = _start.saturating_add(" + sizeVar + ").min(buffer.len());");
+    emitLine(out, indent,
+             "let " + errVar + " = " + expr + ".serialize(&mut buffer[_start.._end]);");
+    emitLine(out, indent, "match " + errVar + " {");
+    emitLine(out, indent + 1, "Ok(v) => " + sizeVar + " = v,");
+    emitLine(out, indent + 1, "Err(e) => return Err(e),");
+    emitLine(out, indent, "}");
+
+    if (!type.compositeSealed) {
+      const auto hdrErr = nextName("err");
+      emitLine(out, indent,
+               "let " + hdrErr + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits - 32, " +
+                   sizeVar + " as u64, 32u8);");
+      emitLine(out, indent, "if " + hdrErr + " < 0 { return Err(" + hdrErr + "); }");
+    }
+
+    emitLine(out, indent, "offset_bits += " + sizeVar + " * 8;");
+  }
+
+  void emitDeserializeComposite(std::ostringstream &out,
+                                const SemanticFieldType &type,
+                                const std::string &expr, const int indent) {
+    const auto sizeVar = nextName("size_bytes");
+
+    if (!type.compositeSealed) {
+      emitLine(out, indent,
+               "let " + sizeVar + " = crate::dsdl_runtime::get_u32(buffer, offset_bits, 32u8) as usize;");
+      emitLine(out, indent, "offset_bits += 32;");
+      emitLine(out, indent,
+               "let _remaining = capacity_bytes.saturating_sub(crate::dsdl_runtime::choose_min(offset_bits / 8, capacity_bytes));");
+      emitLine(out, indent,
+               "if " + sizeVar + " > _remaining { return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER); }");
+      emitLine(out, indent, "let _start = offset_bits / 8;");
+      emitLine(out, indent,
+               "let _end = _start.saturating_add(" + sizeVar + ").min(buffer.len());");
+      emitLine(out, indent,
+               "if let Err(e) = " + expr + ".deserialize(&buffer[_start.._end]) { return Err(e); }");
+      emitLine(out, indent, "offset_bits += " + sizeVar + " * 8;");
+      return;
+    }
+
+    emitLine(out, indent, "let _start = offset_bits / 8;");
+    emitLine(out, indent,
+             "let _slice = &buffer[_start..buffer.len()];");
+    emitLine(out, indent,
+             "let _consumed = match " + expr + ".deserialize(_slice) { Ok(v) => v, Err(e) => return Err(e) };\n");
+    emitLine(out, indent, "offset_bits += _consumed * 8;");
+  }
+};
+
+void collectDependencies(const SemanticSection &section,
+                         std::set<std::string> &deps) {
+  for (const auto &f : section.fields) {
+    if (f.resolvedType.compositeType) {
+      const auto &r = *f.resolvedType.compositeType;
+      deps.insert(typeKey(r.fullName, r.majorVersion, r.minorVersion));
+    }
+  }
+}
+
+std::string rustConstType(const TypeExprAST &type) {
+  const auto *prim = std::get_if<PrimitiveTypeExprAST>(&type.scalar);
+  if (!prim) {
+    return "i64";
+  }
+  switch (prim->kind) {
+  case PrimitiveKind::Bool:
+    return "bool";
+  case PrimitiveKind::Float:
+    return "f64";
+  case PrimitiveKind::SignedInt:
+    return "i64";
+  case PrimitiveKind::UnsignedInt:
+  case PrimitiveKind::Byte:
+  case PrimitiveKind::Utf8:
+    return "u64";
+  }
+  return "i64";
+}
+
+void emitSectionType(std::ostringstream &out, const std::string &typeName,
+                     const SemanticSection &section, const EmitterContext &ctx,
+                     const std::string &fullName,
+                     std::uint32_t majorVersion, std::uint32_t minorVersion) {
+  emitLine(out, 0, "#[derive(Clone, Debug, PartialEq)]");
+  emitLine(out, 0, "pub struct " + typeName + " {");
+
+  std::size_t fieldCount = 0;
+  for (const auto &field : section.fields) {
+    if (field.isPadding) {
+      continue;
+    }
+    ++fieldCount;
+    emitLine(out, 1,
+             "pub " + sanitizeRustIdent(field.name) + ": " +
+                 rustFieldType(field.resolvedType, ctx) + ",");
+  }
+
+  if (section.isUnion) {
+    emitLine(out, 1, "pub _tag_: u8,");
+  }
+
+  if (fieldCount == 0 && !section.isUnion) {
+    emitLine(out, 1, "pub _dummy_: u8,");
+  }
+  emitLine(out, 0, "}\n");
+
+  emitLine(out, 0, "impl Default for " + typeName + " {");
+  emitLine(out, 1, "fn default() -> Self {");
+  emitLine(out, 2, "Self {");
+  for (const auto &field : section.fields) {
+    if (field.isPadding) {
+      continue;
+    }
+    emitLine(out, 3,
+             sanitizeRustIdent(field.name) + ": " +
+                 defaultExpr(field.resolvedType, ctx) + ",");
+  }
+  if (section.isUnion) {
+    emitLine(out, 3, "_tag_: 0,");
+  }
+  if (fieldCount == 0 && !section.isUnion) {
+    emitLine(out, 3, "_dummy_: 0,");
+  }
+  emitLine(out, 2, "}");
+  emitLine(out, 1, "}");
+  emitLine(out, 0, "}\n");
+
+  emitLine(out, 0, "impl " + typeName + " {");
+  emitLine(out, 1, "pub const FULL_NAME: &'static str = \"" + fullName + "\";");
+  emitLine(out, 1,
+           "pub const FULL_NAME_AND_VERSION: &'static str = \"" + fullName +
+               "." + std::to_string(majorVersion) + "." +
+               std::to_string(minorVersion) + "\";");
+  emitLine(out, 1,
+           "pub const EXTENT_BYTES: usize = " +
+               std::to_string(section.extentBits.value_or(0) / 8) + ";");
+  emitLine(out, 1,
+           "pub const SERIALIZATION_BUFFER_SIZE_BYTES: usize = " +
+               std::to_string((section.serializationBufferSizeBits + 7) / 8) + ";");
+  if (section.isUnion) {
+    std::size_t optionCount = 0;
+    for (const auto &f : section.fields) {
+      if (!f.isPadding) {
+        ++optionCount;
+      }
+    }
+    emitLine(out, 1,
+             "pub const UNION_OPTION_COUNT: usize = " +
+                 std::to_string(optionCount) + ";");
+  }
+
+  for (const auto &c : section.constants) {
+    emitLine(out, 1,
+             "pub const " + toUpperSnake(c.name) + ": " + rustConstType(c.type) +
+                 " = " + rustConstValue(c.value) + ";");
+  }
+  out << "\n";
+
+  FunctionBodyEmitter body(ctx);
+  body.emitSerialize(out, typeName, section);
+  out << "\n";
+  body.emitDeserialize(out, typeName, section);
+  out << "\n";
+
+  emitLine(out, 1,
+           "pub fn to_bytes(&self) -> core::result::Result<crate::dsdl_runtime::DsdlVec<u8>, i8> {");
+  emitLine(out, 2,
+           "let mut buffer = crate::dsdl_runtime::DsdlVec::<u8>::with_capacity(Self::SERIALIZATION_BUFFER_SIZE_BYTES);");
+  emitLine(out, 2, "buffer.resize(Self::SERIALIZATION_BUFFER_SIZE_BYTES, 0u8);");
+  emitLine(out, 2, "let used = self.serialize(&mut buffer)?;");
+  emitLine(out, 2, "buffer.truncate(used);");
+  emitLine(out, 2, "Ok(buffer)");
+  emitLine(out, 1, "}\n");
+
+  emitLine(out, 1,
+           "pub fn from_bytes(buffer: &[u8]) -> core::result::Result<(Self, usize), i8> {");
+  emitLine(out, 2, "let mut out = Self::default();");
+  emitLine(out, 2, "let used = out.deserialize(buffer)?;");
+  emitLine(out, 2, "Ok((out, used))");
+  emitLine(out, 1, "}");
+  emitLine(out, 0, "}\n");
+}
+
+std::string renderDefinitionFile(const SemanticDefinition &def,
+                                 const EmitterContext &ctx) {
+  std::ostringstream out;
+  emitLine(out, 0, "#![allow(non_camel_case_types)]");
+  emitLine(out, 0, "#![allow(non_snake_case)]");
+  emitLine(out, 0, "#![allow(non_upper_case_globals)]\n");
+
+  std::set<std::string> deps;
+  collectDependencies(def.request, deps);
+  if (def.response) {
+    collectDependencies(*def.response, deps);
+  }
+
+  const auto selfKey = typeKey(def.info.fullName, def.info.majorVersion,
+                               def.info.minorVersion);
+
+  for (const auto &dep : deps) {
+    if (dep == selfKey) {
+      continue;
+    }
+
+    auto first = dep.find(':');
+    auto second = dep.find(':', first + 1);
+    if (first == std::string::npos || second == std::string::npos) {
+      continue;
+    }
+
+    SemanticTypeRef ref;
+    ref.fullName = dep.substr(0, first);
+    ref.majorVersion = static_cast<std::uint32_t>(
+        std::stoul(dep.substr(first + 1, second - first - 1)));
+    ref.minorVersion =
+        static_cast<std::uint32_t>(std::stoul(dep.substr(second + 1)));
+
+    if (const auto *resolved = ctx.find(ref)) {
+      ref.namespaceComponents = resolved->info.namespaceComponents;
+      ref.shortName = resolved->info.shortName;
+    }
+
+    const auto typePath = ctx.rustTypePath(ref);
+    const auto rustType = ctx.rustTypeName(ref);
+    emitLine(out, 0, "use " + typePath + ";");
+    (void)rustType;
+  }
+  if (!deps.empty()) {
+    out << "\n";
+  }
+
+  const auto baseType = ctx.rustTypeName(def.info);
+
+  if (!def.isService) {
+    emitSectionType(out, baseType, def.request, ctx, def.info.fullName,
+                    def.info.majorVersion, def.info.minorVersion);
+    return out.str();
+  }
+
+  const auto reqType = baseType + "_Request";
+  const auto respType = baseType + "_Response";
+
+  emitSectionType(out, reqType, def.request, ctx,
+                  def.info.fullName + ".Request", def.info.majorVersion,
+                  def.info.minorVersion);
+
+  if (def.response) {
+    out << "\n";
+    emitSectionType(out, respType, *def.response, ctx,
+                    def.info.fullName + ".Response", def.info.majorVersion,
+                    def.info.minorVersion);
+  }
+
+  out << "\n";
+  emitLine(out, 0, "pub type " + baseType + " = " + reqType + ";");
+
+  return out.str();
+}
+
+llvm::Expected<std::string> loadRustRuntime() {
+  const std::filesystem::path runtimePath =
+      std::filesystem::path(LLVMDSDL_SOURCE_DIR) / "runtime" / "rust" /
+      "dsdl_runtime.rs";
+  std::ifstream in(runtimePath.string());
+  if (!in) {
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "failed to read Rust runtime");
+  }
+  std::ostringstream content;
+  content << in.rdbuf();
+  return content.str();
+}
+
+std::string renderCargoToml(const RustEmitOptions &options) {
+  std::ostringstream out;
+  out << "[package]\n";
+  out << "name = \"" << options.crateName << "\"\n";
+  out << "version = \"0.1.0\"\n";
+  out << "edition = \"2021\"\n\n";
+
+  out << "[lib]\n";
+  out << "path = \"src/lib.rs\"\n\n";
+
+  out << "[features]\n";
+  out << "default = [\"std\"]\n";
+  out << "std = []\n";
+  out << "future-no-std-alloc = []\n";
+  return out.str();
+}
+
+} // namespace
+
+llvm::Error emitRust(const SemanticModule &semantic, mlir::ModuleOp module,
+                     const RustEmitOptions &options,
+                     DiagnosticEngine &diagnostics) {
+  (void)module;
+  (void)diagnostics;
+
+  if (options.outDir.empty()) {
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "output directory is required");
+  }
+  if (options.profile != RustProfile::Std) {
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "Rust no_std+alloc backend is not implemented yet; use --rust-profile std");
+  }
+
+  std::filesystem::path outRoot(options.outDir);
+  std::filesystem::path srcRoot = outRoot / "src";
+  std::filesystem::create_directories(srcRoot);
+
+  if (options.emitCargoToml) {
+    if (auto err = writeFile(outRoot / "Cargo.toml", renderCargoToml(options))) {
+      return err;
+    }
+  }
+
+  auto runtime = loadRustRuntime();
+  if (!runtime) {
+    return runtime.takeError();
+  }
+  if (auto err = writeFile(srcRoot / "dsdl_runtime.rs", *runtime)) {
+    return err;
+  }
+
+  EmitterContext ctx(semantic);
+
+  std::map<std::string, std::set<std::string>> dirToSubdirs;
+  std::map<std::string, std::set<std::string>> dirToFiles;
+
+  for (const auto &def : semantic.definitions) {
+    std::vector<std::string> ns;
+    ns.reserve(def.info.namespaceComponents.size());
+    for (const auto &c : def.info.namespaceComponents) {
+      ns.push_back(sanitizeRustIdent(c));
+    }
+
+    std::string dirRel;
+    std::string parentRel;
+    for (const auto &component : ns) {
+      dirToSubdirs[parentRel].insert(component);
+      if (!dirRel.empty()) {
+        dirRel += "/";
+      }
+      dirRel += component;
+      parentRel = dirRel;
+    }
+
+    const auto modName = ctx.rustModuleName(def.info);
+    dirToFiles[dirRel].insert(modName);
+
+    std::filesystem::path dir = srcRoot;
+    if (!dirRel.empty()) {
+      dir /= dirRel;
+    }
+    std::filesystem::create_directories(dir);
+
+    if (auto err = writeFile(dir / (modName + ".rs"), renderDefinitionFile(def, ctx))) {
+      return err;
+    }
+  }
+
+  std::ostringstream lib;
+  emitLine(lib, 0, "#![allow(non_camel_case_types)]");
+  emitLine(lib, 0, "#![allow(non_snake_case)]");
+  emitLine(lib, 0, "#![allow(non_upper_case_globals)]");
+  emitLine(lib, 0, "\n// std-first backend. Future no_std + allocator mode is reserved via feature/profile seams.");
+  emitLine(lib, 0, "#[cfg(feature = \"future-no-std-alloc\")]");
+  emitLine(lib, 0,
+           "compile_error!(\"feature 'future-no-std-alloc' is reserved but not implemented yet; generate with --rust-profile std\");");
+  emitLine(lib, 0, "pub mod dsdl_runtime;");
+
+  if (dirToSubdirs.contains("")) {
+    for (const auto &sub : dirToSubdirs[""]) {
+      emitLine(lib, 0, "pub mod " + sub + ";");
+    }
+  }
+  if (dirToFiles.contains("")) {
+    for (const auto &file : dirToFiles[""]) {
+      emitLine(lib, 0, "pub mod " + file + ";");
+    }
+  }
+
+  if (auto err = writeFile(srcRoot / "lib.rs", lib.str())) {
+    return err;
+  }
+
+  std::set<std::string> dirs;
+  for (const auto &[d, _] : dirToSubdirs) {
+    if (!d.empty()) {
+      dirs.insert(d);
+    }
+  }
+  for (const auto &[d, _] : dirToFiles) {
+    if (!d.empty()) {
+      dirs.insert(d);
+    }
+  }
+
+  for (const auto &dirRel : dirs) {
+    std::ostringstream mod;
+    if (dirToSubdirs.contains(dirRel)) {
+      for (const auto &sub : dirToSubdirs[dirRel]) {
+        emitLine(mod, 0, "pub mod " + sub + ";");
+      }
+    }
+    if (dirToFiles.contains(dirRel)) {
+      for (const auto &file : dirToFiles[dirRel]) {
+        emitLine(mod, 0, "pub mod " + file + ";");
+      }
+    }
+
+    std::filesystem::path dir = srcRoot / dirRel;
+    std::filesystem::create_directories(dir);
+    if (auto err = writeFile(dir / "mod.rs", mod.str())) {
+      return err;
+    }
+  }
+
+  return llvm::Error::success();
+}
+
+} // namespace llvmdsdl

@@ -1,4 +1,5 @@
 #include "llvmdsdl/CodeGen/CEmitter.h"
+#include "llvmdsdl/CodeGen/RustEmitter.h"
 #include "llvmdsdl/Frontend/ASTPrinter.h"
 #include "llvmdsdl/Frontend/Parser.h"
 #include "llvmdsdl/IR/DSDLDialect.h"
@@ -21,15 +22,17 @@
 namespace {
 
 void printUsage() {
-  llvm::errs() << "Usage: dsdlc <ast|mlir|c> --root-namespace-dir <dir> [options]\n"
+  llvm::errs() << "Usage: dsdlc <ast|mlir|c|rust> --root-namespace-dir <dir> [options]\n"
                << "Options:\n"
                << "  --root-namespace-dir <dir>   Primary namespace root (repeatable)\n"
                << "  --lookup-dir <dir>           Dependency namespace root (repeatable)\n"
-               << "  --out-dir <dir>              Output directory for 'c' mode\n"
+               << "  --out-dir <dir>              Output directory for 'c'/'rust' mode\n"
                << "  --compat-mode                Enable compatibility mode\n"
                << "  --strict                     Enable strict mode (default)\n"
                << "  --emit-impl-tu               Emit generated_impl.c from MLIR/EmitC\n"
-               << "  --emit-runtime-header-only   Emit header-only runtime/codegen (default)\n";
+               << "  --emit-runtime-header-only   Emit header-only runtime/codegen (default)\n"
+               << "  --rust-crate-name <name>     Rust crate/package name (rust mode)\n"
+               << "  --rust-profile <std|no-std-alloc> Rust backend profile (default: std)\n";
 }
 
 void printDiagnostics(const llvmdsdl::DiagnosticEngine &diag) {
@@ -63,6 +66,8 @@ int main(int argc, char **argv) {
   bool compatMode = false;
   bool emitImplTU = false;
   bool emitHeaderOnly = true;
+  std::string rustCrateName = "llvmdsdl_generated";
+  llvmdsdl::RustProfile rustProfile = llvmdsdl::RustProfile::Std;
 
   for (int i = 2; i < argc; ++i) {
     const std::string arg = argv[i];
@@ -91,6 +96,19 @@ int main(int argc, char **argv) {
       emitImplTU = true;
     } else if (arg == "--emit-runtime-header-only") {
       emitHeaderOnly = true;
+    } else if (arg == "--rust-crate-name") {
+      rustCrateName = requireValue(arg);
+    } else if (arg == "--rust-profile") {
+      const auto value = requireValue(arg);
+      if (value == "std") {
+        rustProfile = llvmdsdl::RustProfile::Std;
+      } else if (value == "no-std-alloc") {
+        rustProfile = llvmdsdl::RustProfile::NoStdAlloc;
+      } else {
+        llvm::errs() << "Invalid --rust-profile value: " << value << "\n";
+        printUsage();
+        return 1;
+      }
     } else {
       llvm::errs() << "Unknown argument: " << arg << "\n";
       printUsage();
@@ -165,6 +183,27 @@ int main(int argc, char **argv) {
 
     if (llvm::Error err = llvmdsdl::emitC(*semantic, *mlirModule, options,
                                           diagnostics)) {
+      llvm::errs() << llvm::toString(std::move(err)) << "\n";
+      printDiagnostics(diagnostics);
+      return 1;
+    }
+
+    printDiagnostics(diagnostics);
+    return diagnostics.hasErrors() ? 1 : 0;
+  }
+
+  if (command == "rust") {
+    if (outDir.empty()) {
+      llvm::errs() << "--out-dir is required for 'rust' command\n";
+      return 1;
+    }
+    llvmdsdl::RustEmitOptions options;
+    options.outDir = outDir;
+    options.crateName = rustCrateName;
+    options.profile = rustProfile;
+
+    if (llvm::Error err = llvmdsdl::emitRust(*semantic, *mlirModule, options,
+                                             diagnostics)) {
       llvm::errs() << llvm::toString(std::move(err)) << "\n";
       printDiagnostics(diagnostics);
       return 1;

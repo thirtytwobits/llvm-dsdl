@@ -1,5 +1,6 @@
 add_library(llvmdsdlCodeGen
   CEmitter.cpp
+  RustEmitter.cpp
 )
 
 target_link_libraries(llvmdsdlCodeGen

@@ -11,13 +11,19 @@ It currently provides:
   - Per-type headers mirroring namespace directories.
   - Header-only, inline serialization/deserialization bodies.
   - A local header-only runtime (`dsdl_runtime.h`) with bit-level primitives.
+- Rust code generation (`dsdlc rust`) with:
+  - A generated crate layout (`Cargo.toml`, `src/lib.rs`, `src/**`).
+  - Per-type Rust data types and inline SerDes methods.
+  - A local Rust runtime module (`src/dsdl_runtime.rs`) with bit-level primitives.
+  - `std` profile enabled now, with an explicit reserved seam for future
+    `no_std + alloc`.
 - Strict-mode-first semantics (`--strict` is default).
 
 ## Repository Layout
 
 - `include/llvmdsdl`: public C++ headers.
 - `lib`: frontend, semantics, IR, lowering, transforms, codegen.
-- `tools/dsdlc`: CLI driver (`ast`, `mlir`, `c`).
+- `tools/dsdlc`: CLI driver (`ast`, `mlir`, `c`, `rust`).
 - `tools/dsdl-opt`: MLIR pass driver for the DSDL dialect.
 - `runtime/dsdl_runtime.h`: generated C runtime support header.
 - `test/unit`: unit tests.
@@ -72,7 +78,7 @@ Fast dev workflow (configure + build + fast tests):
 cmake --workflow --preset dev
 ```
 
-Full verification workflow (includes strict `uavcan` integration test):
+Full verification workflow (includes strict `uavcan` C and Rust integration tests):
 
 ```bash
 cmake --workflow --preset full
@@ -129,6 +135,25 @@ Optional:
 - `--emit-impl-tu`: emit `generated_impl.c` from the MLIR/EmitC pipeline.
 - `--emit-runtime-header-only`: keep header-only runtime/codegen path enabled.
 
+### Rust crate generation (`std` profile)
+
+```bash
+./build/tools/dsdlc/dsdlc rust \
+  --root-namespace-dir public_regulated_data_types/uavcan \
+  --strict \
+  --out-dir build/uavcan-rust-out \
+  --rust-crate-name uavcan_dsdl_generated \
+  --rust-profile std
+```
+
+Current behavior:
+
+- `--rust-profile std` is the default and recommended first path.
+- `--rust-profile no-std-alloc` is reserved and currently returns a clear
+  "not implemented yet" error.
+- Generated Rust API uses `DsdlVec` aliasing in `dsdl_runtime` so we can switch
+  allocation strategy in the planned embedded-focused backend.
+
 ## Reproducible Full `uavcan` Generation Check
 
 ```bash
@@ -153,4 +178,4 @@ Current milestone supports generating all types under:
 - `public_regulated_data_types/uavcan`
 
 with strict mode enabled and no `dsdl_runtime_stub_*` references in generated
-headers.
+headers, plus strict Rust crate generation in `std` mode.

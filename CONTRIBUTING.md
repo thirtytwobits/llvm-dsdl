@@ -13,11 +13,12 @@ to let a new contributor go from a clean checkout to a verified build and strict
 5. Configure (Manual CMake)
 6. Build
 7. Test
-8. Reproduce Strict `uavcan` Generation
-9. Validate Generated Output
-10. Common Development Tasks
-11. Troubleshooting
-12. Commit and PR Expectations
+8. Reproduce Strict `uavcan` C Generation
+9. Reproduce Strict `uavcan` Rust Generation (`std`)
+10. Validate Generated Output
+11. Common Development Tasks
+12. Troubleshooting
+13. Commit and PR Expectations
 
 ## 1. Scope
 
@@ -27,6 +28,8 @@ This guide covers:
 - Running unit tests and lit tests (when available).
 - Running integration validation for strict `uavcan` generation.
 - Generating C11 output from `public_regulated_data_types/uavcan`.
+- Generating Rust crate output (currently `std` profile) from
+  `public_regulated_data_types/uavcan`.
 - Verifying generation completeness and compile sanity.
 
 ## 2. Prerequisites
@@ -102,6 +105,7 @@ cmake --workflow --preset full
 Runs all tests, including integration validation that:
 
 - generates all strict `uavcan` headers,
+- generates strict `uavcan` Rust crate output (`std` profile),
 - checks count parity (`.dsdl` count == generated header count),
 - checks for stub references,
 - compile-checks all generated headers as C11 with `-Wall -Wextra -Werror`.
@@ -226,7 +230,7 @@ or with Python module:
 python3 -m lit.main -sv build/test/lit
 ```
 
-## 8. Reproduce Strict `uavcan` Generation
+## 8. Reproduce Strict `uavcan` C Generation
 
 This is the primary end-to-end check for current project status.
 
@@ -263,9 +267,37 @@ Expected extra artifact:
 
 - `${OUT_IMPL}/generated_impl.c`
 
-## 9. Validate Generated Output
+## 9. Reproduce Strict `uavcan` Rust Generation (`std`)
 
-### 9.1 Header count parity
+```bash
+OUT_RUST="build/uavcan-rust-out-strict-verify"
+mkdir -p "${OUT_RUST}"
+
+./build/tools/dsdlc/dsdlc rust \
+  --root-namespace-dir public_regulated_data_types/uavcan \
+  --strict \
+  --out-dir "${OUT_RUST}" \
+  --rust-crate-name uavcan_dsdl_generated \
+  --rust-profile std
+```
+
+Expected result:
+
+- Exit code `0`
+- Generated crate files:
+  - `${OUT_RUST}/Cargo.toml`
+  - `${OUT_RUST}/src/lib.rs`
+  - `${OUT_RUST}/src/dsdl_runtime.rs`
+- One generated Rust type file per input `.dsdl` definition.
+
+Reserved future profile:
+
+- `--rust-profile no-std-alloc` currently returns a not-implemented error by
+  design. This is the carve-out seam for embedded/allocator-focused work.
+
+## 10. Validate Generated Output
+
+### 10.1 Header count parity
 
 ```bash
 find public_regulated_data_types/uavcan -name '*.dsdl' | wc -l
@@ -276,7 +308,7 @@ Expected:
 
 - Counts are equal.
 
-### 9.2 Ensure stubs are gone
+### 10.2 Ensure stubs are gone
 
 ```bash
 rg -n "dsdl_runtime_stub_" build/uavcan-out-strict-verify
@@ -286,7 +318,7 @@ Expected:
 
 - No matches.
 
-### 9.3 Compile-check all generated headers as C11, warning-clean
+### 10.3 Compile-check all generated headers as C11, warning-clean
 
 ```bash
 outdir="build/uavcan-out-strict-verify"
@@ -309,9 +341,21 @@ Expected:
 
 - Exit code `0`
 
-## 10. Common Development Tasks
+### 10.4 Rust type-file parity check
 
-### 10.1 Reconfigure after dependency changes
+```bash
+find public_regulated_data_types/uavcan -name '*.dsdl' | wc -l
+find build/uavcan-rust-out-strict-verify/src -name '*.rs' \
+  ! -name 'lib.rs' ! -name 'mod.rs' ! -name 'dsdl_runtime.rs' | wc -l
+```
+
+Expected:
+
+- Counts are equal.
+
+## 11. Common Development Tasks
+
+### 11.1 Reconfigure after dependency changes
 
 ```bash
 cmake --preset dev
@@ -325,39 +369,39 @@ cmake -S . -B build -G Ninja \
   -DMLIR_DIR=...
 ```
 
-### 10.2 Fast rebuild of one target
+### 11.2 Fast rebuild of one target
 
 ```bash
 cmake --build build --target dsdlc -j
 ```
 
-### 10.3 Inspect CLI options
+### 11.3 Inspect CLI options
 
 ```bash
 ./build/tools/dsdlc/dsdlc
 ./build/tools/dsdl-opt/dsdl-opt --help
 ```
 
-### 10.4 Run complete automation in one command
+### 11.4 Run complete automation in one command
 
 ```bash
 cmake --workflow --preset full
 ```
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
-### 11.1 `Could not find LLVMConfig.cmake` / `MLIRConfig.cmake`
+### 12.1 `Could not find LLVMConfig.cmake` / `MLIRConfig.cmake`
 
 - Use `dev-homebrew` or `dev-llvm-env` workflow presets.
 - Or pass explicit `-DLLVM_DIR` and `-DMLIR_DIR` manually.
 - Confirm paths contain the corresponding config files.
 
-### 11.2 lit tests not running
+### 12.2 lit tests not running
 
 - Install `llvm-lit` or Python `lit`.
 - Re-run configure so CMake can detect lit tooling.
 
-### 11.3 `dsdlc` strict generation fails
+### 12.3 `dsdlc` strict generation fails
 
 Checklist:
 
@@ -368,18 +412,23 @@ Checklist:
 - Use strict explicitly while diagnosing:
   - `--strict`
 
-### 11.4 Header compile-check failures
+### 12.4 Header compile-check failures
 
 - Ensure include root is the generation root:
   - `-I build/uavcan-out-strict-verify`
 - Confirm `dsdl_runtime.h` exists in output root.
 
-### 11.5 Workflow preset not found
+### 12.5 Workflow preset not found
 
 - Ensure your CMake supports workflow presets (`>= 3.25`).
 - Check `cmake --list-presets=all` to confirm preset names.
 
-## 12. Commit and PR Expectations
+### 12.6 Rust profile selection
+
+- Use `--rust-profile std` for current production path.
+- `--rust-profile no-std-alloc` is intentionally not implemented yet.
+
+## 13. Commit and PR Expectations
 
 Please include in PR description:
 
