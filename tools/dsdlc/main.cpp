@@ -1,4 +1,5 @@
 #include "llvmdsdl/CodeGen/CEmitter.h"
+#include "llvmdsdl/CodeGen/CppEmitter.h"
 #include "llvmdsdl/CodeGen/RustEmitter.h"
 #include "llvmdsdl/Frontend/ASTPrinter.h"
 #include "llvmdsdl/Frontend/Parser.h"
@@ -22,15 +23,14 @@
 namespace {
 
 void printUsage() {
-  llvm::errs() << "Usage: dsdlc <ast|mlir|c|rust> --root-namespace-dir <dir> [options]\n"
+  llvm::errs() << "Usage: dsdlc <ast|mlir|c|cpp|rust> --root-namespace-dir <dir> [options]\n"
                << "Options:\n"
                << "  --root-namespace-dir <dir>   Primary namespace root (repeatable)\n"
                << "  --lookup-dir <dir>           Dependency namespace root (repeatable)\n"
-               << "  --out-dir <dir>              Output directory for 'c'/'rust' mode\n"
+               << "  --out-dir <dir>              Output directory for 'c'/'cpp'/'rust' mode\n"
                << "  --compat-mode                Enable compatibility mode\n"
                << "  --strict                     Enable strict mode (default)\n"
-               << "  --emit-impl-tu               Emit generated_impl.c from MLIR/EmitC\n"
-               << "  --emit-runtime-header-only   Emit header-only runtime/codegen (default)\n"
+               << "  --cpp-profile <std|pmr|both> C++ backend profile (default: both)\n"
                << "  --rust-crate-name <name>     Rust crate/package name (rust mode)\n"
                << "  --rust-profile <std|no-std-alloc> Rust backend profile (default: std)\n";
 }
@@ -64,8 +64,7 @@ int main(int argc, char **argv) {
   std::string outDir;
   bool strict = true;
   bool compatMode = false;
-  bool emitImplTU = false;
-  bool emitHeaderOnly = true;
+  llvmdsdl::CppProfile cppProfile = llvmdsdl::CppProfile::Both;
   std::string rustCrateName = "llvmdsdl_generated";
   llvmdsdl::RustProfile rustProfile = llvmdsdl::RustProfile::Std;
 
@@ -92,10 +91,19 @@ int main(int argc, char **argv) {
     } else if (arg == "--strict") {
       strict = true;
       compatMode = false;
-    } else if (arg == "--emit-impl-tu") {
-      emitImplTU = true;
-    } else if (arg == "--emit-runtime-header-only") {
-      emitHeaderOnly = true;
+    } else if (arg == "--cpp-profile") {
+      const auto value = requireValue(arg);
+      if (value == "std") {
+        cppProfile = llvmdsdl::CppProfile::Std;
+      } else if (value == "pmr") {
+        cppProfile = llvmdsdl::CppProfile::Pmr;
+      } else if (value == "both") {
+        cppProfile = llvmdsdl::CppProfile::Both;
+      } else {
+        llvm::errs() << "Invalid --cpp-profile value: " << value << "\n";
+        printUsage();
+        return 1;
+      }
     } else if (arg == "--rust-crate-name") {
       rustCrateName = requireValue(arg);
     } else if (arg == "--rust-profile") {
@@ -178,11 +186,29 @@ int main(int argc, char **argv) {
     }
     llvmdsdl::CEmitOptions options;
     options.outDir = outDir;
-    options.emitImplTranslationUnit = emitImplTU;
-    options.emitHeaderOnly = emitHeaderOnly;
 
     if (llvm::Error err = llvmdsdl::emitC(*semantic, *mlirModule, options,
                                           diagnostics)) {
+      llvm::errs() << llvm::toString(std::move(err)) << "\n";
+      printDiagnostics(diagnostics);
+      return 1;
+    }
+
+    printDiagnostics(diagnostics);
+    return diagnostics.hasErrors() ? 1 : 0;
+  }
+
+  if (command == "cpp") {
+    if (outDir.empty()) {
+      llvm::errs() << "--out-dir is required for 'cpp' command\n";
+      return 1;
+    }
+    llvmdsdl::CppEmitOptions options;
+    options.outDir = outDir;
+    options.profile = cppProfile;
+
+    if (llvm::Error err = llvmdsdl::emitCpp(*semantic, *mlirModule, options,
+                                            diagnostics)) {
       llvm::errs() << llvm::toString(std::move(err)) << "\n";
       printDiagnostics(diagnostics);
       return 1;

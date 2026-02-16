@@ -5,6 +5,8 @@
 #include "mlir/IR/Builders.h"
 
 #include <algorithm>
+#include <cctype>
+#include <set>
 
 namespace llvmdsdl {
 namespace {
@@ -22,6 +24,135 @@ std::string mangleSymbol(std::string fullName, std::uint32_t major,
 
 std::string fieldKind(const SemanticField &f) {
   return f.isPadding ? "padding" : "field";
+}
+
+bool isCKeyword(const std::string &name) {
+  static const std::set<std::string> kKeywords = {
+      "auto",       "break",      "case",      "char",      "const",
+      "continue",   "default",    "do",        "double",    "else",
+      "enum",       "extern",     "float",     "for",       "goto",
+      "if",         "inline",     "int",       "long",      "register",
+      "restrict",   "return",     "short",     "signed",    "sizeof",
+      "static",     "struct",     "switch",    "typedef",   "union",
+      "unsigned",   "void",       "volatile",  "while",     "_Alignas",
+      "_Alignof",   "_Atomic",    "_Bool",     "_Complex",  "_Generic",
+      "_Imaginary", "_Noreturn",  "_Static_assert", "_Thread_local", "true",
+      "false"};
+  return kKeywords.contains(name);
+}
+
+std::string sanitizeIdentifier(std::string name) {
+  if (name.empty()) {
+    return "_";
+  }
+  for (char &c : name) {
+    if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_')) {
+      c = '_';
+    }
+  }
+  if (std::isdigit(static_cast<unsigned char>(name.front()))) {
+    name.insert(name.begin(), '_');
+  }
+  if (isCKeyword(name)) {
+    name += '_';
+  }
+  return name;
+}
+
+std::string cTypeNameFromInfo(const DiscoveredDefinition &info) {
+  std::string out;
+  for (std::size_t i = 0; i < info.namespaceComponents.size(); ++i) {
+    if (i > 0) {
+      out += "__";
+    }
+    out += sanitizeIdentifier(info.namespaceComponents[i]);
+  }
+  if (!out.empty()) {
+    out += "__";
+  }
+  out += sanitizeIdentifier(info.shortName);
+  return out;
+}
+
+std::string cTypeNameFromRef(const SemanticTypeRef &ref) {
+  std::string out;
+  for (std::size_t i = 0; i < ref.namespaceComponents.size(); ++i) {
+    if (i > 0) {
+      out += "__";
+    }
+    out += sanitizeIdentifier(ref.namespaceComponents[i]);
+  }
+  if (!out.empty()) {
+    out += "__";
+  }
+  out += sanitizeIdentifier(ref.shortName);
+  return out;
+}
+
+std::string headerFileName(const DiscoveredDefinition &info) {
+  return info.shortName + "_" + std::to_string(info.majorVersion) + "_" +
+         std::to_string(info.minorVersion) + ".h";
+}
+
+std::string relativeHeaderPath(const DiscoveredDefinition &info) {
+  std::string path;
+  for (const auto &ns : info.namespaceComponents) {
+    if (!path.empty()) {
+      path += "/";
+    }
+    path += ns;
+  }
+  if (!path.empty()) {
+    path += "/";
+  }
+  path += headerFileName(info);
+  return path;
+}
+
+llvm::StringRef scalarCategoryName(SemanticScalarCategory category) {
+  switch (category) {
+  case SemanticScalarCategory::Bool:
+    return "bool";
+  case SemanticScalarCategory::Byte:
+    return "byte";
+  case SemanticScalarCategory::Utf8:
+    return "utf8";
+  case SemanticScalarCategory::UnsignedInt:
+    return "unsigned";
+  case SemanticScalarCategory::SignedInt:
+    return "signed";
+  case SemanticScalarCategory::Float:
+    return "float";
+  case SemanticScalarCategory::Void:
+    return "void";
+  case SemanticScalarCategory::Composite:
+    return "composite";
+  }
+  return "void";
+}
+
+llvm::StringRef castModeName(CastMode castMode) {
+  switch (castMode) {
+  case CastMode::Saturated:
+    return "saturated";
+  case CastMode::Truncated:
+    return "truncated";
+  }
+  return "saturated";
+}
+
+llvm::StringRef arrayKindName(ArrayKind arrayKind) {
+  switch (arrayKind) {
+  case ArrayKind::None:
+    return "none";
+  case ArrayKind::Fixed:
+    return "fixed";
+  case ArrayKind::VariableInclusive:
+    return "variable_inclusive";
+  case ArrayKind::VariableExclusive:
+    return "variable_exclusive";
+  }
+  return "none";
 }
 
 } // namespace
@@ -42,6 +173,10 @@ lowerToMLIR(const SemanticModule &module, mlir::MLIRContext &context,
                        builder.getStringAttr(mangleSymbol(
                            def.info.fullName, def.info.majorVersion,
                            def.info.minorVersion)));
+    state.addAttribute("c_type_name",
+                       builder.getStringAttr(cTypeNameFromInfo(def.info)));
+    state.addAttribute("header_path",
+                       builder.getStringAttr(relativeHeaderPath(def.info)));
     state.addAttribute("full_name", builder.getStringAttr(def.info.fullName));
     state.addAttribute("major", builder.getI32IntegerAttr(def.info.majorVersion));
     state.addAttribute("minor", builder.getI32IntegerAttr(def.info.minorVersion));
@@ -72,9 +207,21 @@ lowerToMLIR(const SemanticModule &module, mlir::MLIRContext &context,
 
     auto emitSection = [&](const SemanticSection &section,
                            llvm::StringRef sectionName) {
+      const std::string baseCTypeName = cTypeNameFromInfo(def.info);
+      std::string sectionCTypeName = baseCTypeName;
+      if (def.isService) {
+        if (sectionName == "request") {
+          sectionCTypeName += "__Request";
+        } else if (sectionName == "response") {
+          sectionCTypeName += "__Response";
+        }
+      }
+
       for (const auto &field : section.fields) {
         mlir::OperationState fieldState(loc, "dsdl.field");
         fieldState.addAttribute("name", builder.getStringAttr(field.name));
+        fieldState.addAttribute(
+            "c_name", builder.getStringAttr(sanitizeIdentifier(field.name)));
         fieldState.addAttribute("type_name",
                                 builder.getStringAttr(field.type.str()));
         if (field.isPadding) {
@@ -103,6 +250,36 @@ lowerToMLIR(const SemanticModule &module, mlir::MLIRContext &context,
       if (!sectionName.empty()) {
         planState.addAttribute("section", builder.getStringAttr(sectionName));
       }
+      planState.addAttribute("c_type_name",
+                             builder.getStringAttr(sectionCTypeName));
+      planState.addAttribute("c_serialize_symbol",
+                             builder.getStringAttr(sectionCTypeName +
+                                                   "__serialize_"));
+      planState.addAttribute("c_deserialize_symbol",
+                             builder.getStringAttr(sectionCTypeName +
+                                                   "__deserialize_"));
+      planState.addAttribute("min_bits",
+                             builder.getI64IntegerAttr(section.minBitLength));
+      planState.addAttribute("max_bits",
+                             builder.getI64IntegerAttr(section.maxBitLength));
+      if (section.isUnion) {
+        planState.addAttribute("is_union", builder.getUnitAttr());
+        if (!section.fields.empty()) {
+          planState.addAttribute(
+              "union_tag_bits",
+              builder.getI64IntegerAttr(section.fields.front().unionTagBits));
+        }
+        planState.addAttribute(
+            "union_option_count",
+            builder.getI64IntegerAttr(static_cast<std::int64_t>(
+                std::count_if(section.fields.begin(), section.fields.end(),
+                              [](const SemanticField &field) {
+                                return !field.isPadding;
+                              }))));
+      }
+      if (section.fixedSize) {
+        planState.addAttribute("fixed_size", builder.getUnitAttr());
+      }
       planState.addRegion();
       auto *plan = builder.create(planState);
       auto &planRegion = plan->getRegion(0);
@@ -111,13 +288,62 @@ lowerToMLIR(const SemanticModule &module, mlir::MLIRContext &context,
       builder.setInsertionPointToStart(&planRegion.front());
       for (const auto &field : section.fields) {
         mlir::OperationState alignState(loc, "dsdl.align");
-        alignState.addAttribute("bits", builder.getI32IntegerAttr(8));
+        alignState.addAttribute(
+            "bits",
+            builder.getI32IntegerAttr(
+                static_cast<std::int32_t>(field.resolvedType.alignmentBits)));
         (void)builder.create(alignState);
 
         mlir::OperationState ioState(loc, "dsdl.io");
         ioState.addAttribute("kind", builder.getStringAttr(fieldKind(field)));
         ioState.addAttribute("name", builder.getStringAttr(field.name));
+        ioState.addAttribute(
+            "c_name", builder.getStringAttr(sanitizeIdentifier(field.name)));
         ioState.addAttribute("type_name", builder.getStringAttr(field.type.str()));
+        ioState.addAttribute(
+            "scalar_category",
+            builder.getStringAttr(
+                scalarCategoryName(field.resolvedType.scalarCategory)));
+        ioState.addAttribute(
+            "cast_mode",
+            builder.getStringAttr(castModeName(field.resolvedType.castMode)));
+        ioState.addAttribute(
+            "array_kind",
+            builder.getStringAttr(arrayKindName(field.resolvedType.arrayKind)));
+        ioState.addAttribute("bit_length",
+                             builder.getI64IntegerAttr(
+                                 static_cast<std::int64_t>(
+                                     field.resolvedType.bitLength)));
+        ioState.addAttribute("array_capacity",
+                             builder.getI64IntegerAttr(
+                                 field.resolvedType.arrayCapacity));
+        ioState.addAttribute("array_length_prefix_bits",
+                             builder.getI64IntegerAttr(
+                                 field.resolvedType.arrayLengthPrefixBits));
+        ioState.addAttribute("alignment_bits",
+                             builder.getI64IntegerAttr(
+                                 field.resolvedType.alignmentBits));
+        ioState.addAttribute(
+            "union_option_index",
+            builder.getI64IntegerAttr(
+                static_cast<std::int64_t>(field.unionOptionIndex)));
+        ioState.addAttribute(
+            "union_tag_bits",
+            builder.getI64IntegerAttr(
+                static_cast<std::int64_t>(field.unionTagBits)));
+        if (field.resolvedType.compositeType) {
+          const auto &ref = *field.resolvedType.compositeType;
+          ioState.addAttribute("composite_full_name",
+                               builder.getStringAttr(ref.fullName));
+          ioState.addAttribute("composite_c_type_name",
+                               builder.getStringAttr(cTypeNameFromRef(ref)));
+        }
+        ioState.addAttribute("min_bits",
+                             builder.getI64IntegerAttr(
+                                 field.resolvedType.bitLengthSet.min()));
+        ioState.addAttribute("max_bits",
+                             builder.getI64IntegerAttr(
+                                 field.resolvedType.bitLengthSet.max()));
         (void)builder.create(ioState);
       }
 

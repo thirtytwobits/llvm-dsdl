@@ -9,8 +9,12 @@ It currently provides:
 - A custom MLIR DSDL dialect and lowering pipeline hooks.
 - C11 code generation (`dsdlc c`) with:
   - Per-type headers mirroring namespace directories.
-  - Header-only, inline serialization/deserialization bodies.
+  - Declarations/wrappers in headers plus per-definition `.c` SerDes implementations generated via MLIR/EmitC lowering.
   - A local header-only runtime (`dsdl_runtime.h`) with bit-level primitives.
+- C++23 code generation (`dsdlc cpp`) with:
+  - Per-type headers (`.hpp`) mirroring namespace directories.
+  - Header-only inline SerDes for both `std` and allocator-oriented `pmr` profiles.
+  - A C++ runtime wrapper (`dsdl_runtime.hpp`) over the core bit-level runtime.
 - Rust code generation (`dsdlc rust`) with:
   - A generated crate layout (`Cargo.toml`, `src/lib.rs`, `src/**`).
   - Per-type Rust data types and inline SerDes methods.
@@ -23,7 +27,7 @@ It currently provides:
 
 - `include/llvmdsdl`: public C++ headers.
 - `lib`: frontend, semantics, IR, lowering, transforms, codegen.
-- `tools/dsdlc`: CLI driver (`ast`, `mlir`, `c`, `rust`).
+- `tools/dsdlc`: CLI driver (`ast`, `mlir`, `c`, `cpp`, `rust`).
 - `tools/dsdl-opt`: MLIR pass driver for the DSDL dialect.
 - `runtime/dsdl_runtime.h`: generated C runtime support header.
 - `test/unit`: unit tests.
@@ -78,7 +82,7 @@ Fast dev workflow (configure + build + fast tests):
 cmake --workflow --preset dev
 ```
 
-Full verification workflow (includes strict `uavcan` C and Rust integration tests):
+Full verification workflow (includes strict `uavcan` C, C++, and Rust integration tests):
 
 ```bash
 cmake --workflow --preset full
@@ -103,6 +107,44 @@ export LLVM_DIR=/path/to/llvm/lib/cmake/llvm
 export MLIR_DIR=/path/to/llvm/lib/cmake/mlir
 cmake --workflow --preset dev-llvm-env
 ```
+
+## CMake Generation Targets
+
+When the `uavcan` namespace root exists (auto-detected from either
+`public_regulated_dsdl/uavcan` or `public_regulated_data_types/uavcan`),
+CMake provides first-class generation targets per language/profile:
+
+- `generate-uavcan-c`
+- `generate-uavcan-cpp-std`
+- `generate-uavcan-cpp-pmr`
+- `generate-uavcan-cpp-both`
+- `generate-uavcan-rust-std`
+- `generate-uavcan-all` (aggregate)
+
+Run after configure/build:
+
+```bash
+cmake --build --preset build-dev-homebrew --target generate-uavcan-c
+cmake --build --preset build-dev-homebrew --target generate-uavcan-cpp-std
+cmake --build --preset build-dev-homebrew --target generate-uavcan-cpp-pmr
+cmake --build --preset build-dev-homebrew --target generate-uavcan-rust-std
+cmake --build --preset build-dev-homebrew --target generate-uavcan-all
+```
+
+Generated output paths are under `<build-dir>/generated/uavcan`:
+
+- `<build-dir>/generated/uavcan/c`
+- `<build-dir>/generated/uavcan/cpp-std`
+- `<build-dir>/generated/uavcan/cpp-pmr`
+- `<build-dir>/generated/uavcan/cpp-both`
+- `<build-dir>/generated/uavcan/rust-std`
+
+Notes:
+
+- `generate-uavcan-c` emits both per-type headers and per-definition `.c`
+  implementation translation units under namespace folders
+  (for example `uavcan/node/Heartbeat_1_0.c`) and compile-check all generated
+  `.c` files with `-std=c11 -Wall -Wextra -Werror`.
 
 ## CLI Usage
 
@@ -132,8 +174,56 @@ cmake --workflow --preset dev-llvm-env
 Optional:
 
 - `--compat-mode`: relax strictness for compatibility behavior.
-- `--emit-impl-tu`: emit `generated_impl.c` from the MLIR/EmitC pipeline.
-- `--emit-runtime-header-only`: keep header-only runtime/codegen path enabled.
+- No additional C mode flags are required: `dsdlc c` always emits headers and
+  per-definition implementation translation units.
+
+### C++23 header generation (`std`/`pmr`)
+
+Generate both profiles:
+
+```bash
+./build/tools/dsdlc/dsdlc cpp \
+  --root-namespace-dir public_regulated_data_types/uavcan \
+  --strict \
+  --cpp-profile both \
+  --out-dir build/uavcan-cpp-out
+```
+
+Generate only one profile:
+
+```bash
+./build/tools/dsdlc/dsdlc cpp \
+  --root-namespace-dir public_regulated_data_types/uavcan \
+  --strict \
+  --cpp-profile std \
+  --out-dir build/uavcan-cpp-std-out
+```
+
+```bash
+./build/tools/dsdlc/dsdlc cpp \
+  --root-namespace-dir public_regulated_data_types/uavcan \
+  --strict \
+  --cpp-profile pmr \
+  --out-dir build/uavcan-cpp-pmr-out
+```
+
+Profile behavior:
+
+- `std`: generated types use `std::array` for fixed arrays and `std::vector`
+  for variable-length arrays.
+- `pmr`: same wire behavior, but variable-length arrays use `std::pmr::vector`
+  and allocator handoff is available through
+  `llvmdsdl::cpp::MemoryResource*` on generated types/SerDes entry points.
+- `both`: emits two trees under `<out>/std` and `<out>/pmr`.
+
+Naming style:
+
+- Generated C++ types are always inside C++ namespaces derived from DSDL
+  namespaces.
+- Example: `uavcan__node__Heartbeat` is emitted as `uavcan::node::Heartbeat`.
+- When multiple versions of the same type coexist in one namespace, version
+  suffixes are added to keep names unique (e.g. `uavcan::file::Path_1_0`,
+  `uavcan::file::Path_2_0`).
 
 ### Rust crate generation (`std` profile)
 
@@ -178,4 +268,5 @@ Current milestone supports generating all types under:
 - `public_regulated_data_types/uavcan`
 
 with strict mode enabled and no `dsdl_runtime_stub_*` references in generated
-headers, plus strict Rust crate generation in `std` mode.
+headers, strict C++23 generation (`std` + `pmr` profiles), plus strict Rust
+crate generation in `std` mode.

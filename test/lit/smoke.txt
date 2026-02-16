@@ -1,8 +1,8 @@
 # RUN: %dsdlc ast --root-namespace-dir %S/fixtures | FileCheck %s --check-prefix=AST
 # RUN: %dsdlc mlir --root-namespace-dir %S/fixtures | FileCheck %s --check-prefix=MLIR
 # RUN: rm -rf %t && mkdir -p %t && %dsdlc c --root-namespace-dir %S/fixtures --out-dir %t
-# RUN: test -f %t/generated_impl.c
-# RUN: test -f %t/vendor/Type_1_0.h
+# RUN: test -f %t/fixtures/vendor/Type_1_0.h
+# RUN: test -f %t/fixtures/vendor/Type_1_0.c
 
-# AST: definition "vendor.Type.1.0"
+# AST: definition "fixtures.vendor.Type.1.0"
 # MLIR: dsdl.schema

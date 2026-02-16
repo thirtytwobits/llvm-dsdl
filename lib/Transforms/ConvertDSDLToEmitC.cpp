@@ -1,12 +1,1104 @@
 #include "llvmdsdl/Transforms/Passes.h"
 
+#include "mlir/Dialect/EmitC/IR/EmitC.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/Pass/Pass.h"
 
+#include <algorithm>
+#include <cstdint>
+#include <set>
+#include <sstream>
+#include <string>
 #include <vector>
 
 namespace llvmdsdl {
 namespace {
+
+std::int64_t nonNegative(std::int64_t value) {
+  return std::max<std::int64_t>(value, 0);
+}
+
+bool isVariableArrayKind(llvm::StringRef arrayKind) {
+  return arrayKind == "variable_inclusive" || arrayKind == "variable_exclusive";
+}
+
+bool isSupportedArrayKind(llvm::StringRef arrayKind) {
+  return arrayKind == "none" || arrayKind == "fixed" ||
+         isVariableArrayKind(arrayKind);
+}
+
+std::int64_t inferPlanBits(mlir::Operation *plan, llvm::StringRef attrName) {
+  const std::string loweredName = "lowered_" + attrName.str();
+  if (auto attr = plan->getAttrOfType<mlir::IntegerAttr>(loweredName)) {
+    return nonNegative(attr.getInt());
+  }
+  if (auto attr = plan->getAttrOfType<mlir::IntegerAttr>(attrName)) {
+    return nonNegative(attr.getInt());
+  }
+  std::int64_t sum = 0;
+  if (plan->getNumRegions() == 0 || plan->getRegion(0).empty()) {
+    return 0;
+  }
+  for (mlir::Operation &op : plan->getRegion(0).front()) {
+    if (op.getName().getStringRef() != "dsdl.io") {
+      continue;
+    }
+    if (attrName == "max_bits") {
+      if (auto bits = op.getAttrOfType<mlir::IntegerAttr>("lowered_bits")) {
+        sum += nonNegative(bits.getInt());
+        continue;
+      }
+    }
+    if (auto bits = op.getAttrOfType<mlir::IntegerAttr>(attrName)) {
+      sum += nonNegative(bits.getInt());
+    }
+  }
+  return sum;
+}
+
+std::int64_t ioStepBits(mlir::Operation *ioOp) {
+  if (auto bits = ioOp->getAttrOfType<mlir::IntegerAttr>("lowered_bits")) {
+    return nonNegative(bits.getInt());
+  }
+  if (auto bits = ioOp->getAttrOfType<mlir::IntegerAttr>("max_bits")) {
+    return nonNegative(bits.getInt());
+  }
+  return 0;
+}
+
+std::string sectionSuffix(llvm::StringRef sectionName) {
+  if (sectionName == "request") {
+    return "__request";
+  }
+  if (sectionName == "response") {
+    return "__response";
+  }
+  return "";
+}
+
+enum class PlanStepKind { Align, Padding, Field };
+
+struct PlanStep final {
+  PlanStepKind kind{PlanStepKind::Field};
+  std::int64_t bits{0};
+  std::string name;
+  std::string cName;
+  std::string scalarCategory;
+  std::string castMode;
+  std::string arrayKind;
+  std::int64_t bitLength{0};
+  std::int64_t arrayCapacity{0};
+  std::int64_t arrayLengthPrefixBits{0};
+  std::int64_t alignmentBits{1};
+  std::int64_t unionOptionIndex{0};
+  std::int64_t unionTagBits{0};
+  std::string compositeCTypeName;
+};
+
+std::vector<PlanStep> collectPlanSteps(mlir::Operation *plan) {
+  std::vector<PlanStep> steps;
+  if (plan->getNumRegions() == 0 || plan->getRegion(0).empty()) {
+    return steps;
+  }
+  for (mlir::Operation &op : plan->getRegion(0).front()) {
+    if (op.getName().getStringRef() == "dsdl.align") {
+      const auto bits = op.getAttrOfType<mlir::IntegerAttr>("bits");
+      PlanStep alignStep;
+      alignStep.kind = PlanStepKind::Align;
+      alignStep.bits = bits ? nonNegative(bits.getInt()) : 1;
+      steps.push_back(std::move(alignStep));
+      continue;
+    }
+    if (op.getName().getStringRef() != "dsdl.io") {
+      continue;
+    }
+
+    const std::int64_t bits = ioStepBits(&op);
+    const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
+    const auto nameAttr = op.getAttrOfType<mlir::StringAttr>("name");
+    const auto kind = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
+    if (kind == "padding") {
+      steps.push_back(PlanStep{PlanStepKind::Padding,
+                               bits,
+                               nameAttr ? nameAttr.getValue().str()
+                                        : std::string{},
+                               op.getAttrOfType<mlir::StringAttr>("c_name")
+                                   ? op.getAttrOfType<mlir::StringAttr>("c_name")
+                                         .getValue()
+                                         .str()
+                                   : std::string{},
+                               op.getAttrOfType<mlir::StringAttr>("scalar_category")
+                                   ? op.getAttrOfType<mlir::StringAttr>(
+                                         "scalar_category")
+                                         .getValue()
+                                         .str()
+                                   : std::string{},
+                               op.getAttrOfType<mlir::StringAttr>("cast_mode")
+                                   ? op.getAttrOfType<mlir::StringAttr>("cast_mode")
+                                         .getValue()
+                                         .str()
+                                   : std::string{},
+                               op.getAttrOfType<mlir::StringAttr>("array_kind")
+                                   ? op.getAttrOfType<mlir::StringAttr>("array_kind")
+                                         .getValue()
+                                         .str()
+                                   : std::string{},
+                               op.getAttrOfType<mlir::IntegerAttr>("bit_length")
+                                   ? op.getAttrOfType<mlir::IntegerAttr>(
+                                         "bit_length")
+                                         .getInt()
+                                   : 0,
+                               op.getAttrOfType<mlir::IntegerAttr>("array_capacity")
+                                   ? op.getAttrOfType<mlir::IntegerAttr>(
+                                         "array_capacity")
+                                         .getInt()
+                                   : 0,
+                               op.getAttrOfType<mlir::IntegerAttr>(
+                                   "array_length_prefix_bits")
+                                   ? op.getAttrOfType<mlir::IntegerAttr>(
+                                         "array_length_prefix_bits")
+                                         .getInt()
+                                   : 0,
+                               op.getAttrOfType<mlir::IntegerAttr>("alignment_bits")
+                                   ? op.getAttrOfType<mlir::IntegerAttr>(
+                                         "alignment_bits")
+                                         .getInt()
+                                   : 1,
+                               op.getAttrOfType<mlir::IntegerAttr>(
+                                   "union_option_index")
+                                   ? op.getAttrOfType<mlir::IntegerAttr>(
+                                         "union_option_index")
+                                         .getInt()
+                                   : 0,
+                               op.getAttrOfType<mlir::IntegerAttr>("union_tag_bits")
+                                   ? op.getAttrOfType<mlir::IntegerAttr>(
+                                         "union_tag_bits")
+                                         .getInt()
+                                   : 0,
+                               op.getAttrOfType<mlir::StringAttr>(
+                                   "composite_c_type_name")
+                                   ? op.getAttrOfType<mlir::StringAttr>(
+                                         "composite_c_type_name")
+                                         .getValue()
+                                         .str()
+                                   : std::string{}});
+    } else {
+      steps.push_back(PlanStep{PlanStepKind::Field,
+                               bits,
+                               nameAttr ? nameAttr.getValue().str()
+                                        : std::string{},
+                               op.getAttrOfType<mlir::StringAttr>("c_name")
+                                   ? op.getAttrOfType<mlir::StringAttr>("c_name")
+                                         .getValue()
+                                         .str()
+                                   : std::string{},
+                               op.getAttrOfType<mlir::StringAttr>("scalar_category")
+                                   ? op.getAttrOfType<mlir::StringAttr>(
+                                         "scalar_category")
+                                         .getValue()
+                                         .str()
+                                   : std::string{},
+                               op.getAttrOfType<mlir::StringAttr>("cast_mode")
+                                   ? op.getAttrOfType<mlir::StringAttr>("cast_mode")
+                                         .getValue()
+                                         .str()
+                                   : std::string{},
+                               op.getAttrOfType<mlir::StringAttr>("array_kind")
+                                   ? op.getAttrOfType<mlir::StringAttr>("array_kind")
+                                         .getValue()
+                                         .str()
+                                   : std::string{},
+                               op.getAttrOfType<mlir::IntegerAttr>("bit_length")
+                                   ? op.getAttrOfType<mlir::IntegerAttr>(
+                                         "bit_length")
+                                         .getInt()
+                                   : 0,
+                               op.getAttrOfType<mlir::IntegerAttr>("array_capacity")
+                                   ? op.getAttrOfType<mlir::IntegerAttr>(
+                                         "array_capacity")
+                                         .getInt()
+                                   : 0,
+                               op.getAttrOfType<mlir::IntegerAttr>(
+                                   "array_length_prefix_bits")
+                                   ? op.getAttrOfType<mlir::IntegerAttr>(
+                                         "array_length_prefix_bits")
+                                         .getInt()
+                                   : 0,
+                               op.getAttrOfType<mlir::IntegerAttr>("alignment_bits")
+                                   ? op.getAttrOfType<mlir::IntegerAttr>(
+                                         "alignment_bits")
+                                         .getInt()
+                                   : 1,
+                               op.getAttrOfType<mlir::IntegerAttr>(
+                                   "union_option_index")
+                                   ? op.getAttrOfType<mlir::IntegerAttr>(
+                                         "union_option_index")
+                                         .getInt()
+                                   : 0,
+                               op.getAttrOfType<mlir::IntegerAttr>("union_tag_bits")
+                                   ? op.getAttrOfType<mlir::IntegerAttr>(
+                                         "union_tag_bits")
+                                         .getInt()
+                                   : 0,
+                               op.getAttrOfType<mlir::StringAttr>(
+                                   "composite_c_type_name")
+                                   ? op.getAttrOfType<mlir::StringAttr>(
+                                         "composite_c_type_name")
+                                         .getValue()
+                                         .str()
+                                   : std::string{}});
+    }
+  }
+  return steps;
+}
+
+std::string renderGenericSerializeFunction(
+    llvm::StringRef functionName, llvm::StringRef cTypeName,
+    llvm::StringRef cSerializeSymbol, llvm::StringRef fullName,
+    llvm::StringRef sectionName, std::int64_t minBits, std::int64_t maxBits,
+    const std::vector<PlanStep> &steps) {
+  const std::string functionNameText = functionName.str();
+  const std::string cTypeNameText = cTypeName.str();
+  const std::string cSerializeSymbolText = cSerializeSymbol.str();
+  const std::string fullNameText = fullName.str();
+  const std::string sectionNameText = sectionName.str();
+  std::ostringstream out;
+  if (cTypeNameText.empty()) {
+    out << "int8_t " << functionNameText
+        << "(const void* obj, uint8_t* buffer, size_t* const "
+           "inout_buffer_size_bytes)\n";
+  } else {
+    out << "int8_t " << functionNameText << "(const " << cTypeNameText
+        << "* const obj, uint8_t* buffer, size_t* const inout_buffer_size_bytes)\n";
+  }
+  out << "{\n";
+  out << "  // IR section: " << fullNameText;
+  if (!sectionNameText.empty()) {
+    out << " (" << sectionNameText << ")";
+  }
+  out << ", min_bits=" << minBits << ", max_bits=" << maxBits << ".\n";
+  if (!cSerializeSymbolText.empty()) {
+    out << "  // Public C API symbol: " << cSerializeSymbolText << "\n";
+  }
+  out << "  // Generic bitstream mapping: non-padding fields are packed in\n";
+  out << "  // declaration order from/to object memory as contiguous bits.\n";
+  out << "  if ((obj == NULL) || (buffer == NULL) || (inout_buffer_size_bytes == "
+         "NULL)) {\n";
+  out << "    return -(int8_t)DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;\n";
+  out << "  }\n";
+  out << "  const uint8_t* const obj_bytes = (const uint8_t*)obj;\n";
+  out << "  const size_t capacity_bits = (*inout_buffer_size_bytes) * 8U;\n";
+  out << "  const size_t required_bits = " << nonNegative(maxBits) << "U;\n";
+  out << "  if (required_bits > capacity_bits) {\n";
+  out << "    return "
+         "-(int8_t)DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;\n";
+  out << "  }\n";
+  out << "  size_t offset_bits = 0U;\n";
+  out << "  size_t obj_offset_bits = 0U;\n";
+  out << "  (void)obj_bytes;\n";
+  out << "  (void)obj_offset_bits;\n";
+  for (std::size_t index = 0; index < steps.size(); ++index) {
+    const auto &step = steps[index];
+    if (step.kind == PlanStepKind::Align) {
+      if (step.bits > 1) {
+        out << "  offset_bits = ((offset_bits + " << (step.bits - 1)
+            << "U) / " << step.bits << "U) * " << step.bits << "U;\n";
+      }
+      continue;
+    }
+
+    out << "  {\n";
+    out << "    const size_t bits_" << index << " = " << nonNegative(step.bits)
+        << "U;\n";
+    if (!step.name.empty()) {
+      out << "    /* " << step.name << " */\n";
+    }
+    out << "    if (bits_" << index << " > 0U) {\n";
+    out << "      if (offset_bits + bits_" << index << " > capacity_bits) {\n";
+    out << "        return "
+           "-(int8_t)DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;\n";
+    out << "      }\n";
+    if (step.kind == PlanStepKind::Padding) {
+      out << "      for (size_t bit_" << index
+          << " = 0U; bit_" << index << " < bits_" << index
+          << "; ++bit_" << index << ") {\n";
+      out << "        dsdl_runtime_set_bit(buffer, *inout_buffer_size_bytes, "
+             "offset_bits + bit_"
+          << index << ", false);\n";
+      out << "      }\n";
+    } else {
+      out << "      dsdl_runtime_copy_bits(buffer, offset_bits, bits_" << index
+          << ", obj_bytes, obj_offset_bits);\n";
+      out << "      obj_offset_bits += bits_" << index << ";\n";
+    }
+    out << "      offset_bits += bits_" << index << ";\n";
+    out << "    }\n";
+    out << "  }\n";
+  }
+  out << "  *inout_buffer_size_bytes = (offset_bits + 7U) / 8U;\n";
+  out << "  return (int8_t)DSDL_RUNTIME_SUCCESS;\n";
+  out << "}\n";
+  return out.str();
+}
+
+std::string renderGenericDeserializeFunction(
+    llvm::StringRef functionName, llvm::StringRef cTypeName,
+    llvm::StringRef cDeserializeSymbol, llvm::StringRef fullName,
+    llvm::StringRef sectionName, std::int64_t minBits, std::int64_t maxBits,
+    const std::vector<PlanStep> &steps) {
+  const std::string functionNameText = functionName.str();
+  const std::string cTypeNameText = cTypeName.str();
+  const std::string cDeserializeSymbolText = cDeserializeSymbol.str();
+  const std::string fullNameText = fullName.str();
+  const std::string sectionNameText = sectionName.str();
+  std::ostringstream out;
+  if (cTypeNameText.empty()) {
+    out << "int8_t " << functionNameText
+        << "(void* out_obj, const uint8_t* buffer, size_t* const "
+           "inout_buffer_size_bytes)\n";
+  } else {
+    out << "int8_t " << functionNameText << "(" << cTypeNameText
+        << "* const out_obj, const uint8_t* buffer, size_t* const "
+           "inout_buffer_size_bytes)\n";
+  }
+  out << "{\n";
+  out << "  // IR section: " << fullNameText;
+  if (!sectionNameText.empty()) {
+    out << " (" << sectionNameText << ")";
+  }
+  out << ", min_bits=" << minBits << ", max_bits=" << maxBits << ".\n";
+  if (!cDeserializeSymbolText.empty()) {
+    out << "  // Public C API symbol: " << cDeserializeSymbolText << "\n";
+  }
+  out << "  // Generic bitstream mapping: non-padding fields are unpacked in\n";
+  out << "  // declaration order into object memory as contiguous bits.\n";
+  out << "  if ((out_obj == NULL) || (buffer == NULL) || (inout_buffer_size_bytes "
+         "== NULL)) {\n";
+  out << "    return -(int8_t)DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;\n";
+  out << "  }\n";
+  out << "  uint8_t* const obj_bytes = (uint8_t*)out_obj;\n";
+  out << "  const size_t capacity_bits = (*inout_buffer_size_bytes) * 8U;\n";
+  out << "  const size_t required_bits = " << nonNegative(maxBits) << "U;\n";
+  out << "  const size_t obj_capacity_bytes = (required_bits + 7U) / 8U;\n";
+  out << "  size_t offset_bits = 0U;\n";
+  out << "  size_t obj_offset_bits = 0U;\n";
+  out << "  (void)obj_bytes;\n";
+  out << "  (void)obj_capacity_bytes;\n";
+  out << "  (void)obj_offset_bits;\n";
+  for (std::size_t index = 0; index < steps.size(); ++index) {
+    const auto &step = steps[index];
+    if (step.kind == PlanStepKind::Align) {
+      if (step.bits > 1) {
+        out << "  offset_bits = ((offset_bits + " << (step.bits - 1)
+            << "U) / " << step.bits << "U) * " << step.bits << "U;\n";
+      }
+      continue;
+    }
+
+    out << "  {\n";
+    out << "    const size_t bits_" << index << " = " << nonNegative(step.bits)
+        << "U;\n";
+    if (!step.name.empty()) {
+      out << "    /* " << step.name << " */\n";
+    }
+    out << "    if (bits_" << index << " > 0U) {\n";
+    if (step.kind == PlanStepKind::Field) {
+      out << "      const size_t available_bits_" << index
+          << " = (offset_bits < capacity_bits) ? (capacity_bits - offset_bits) : "
+             "0U;\n";
+      out << "      const size_t copy_bits_" << index
+          << " = (available_bits_" << index << " < bits_" << index
+          << ") ? available_bits_" << index << " : bits_" << index << ";\n";
+      out << "      if (copy_bits_" << index << " > 0U) {\n";
+      out << "        dsdl_runtime_copy_bits(obj_bytes, obj_offset_bits, "
+             "copy_bits_"
+          << index << ", buffer, offset_bits);\n";
+      out << "      }\n";
+      out << "      if (copy_bits_" << index << " < bits_" << index << ") {\n";
+      out << "        const size_t zero_bits_" << index << " = bits_" << index
+          << " - copy_bits_" << index << ";\n";
+      out << "        for (size_t bit_" << index
+          << " = 0U; bit_" << index << " < zero_bits_" << index
+          << "; ++bit_" << index << ") {\n";
+      out << "          dsdl_runtime_set_bit(obj_bytes, obj_capacity_bytes, "
+             "obj_offset_bits + copy_bits_"
+          << index << " + bit_" << index << ", false);\n";
+      out << "        }\n";
+      out << "      }\n";
+      out << "      obj_offset_bits += bits_" << index << ";\n";
+    }
+    out << "      offset_bits += bits_" << index << ";\n";
+    out << "    }\n";
+    out << "  }\n";
+  }
+  out << "  const size_t consumed_bits = (offset_bits < capacity_bits) "
+         "? offset_bits : capacity_bits;\n";
+  out << "  *inout_buffer_size_bytes = consumed_bits / 8U;\n";
+  out << "  return (int8_t)DSDL_RUNTIME_SUCCESS;\n";
+  out << "}\n";
+  return out.str();
+}
+
+void emitLine(std::ostringstream &out, const int indent,
+              const std::string &line) {
+  for (int i = 0; i < indent; ++i) {
+    out << "  ";
+  }
+  out << line << "\n";
+}
+
+bool supportsTypedFieldStep(const PlanStep &step) {
+  if (step.kind != PlanStepKind::Field) {
+    return true;
+  }
+  if (step.cName.empty()) {
+    return false;
+  }
+
+  if (!isSupportedArrayKind(step.arrayKind)) {
+    return false;
+  }
+  if (step.arrayKind != "none") {
+    if (step.arrayCapacity < 0) {
+      return false;
+    }
+    if (isVariableArrayKind(step.arrayKind) &&
+        (step.arrayLengthPrefixBits <= 0 || step.arrayLengthPrefixBits > 64)) {
+      return false;
+    }
+  }
+
+  if (step.scalarCategory == "void") {
+    return false;
+  }
+
+  if (step.scalarCategory == "composite") {
+    return !step.compositeCTypeName.empty();
+  }
+  if (step.scalarCategory == "bool") {
+    return step.bitLength == 1;
+  }
+  if (step.scalarCategory == "byte") {
+    return step.bitLength == 8;
+  }
+  if (step.scalarCategory == "unsigned" || step.scalarCategory == "signed") {
+    return step.bitLength >= 1 && step.bitLength <= 64;
+  }
+  if (step.scalarCategory == "float") {
+    return step.bitLength == 16 || step.bitLength == 32 || step.bitLength == 64;
+  }
+  return false;
+}
+
+bool supportsTypedLowering(const std::vector<PlanStep> &steps, const bool isUnion,
+                           const std::int64_t unionTagBits) {
+  if (isUnion && (unionTagBits <= 0 || unionTagBits > 64)) {
+    return false;
+  }
+
+  std::set<std::int64_t> unionOptions;
+  for (const auto &step : steps) {
+    if (!supportsTypedFieldStep(step)) {
+      return false;
+    }
+    if (step.kind == PlanStepKind::Align && step.bits <= 0) {
+      return false;
+    }
+    if (isUnion && step.kind == PlanStepKind::Field) {
+      unionOptions.insert(step.unionOptionIndex);
+    }
+  }
+  if (isUnion && unionOptions.empty()) {
+    return false;
+  }
+  return true;
+}
+
+void emitAlign(std::ostringstream &out, const int indent,
+               const std::int64_t alignmentBits) {
+  if (alignmentBits <= 1) {
+    return;
+  }
+  emitLine(out, indent,
+           "offset_bits = ((offset_bits + " +
+               std::to_string(alignmentBits - 1) + "U) / " +
+               std::to_string(alignmentBits) + "U) * " +
+               std::to_string(alignmentBits) + "U;");
+}
+
+std::string unsignedGetterForBits(const std::int64_t bits) {
+  if (bits <= 8) {
+    return "dsdl_runtime_get_u8";
+  }
+  if (bits <= 16) {
+    return "dsdl_runtime_get_u16";
+  }
+  if (bits <= 32) {
+    return "dsdl_runtime_get_u32";
+  }
+  return "dsdl_runtime_get_u64";
+}
+
+std::string signedGetterForBits(const std::int64_t bits) {
+  if (bits <= 8) {
+    return "dsdl_runtime_get_i8";
+  }
+  if (bits <= 16) {
+    return "dsdl_runtime_get_i16";
+  }
+  if (bits <= 32) {
+    return "dsdl_runtime_get_i32";
+  }
+  return "dsdl_runtime_get_i64";
+}
+
+void emitSerializePadding(std::ostringstream &out, const std::size_t index,
+                          const std::int64_t bits, const int indent) {
+  emitLine(out, indent,
+           "for (size_t bit_" + std::to_string(index) +
+               " = 0U; bit_" + std::to_string(index) + " < " +
+               std::to_string(nonNegative(bits)) + "U; ++bit_" +
+               std::to_string(index) + ") {");
+  emitLine(out, indent + 1,
+           "const int8_t _err_pad_" + std::to_string(index) +
+               " = dsdl_runtime_set_bit(buffer, capacity_bytes, offset_bits + "
+               "bit_" +
+               std::to_string(index) + ", false);");
+  emitLine(out, indent + 1,
+           "if (_err_pad_" + std::to_string(index) + " < 0) {");
+  emitLine(out, indent + 2,
+           "return _err_pad_" + std::to_string(index) + ";");
+  emitLine(out, indent + 1, "}");
+  emitLine(out, indent, "}");
+  emitLine(out, indent,
+           "offset_bits += " + std::to_string(nonNegative(bits)) + "U;");
+}
+
+bool emitSerializeField(std::ostringstream &out, const PlanStep &step,
+                        const std::string &expr, const std::size_t index,
+                        const int indent);
+bool emitDeserializeField(std::ostringstream &out, const PlanStep &step,
+                          const std::string &expr, const std::size_t index,
+                          const int indent);
+
+bool emitSerializeArrayField(std::ostringstream &out, const PlanStep &step,
+                             const std::string &expr, const std::size_t index,
+                             const int indent) {
+  const bool variable = isVariableArrayKind(step.arrayKind);
+  const auto capacityExpr = std::to_string(nonNegative(step.arrayCapacity)) + "U";
+
+  if (variable) {
+    emitLine(out, indent, "if (" + expr + ".count > " + capacityExpr + ") {");
+    emitLine(out, indent + 1,
+             "return -(int8_t)DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH;");
+    emitLine(out, indent, "}");
+    emitLine(out, indent,
+             "const int8_t _err_len_" + std::to_string(index) +
+                 " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits, "
+                 "(uint64_t)(" +
+                 expr + ".count), (uint8_t)" +
+                 std::to_string(nonNegative(step.arrayLengthPrefixBits)) + "U);");
+    emitLine(out, indent, "if (_err_len_" + std::to_string(index) + " < 0) {");
+    emitLine(out, indent + 1, "return _err_len_" + std::to_string(index) + ";");
+    emitLine(out, indent, "}");
+    emitLine(out, indent,
+             "offset_bits += " +
+                 std::to_string(nonNegative(step.arrayLengthPrefixBits)) + "U;");
+  }
+
+  const auto countExpr = variable ? (expr + ".count") : capacityExpr;
+  if (step.scalarCategory == "bool") {
+    const auto sourceExpr =
+        variable ? ("&" + expr + ".bitpacked[0]") : ("&" + expr + "[0]");
+    emitLine(out, indent,
+             "dsdl_runtime_copy_bits(&buffer[0], offset_bits, " + countExpr +
+                 ", " + sourceExpr + ", 0U);");
+    emitLine(out, indent, "offset_bits += " + countExpr + ";");
+    return true;
+  }
+
+  const auto loopIndex = "_i_" + std::to_string(index);
+  const auto accessPrefix = variable ? (expr + ".elements") : expr;
+  emitLine(out, indent,
+           "for (size_t " + loopIndex + " = 0U; " + loopIndex + " < " +
+               countExpr + "; ++" + loopIndex + ") {");
+  auto elementStep = step;
+  elementStep.arrayKind = "none";
+  elementStep.arrayCapacity = 0;
+  elementStep.arrayLengthPrefixBits = 0;
+  if (!emitSerializeField(out, elementStep,
+                          accessPrefix + "[" + loopIndex + "]", index,
+                          indent + 1)) {
+    return false;
+  }
+  emitLine(out, indent, "}");
+  return true;
+}
+
+bool emitDeserializeArrayField(std::ostringstream &out, const PlanStep &step,
+                               const std::string &expr,
+                               const std::size_t index, const int indent) {
+  const bool variable = isVariableArrayKind(step.arrayKind);
+  const auto capacityExpr = std::to_string(nonNegative(step.arrayCapacity)) + "U";
+
+  if (variable) {
+    emitLine(out, indent,
+             expr + ".count = (size_t)" +
+                 unsignedGetterForBits(step.arrayLengthPrefixBits) +
+                 "(buffer, capacity_bytes, offset_bits, (uint8_t)" +
+                 std::to_string(nonNegative(step.arrayLengthPrefixBits)) + "U);");
+    emitLine(out, indent,
+             "offset_bits += " +
+                 std::to_string(nonNegative(step.arrayLengthPrefixBits)) + "U;");
+    emitLine(out, indent, "if (" + expr + ".count > " + capacityExpr + ") {");
+    emitLine(out, indent + 1,
+             "return -(int8_t)DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH;");
+    emitLine(out, indent, "}");
+  }
+
+  const auto countExpr = variable ? (expr + ".count") : capacityExpr;
+  if (step.scalarCategory == "bool") {
+    const auto targetExpr =
+        variable ? ("&" + expr + ".bitpacked[0]") : ("&" + expr + "[0]");
+    emitLine(out, indent,
+             "dsdl_runtime_get_bits(" + targetExpr +
+                 ", &buffer[0], capacity_bytes, offset_bits, " + countExpr +
+                 ");");
+    emitLine(out, indent, "offset_bits += " + countExpr + ";");
+    return true;
+  }
+
+  const auto loopIndex = "_i_" + std::to_string(index);
+  const auto accessPrefix = variable ? (expr + ".elements") : expr;
+  emitLine(out, indent,
+           "for (size_t " + loopIndex + " = 0U; " + loopIndex + " < " +
+               countExpr + "; ++" + loopIndex + ") {");
+  auto elementStep = step;
+  elementStep.arrayKind = "none";
+  elementStep.arrayCapacity = 0;
+  elementStep.arrayLengthPrefixBits = 0;
+  if (!emitDeserializeField(out, elementStep,
+                            accessPrefix + "[" + loopIndex + "]", index,
+                            indent + 1)) {
+    return false;
+  }
+  emitLine(out, indent, "}");
+  return true;
+}
+
+bool emitSerializeField(std::ostringstream &out, const PlanStep &step,
+                        const std::string &expr, const std::size_t index,
+                        const int indent) {
+  if (step.arrayKind != "none") {
+    return emitSerializeArrayField(out, step, expr, index, indent);
+  }
+
+  if (step.scalarCategory == "composite") {
+    emitLine(out, indent,
+             "size_t _size_bytes_" + std::to_string(index) +
+                 " = capacity_bytes - dsdl_runtime_choose_min(offset_bits / 8U, "
+                 "capacity_bytes);");
+    emitLine(out, indent,
+             "const int8_t _err_" + std::to_string(index) + " = " +
+                 step.compositeCTypeName + "__serialize_(&" + expr +
+                 ", &buffer[offset_bits / 8U], &_size_bytes_" +
+                 std::to_string(index) + ");");
+    emitLine(out, indent, "if (_err_" + std::to_string(index) + " < 0) {");
+    emitLine(out, indent + 1, "return _err_" + std::to_string(index) + ";");
+    emitLine(out, indent, "}");
+    emitLine(out, indent,
+             "offset_bits += _size_bytes_" + std::to_string(index) + " * 8U;");
+    return true;
+  }
+
+  if (step.scalarCategory == "bool") {
+    emitLine(out, indent,
+             "const int8_t _err_" + std::to_string(index) +
+                 " = dsdl_runtime_set_bit(buffer, capacity_bytes, offset_bits, " +
+                 expr + ");");
+    emitLine(out, indent, "if (_err_" + std::to_string(index) + " < 0) {");
+    emitLine(out, indent + 1, "return _err_" + std::to_string(index) + ";");
+    emitLine(out, indent, "}");
+    emitLine(out, indent, "offset_bits += 1U;");
+    return true;
+  }
+
+  if (step.scalarCategory == "byte" || step.scalarCategory == "unsigned") {
+    std::string valueExpr = "(uint64_t)(" + expr + ")";
+    if (step.castMode == "saturated" && step.bitLength > 0 &&
+        step.bitLength < 64) {
+      const auto satName = "_sat_" + std::to_string(index);
+      const auto maxValue = (UINT64_C(1) << step.bitLength) - UINT64_C(1);
+      emitLine(out, indent,
+               "uint64_t " + satName + " = " + valueExpr + ";");
+      emitLine(out, indent, "if (" + satName + " > " +
+                               std::to_string(maxValue) + "ULL) {");
+      emitLine(out, indent + 1,
+               satName + " = " + std::to_string(maxValue) + "ULL;");
+      emitLine(out, indent, "}");
+      valueExpr = satName;
+    }
+    emitLine(out, indent,
+             "const int8_t _err_" + std::to_string(index) +
+                 " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits, " +
+                 valueExpr + ", (uint8_t)" +
+                 std::to_string(nonNegative(step.bitLength)) + "U);");
+    emitLine(out, indent, "if (_err_" + std::to_string(index) + " < 0) {");
+    emitLine(out, indent + 1, "return _err_" + std::to_string(index) + ";");
+    emitLine(out, indent, "}");
+    emitLine(out, indent,
+             "offset_bits += " + std::to_string(nonNegative(step.bitLength)) +
+                 "U;");
+    return true;
+  }
+
+  if (step.scalarCategory == "signed") {
+    std::string valueExpr = "(int64_t)(" + expr + ")";
+    if (step.castMode == "saturated" && step.bitLength > 0 &&
+        step.bitLength < 64) {
+      const auto satName = "_sat_" + std::to_string(index);
+      const auto minValue = -(INT64_C(1) << (step.bitLength - 1));
+      const auto maxValue = (INT64_C(1) << (step.bitLength - 1)) - INT64_C(1);
+      emitLine(out, indent, "int64_t " + satName + " = " + valueExpr + ";");
+      emitLine(out, indent, "if (" + satName + " < " +
+                               std::to_string(minValue) + "LL) {");
+      emitLine(out, indent + 1,
+               satName + " = " + std::to_string(minValue) + "LL;");
+      emitLine(out, indent, "}");
+      emitLine(out, indent, "if (" + satName + " > " +
+                               std::to_string(maxValue) + "LL) {");
+      emitLine(out, indent + 1,
+               satName + " = " + std::to_string(maxValue) + "LL;");
+      emitLine(out, indent, "}");
+      valueExpr = satName;
+    }
+    emitLine(out, indent,
+             "const int8_t _err_" + std::to_string(index) +
+                 " = dsdl_runtime_set_ixx(buffer, capacity_bytes, offset_bits, " +
+                 valueExpr + ", (uint8_t)" +
+                 std::to_string(nonNegative(step.bitLength)) + "U);");
+    emitLine(out, indent, "if (_err_" + std::to_string(index) + " < 0) {");
+    emitLine(out, indent + 1, "return _err_" + std::to_string(index) + ";");
+    emitLine(out, indent, "}");
+    emitLine(out, indent,
+             "offset_bits += " + std::to_string(nonNegative(step.bitLength)) +
+                 "U;");
+    return true;
+  }
+
+  if (step.scalarCategory == "float") {
+    std::string setter;
+    std::string castType;
+    if (step.bitLength == 16 || step.bitLength == 32) {
+      castType = "float";
+      setter = (step.bitLength == 16) ? "dsdl_runtime_set_f16"
+                                       : "dsdl_runtime_set_f32";
+    } else if (step.bitLength == 64) {
+      castType = "double";
+      setter = "dsdl_runtime_set_f64";
+    } else {
+      return false;
+    }
+    emitLine(out, indent,
+             "const int8_t _err_" + std::to_string(index) + " = " + setter +
+                 "(buffer, capacity_bytes, offset_bits, (" + castType + ")(" +
+                 expr + "));");
+    emitLine(out, indent, "if (_err_" + std::to_string(index) + " < 0) {");
+    emitLine(out, indent + 1, "return _err_" + std::to_string(index) + ";");
+    emitLine(out, indent, "}");
+    emitLine(out, indent,
+             "offset_bits += " + std::to_string(nonNegative(step.bitLength)) +
+                 "U;");
+    return true;
+  }
+
+  return false;
+}
+
+bool emitDeserializeField(std::ostringstream &out, const PlanStep &step,
+                          const std::string &expr, const std::size_t index,
+                          const int indent) {
+  if (step.arrayKind != "none") {
+    return emitDeserializeArrayField(out, step, expr, index, indent);
+  }
+
+  if (step.scalarCategory == "composite") {
+    emitLine(out, indent,
+             "size_t _size_bytes_" + std::to_string(index) +
+                 " = capacity_bytes - dsdl_runtime_choose_min(offset_bits / 8U, "
+                 "capacity_bytes);");
+    emitLine(out, indent,
+             "const int8_t _err_" + std::to_string(index) + " = " +
+                 step.compositeCTypeName + "__deserialize_(&" + expr +
+                 ", &buffer[offset_bits / 8U], &_size_bytes_" +
+                 std::to_string(index) + ");");
+    emitLine(out, indent, "if (_err_" + std::to_string(index) + " < 0) {");
+    emitLine(out, indent + 1, "return _err_" + std::to_string(index) + ";");
+    emitLine(out, indent, "}");
+    emitLine(out, indent,
+             "offset_bits += _size_bytes_" + std::to_string(index) + " * 8U;");
+    return true;
+  }
+
+  if (step.scalarCategory == "bool") {
+    emitLine(out, indent,
+             expr + " = dsdl_runtime_get_bit(buffer, capacity_bytes, offset_bits);");
+    emitLine(out, indent, "offset_bits += 1U;");
+    return true;
+  }
+
+  if (step.scalarCategory == "byte" || step.scalarCategory == "unsigned") {
+    emitLine(out, indent,
+             expr + " = (uint64_t)" +
+                 unsignedGetterForBits(step.bitLength) +
+                 "(buffer, capacity_bytes, offset_bits, (uint8_t)" +
+                 std::to_string(nonNegative(step.bitLength)) + "U);");
+    emitLine(out, indent,
+             "offset_bits += " + std::to_string(nonNegative(step.bitLength)) +
+                 "U;");
+    return true;
+  }
+
+  if (step.scalarCategory == "signed") {
+    emitLine(out, indent,
+             expr + " = (int64_t)" +
+                 signedGetterForBits(step.bitLength) +
+                 "(buffer, capacity_bytes, offset_bits, (uint8_t)" +
+                 std::to_string(nonNegative(step.bitLength)) + "U);");
+    emitLine(out, indent,
+             "offset_bits += " + std::to_string(nonNegative(step.bitLength)) +
+                 "U;");
+    return true;
+  }
+
+  if (step.scalarCategory == "float") {
+    std::string getter;
+    if (step.bitLength == 16) {
+      getter = "dsdl_runtime_get_f16";
+    } else if (step.bitLength == 32) {
+      getter = "dsdl_runtime_get_f32";
+    } else if (step.bitLength == 64) {
+      getter = "dsdl_runtime_get_f64";
+    } else {
+      return false;
+    }
+    emitLine(out, indent,
+             expr + " = " + getter +
+                 "(buffer, capacity_bytes, offset_bits);");
+    emitLine(out, indent,
+             "offset_bits += " + std::to_string(nonNegative(step.bitLength)) +
+                 "U;");
+    return true;
+  }
+
+  return false;
+}
+
+std::string renderTypedSerializeFunction(
+    llvm::StringRef functionName, llvm::StringRef cTypeName,
+    llvm::StringRef cSerializeSymbol, llvm::StringRef fullName,
+    llvm::StringRef sectionName, std::int64_t minBits, std::int64_t maxBits,
+    const std::vector<PlanStep> &steps, const bool isUnion,
+    const std::int64_t unionTagBits) {
+  const std::string functionNameText = functionName.str();
+  const std::string cTypeNameText = cTypeName.str();
+  const std::string cSerializeSymbolText = cSerializeSymbol.str();
+  const std::string fullNameText = fullName.str();
+  const std::string sectionNameText = sectionName.str();
+  std::ostringstream out;
+  if (cTypeNameText.empty()) {
+    out << "int8_t " << functionNameText
+        << "(const void* obj, uint8_t* buffer, size_t* const "
+           "inout_buffer_size_bytes)\n";
+  } else {
+    out << "int8_t " << functionNameText << "(const " << cTypeNameText
+        << "* const obj, uint8_t* buffer, size_t* const inout_buffer_size_bytes)\n";
+  }
+  out << "{\n";
+  emitLine(out, 1, "// IR section: " + fullNameText +
+                       (sectionNameText.empty() ? std::string{}
+                                                : (" (" + sectionNameText + ")")) +
+                       ", min_bits=" + std::to_string(minBits) +
+                       ", max_bits=" + std::to_string(maxBits) + ".");
+  if (!cSerializeSymbolText.empty()) {
+    emitLine(out, 1, "// Public C API symbol: " + cSerializeSymbolText);
+  }
+  emitLine(out, 1, "// Typed IR lowering path.");
+  emitLine(out, 1,
+           "if ((obj == NULL) || (buffer == NULL) || (inout_buffer_size_bytes == "
+           "NULL)) {");
+  emitLine(out, 2, "return -(int8_t)DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+  emitLine(out, 1, "}");
+  emitLine(out, 1, "const size_t capacity_bytes = *inout_buffer_size_bytes;");
+  emitLine(out, 1, "if ((capacity_bytes * 8U) < " +
+                       std::to_string(nonNegative(maxBits)) + "ULL) {");
+  emitLine(out, 2, "return -(int8_t)DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;");
+  emitLine(out, 1, "}");
+  emitLine(out, 1, "size_t offset_bits = 0U;");
+
+  if (isUnion) {
+    const auto tagBits = nonNegative(unionTagBits);
+    emitLine(out, 1,
+             "const int8_t _err_tag_ = dsdl_runtime_set_uxx(buffer, "
+             "capacity_bytes, offset_bits, (uint64_t)(obj->_tag_), (uint8_t)" +
+                 std::to_string(tagBits) + "U);");
+    emitLine(out, 1, "if (_err_tag_ < 0) {");
+    emitLine(out, 2, "return _err_tag_;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "offset_bits += " + std::to_string(tagBits) + "U;");
+
+    std::vector<const PlanStep *> unionFields;
+    for (const auto &step : steps) {
+      if (step.kind == PlanStepKind::Field) {
+        unionFields.push_back(&step);
+      }
+    }
+    std::sort(unionFields.begin(), unionFields.end(),
+              [](const PlanStep *lhs, const PlanStep *rhs) {
+                return lhs->unionOptionIndex < rhs->unionOptionIndex;
+              });
+
+    bool first = true;
+    for (std::size_t i = 0; i < unionFields.size(); ++i) {
+      const auto &step = *unionFields[i];
+      emitLine(out, 1,
+               std::string(first ? "if" : "else if") + " (obj->_tag_ == " +
+                   std::to_string(nonNegative(step.unionOptionIndex)) + "U) {");
+      first = false;
+      emitAlign(out, 2, step.alignmentBits);
+      (void)emitSerializeField(out, step, "obj->" + step.cName, i, 2);
+      emitLine(out, 1, "}");
+    }
+    emitLine(out, 1, "else {");
+    emitLine(out, 2,
+             "return -(int8_t)DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG;");
+    emitLine(out, 1, "}");
+  } else {
+    for (std::size_t i = 0; i < steps.size(); ++i) {
+      const auto &step = steps[i];
+      if (step.kind == PlanStepKind::Align) {
+        emitAlign(out, 1, step.bits);
+        continue;
+      }
+      if (step.kind == PlanStepKind::Padding) {
+        emitSerializePadding(out, i, step.bits, 1);
+        continue;
+      }
+      (void)emitSerializeField(out, step, "obj->" + step.cName, i, 1);
+    }
+  }
+
+  emitAlign(out, 1, 8);
+  emitLine(out, 1, "*inout_buffer_size_bytes = (size_t)(offset_bits / 8U);");
+  emitLine(out, 1, "return (int8_t)DSDL_RUNTIME_SUCCESS;");
+  emitLine(out, 0, "}");
+  return out.str();
+}
+
+std::string renderTypedDeserializeFunction(
+    llvm::StringRef functionName, llvm::StringRef cTypeName,
+    llvm::StringRef cDeserializeSymbol, llvm::StringRef fullName,
+    llvm::StringRef sectionName, std::int64_t minBits, std::int64_t maxBits,
+    const std::vector<PlanStep> &steps, const bool isUnion,
+    const std::int64_t unionTagBits) {
+  const std::string functionNameText = functionName.str();
+  const std::string cTypeNameText = cTypeName.str();
+  const std::string cDeserializeSymbolText = cDeserializeSymbol.str();
+  const std::string fullNameText = fullName.str();
+  const std::string sectionNameText = sectionName.str();
+  std::ostringstream out;
+  if (cTypeNameText.empty()) {
+    out << "int8_t " << functionNameText
+        << "(void* out_obj, const uint8_t* buffer, size_t* const "
+           "inout_buffer_size_bytes)\n";
+  } else {
+    out << "int8_t " << functionNameText << "(" << cTypeNameText
+        << "* const out_obj, const uint8_t* buffer, size_t* const "
+           "inout_buffer_size_bytes)\n";
+  }
+  out << "{\n";
+  emitLine(out, 1, "// IR section: " + fullNameText +
+                       (sectionNameText.empty() ? std::string{}
+                                                : (" (" + sectionNameText + ")")) +
+                       ", min_bits=" + std::to_string(minBits) +
+                       ", max_bits=" + std::to_string(maxBits) + ".");
+  if (!cDeserializeSymbolText.empty()) {
+    emitLine(out, 1, "// Public C API symbol: " + cDeserializeSymbolText);
+  }
+  emitLine(out, 1, "// Typed IR lowering path.");
+  emitLine(out, 1,
+           "if ((out_obj == NULL) || (inout_buffer_size_bytes == NULL) || "
+           "((buffer == NULL) && (0U != *inout_buffer_size_bytes))) {");
+  emitLine(out, 2, "return -(int8_t)DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+  emitLine(out, 1, "}");
+  emitLine(out, 1, "if (buffer == NULL) {");
+  emitLine(out, 2, "buffer = (const uint8_t*)\"\";");
+  emitLine(out, 1, "}");
+  emitLine(out, 1, "const size_t capacity_bytes = *inout_buffer_size_bytes;");
+  emitLine(out, 1, "const size_t capacity_bits = capacity_bytes * 8U;");
+  emitLine(out, 1, "size_t offset_bits = 0U;");
+
+  if (isUnion) {
+    const auto tagBits = nonNegative(unionTagBits);
+    emitLine(out, 1, "uint64_t _tag_value = " +
+                         unsignedGetterForBits(tagBits) +
+                         "(buffer, capacity_bytes, offset_bits, (uint8_t)" +
+                         std::to_string(tagBits) + "U);");
+    emitLine(out, 1, "out_obj->_tag_ = (uint8_t)_tag_value;");
+    emitLine(out, 1, "offset_bits += " + std::to_string(tagBits) + "U;");
+
+    std::vector<const PlanStep *> unionFields;
+    for (const auto &step : steps) {
+      if (step.kind == PlanStepKind::Field) {
+        unionFields.push_back(&step);
+      }
+    }
+    std::sort(unionFields.begin(), unionFields.end(),
+              [](const PlanStep *lhs, const PlanStep *rhs) {
+                return lhs->unionOptionIndex < rhs->unionOptionIndex;
+              });
+
+    bool first = true;
+    for (std::size_t i = 0; i < unionFields.size(); ++i) {
+      const auto &step = *unionFields[i];
+      emitLine(out, 1,
+               std::string(first ? "if" : "else if") + " (_tag_value == " +
+                   std::to_string(nonNegative(step.unionOptionIndex)) + "U) {");
+      first = false;
+      emitAlign(out, 2, step.alignmentBits);
+      (void)emitDeserializeField(out, step, "out_obj->" + step.cName, i, 2);
+      emitLine(out, 1, "}");
+    }
+    emitLine(out, 1, "else {");
+    emitLine(out, 2,
+             "return -(int8_t)DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG;");
+    emitLine(out, 1, "}");
+  } else {
+    for (std::size_t i = 0; i < steps.size(); ++i) {
+      const auto &step = steps[i];
+      if (step.kind == PlanStepKind::Align) {
+        emitAlign(out, 1, step.bits);
+        continue;
+      }
+      if (step.kind == PlanStepKind::Padding) {
+        emitLine(out, 1,
+                 "offset_bits += " + std::to_string(nonNegative(step.bits)) +
+                     "U;");
+        continue;
+      }
+      (void)emitDeserializeField(out, step, "out_obj->" + step.cName, i, 1);
+    }
+  }
+
+  emitAlign(out, 1, 8);
+  emitLine(out, 1,
+           "*inout_buffer_size_bytes = (size_t)(dsdl_runtime_choose_min(offset_bits, "
+           "capacity_bits) / 8U);");
+  emitLine(out, 1, "return (int8_t)DSDL_RUNTIME_SUCCESS;");
+  emitLine(out, 0, "}");
+  return out.str();
+}
 
 struct ConvertDSDLToEmitCPass
     : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
@@ -18,14 +1110,151 @@ struct ConvertDSDLToEmitCPass
 
   void runOnOperation() override {
     auto module = getOperation();
-    std::vector<mlir::Operation *> dsdlOps;
-    module.walk([&](mlir::Operation *op) {
-      if (op->getName().getDialectNamespace() == "dsdl") {
-        dsdlOps.push_back(op);
-      }
-    });
+    const bool headersAvailable =
+        module->hasAttr("llvmdsdl.headers_available");
+    const bool requireTypedLowering =
+        module->hasAttr("llvmdsdl.require_typed_lowering");
+    if (requireTypedLowering && !headersAvailable) {
+      module.emitError("typed lowering requires header availability");
+      signalPassFailure();
+      return;
+    }
+    auto &body = module.getBodyRegion().front();
 
-    for (mlir::Operation *op : dsdlOps) {
+    std::vector<mlir::Operation *> schemaOps;
+    for (mlir::Operation &op : body) {
+      if (op.getName().getStringRef() == "dsdl.schema") {
+        schemaOps.push_back(&op);
+      }
+    }
+    if (schemaOps.empty()) {
+      return;
+    }
+
+    std::vector<std::string> emittedFunctions;
+    emittedFunctions.reserve(schemaOps.size() * 4U);
+    std::set<std::string> forwardDeclaredTypes;
+    std::set<std::string> typedHeaders;
+
+    for (mlir::Operation *schema : schemaOps) {
+      const auto symNameAttr = schema->getAttrOfType<mlir::StringAttr>("sym_name");
+      if (!symNameAttr) {
+        continue;
+      }
+      const auto fullNameAttr =
+          schema->getAttrOfType<mlir::StringAttr>("full_name");
+      const std::string fullName =
+          fullNameAttr ? fullNameAttr.getValue().str() : symNameAttr.getValue().str();
+      const auto headerPathAttr =
+          schema->getAttrOfType<mlir::StringAttr>("header_path");
+      const std::string headerPath =
+          headerPathAttr ? headerPathAttr.getValue().str() : std::string{};
+
+      if (schema->getNumRegions() == 0 || schema->getRegion(0).empty()) {
+        continue;
+      }
+
+      for (mlir::Operation &child : schema->getRegion(0).front()) {
+        if (child.getName().getStringRef() != "dsdl.serialization_plan") {
+          continue;
+        }
+        const auto sectionAttr = child.getAttrOfType<mlir::StringAttr>("section");
+        const std::string section =
+            sectionAttr ? sectionAttr.getValue().str() : std::string{};
+        const std::string fnStem =
+            symNameAttr.getValue().str() + sectionSuffix(section);
+        const std::int64_t minBits = inferPlanBits(&child, "min_bits");
+        const std::int64_t maxBits = inferPlanBits(&child, "max_bits");
+        const auto cTypeNameAttr =
+            child.getAttrOfType<mlir::StringAttr>("c_type_name");
+        const auto cSerializeSymbolAttr =
+            child.getAttrOfType<mlir::StringAttr>("c_serialize_symbol");
+        const auto cDeserializeSymbolAttr =
+            child.getAttrOfType<mlir::StringAttr>("c_deserialize_symbol");
+        const std::string cTypeName =
+            cTypeNameAttr ? cTypeNameAttr.getValue().str() : std::string{};
+        if (!cTypeName.empty()) {
+          forwardDeclaredTypes.insert(cTypeName);
+        }
+        const auto steps = collectPlanSteps(&child);
+        const bool isUnion = child.hasAttr("is_union");
+        const auto unionTagBitsAttr =
+            child.getAttrOfType<mlir::IntegerAttr>("union_tag_bits");
+        const std::int64_t unionTagBits =
+            unionTagBitsAttr ? nonNegative(unionTagBitsAttr.getInt()) : 0;
+        const bool useTyped = headersAvailable &&
+                              supportsTypedLowering(steps, isUnion, unionTagBits);
+        if (requireTypedLowering && !useTyped) {
+          std::string reason = "typed lowering is required for this module";
+          if (!headersAvailable) {
+            reason += " but generated headers are not available";
+          } else {
+            reason += " but the serialization plan contains unsupported constructs";
+          }
+          if (!section.empty()) {
+            reason += " (section: " + section + ")";
+          }
+          child.emitOpError(reason);
+          signalPassFailure();
+          return;
+        }
+        if (useTyped) {
+          if (!headerPath.empty()) {
+            typedHeaders.insert(headerPath);
+          }
+        }
+
+        if (useTyped) {
+          emittedFunctions.push_back(renderTypedSerializeFunction(
+              fnStem + "__serialize_ir_", cTypeName,
+              cSerializeSymbolAttr ? cSerializeSymbolAttr.getValue()
+                                   : llvm::StringRef{},
+              fullName, section, minBits, maxBits, steps, isUnion,
+              unionTagBits));
+          emittedFunctions.push_back(renderTypedDeserializeFunction(
+              fnStem + "__deserialize_ir_", cTypeName,
+              cDeserializeSymbolAttr ? cDeserializeSymbolAttr.getValue()
+                                     : llvm::StringRef{},
+              fullName, section, minBits, maxBits, steps, isUnion,
+              unionTagBits));
+        } else {
+          emittedFunctions.push_back(renderGenericSerializeFunction(
+              fnStem + "__serialize_ir_", cTypeName,
+              cSerializeSymbolAttr ? cSerializeSymbolAttr.getValue()
+                                   : llvm::StringRef{},
+              fullName, section, minBits, maxBits, steps));
+          emittedFunctions.push_back(renderGenericDeserializeFunction(
+              fnStem + "__deserialize_ir_", cTypeName,
+              cDeserializeSymbolAttr ? cDeserializeSymbolAttr.getValue()
+                                     : llvm::StringRef{},
+              fullName, section, minBits, maxBits, steps));
+        }
+      }
+    }
+
+    mlir::OpBuilder builder(module.getContext());
+    builder.setInsertionPointToStart(&body);
+    const mlir::Location loc = builder.getUnknownLoc();
+    builder.create<mlir::emitc::VerbatimOp>(loc, "#include <stddef.h>");
+    builder.create<mlir::emitc::VerbatimOp>(loc, "#include <stdint.h>");
+    builder.create<mlir::emitc::VerbatimOp>(loc, "#include \"dsdl_runtime.h\"");
+    if (headersAvailable) {
+      for (const auto &headerPath : typedHeaders) {
+        builder.create<mlir::emitc::VerbatimOp>(loc,
+                                                "#include \"" + headerPath + "\"");
+      }
+    }
+    builder.create<mlir::emitc::VerbatimOp>(
+        loc, "/* Generated from DSDL IR by convert-dsdl-to-emitc. */");
+    for (const auto &typeName : forwardDeclaredTypes) {
+      builder.create<mlir::emitc::VerbatimOp>(
+          loc, "typedef struct " + typeName + " " + typeName + ";");
+    }
+    for (const auto &fn : emittedFunctions) {
+      builder.create<mlir::emitc::VerbatimOp>(loc, fn);
+    }
+
+    for (mlir::Operation *op : schemaOps) {
       op->erase();
     }
   }

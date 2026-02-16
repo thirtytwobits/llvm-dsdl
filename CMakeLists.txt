@@ -33,5 +33,92 @@ add_subdirectory(include/llvmdsdl)
 add_subdirectory(lib)
 add_subdirectory(tools)
 
+set(LLVMDSDL_UAVCAN_ROOT "")
+if(EXISTS "${LLVMDSDL_SOURCE_DIR}/public_regulated_dsdl/uavcan")
+  set(LLVMDSDL_UAVCAN_ROOT
+      "${LLVMDSDL_SOURCE_DIR}/public_regulated_dsdl/uavcan")
+elseif(EXISTS "${LLVMDSDL_SOURCE_DIR}/public_regulated_data_types/uavcan")
+  set(LLVMDSDL_UAVCAN_ROOT
+      "${LLVMDSDL_SOURCE_DIR}/public_regulated_data_types/uavcan")
+endif()
+
+if(LLVMDSDL_UAVCAN_ROOT)
+  set(LLVMDSDL_GENERATED_UAVCAN_DIR
+      "${LLVMDSDL_BINARY_DIR}/generated/uavcan")
+
+  function(llvmdsdl_add_uavcan_codegen_target target_name out_subdir)
+    set(out_dir "${LLVMDSDL_GENERATED_UAVCAN_DIR}/${out_subdir}")
+    add_custom_target(${target_name}
+      COMMAND ${CMAKE_COMMAND} -E rm -rf "${out_dir}"
+      COMMAND ${CMAKE_COMMAND} -E make_directory "${out_dir}"
+      COMMAND
+        $<TARGET_FILE:dsdlc>
+          ${ARGN}
+          --root-namespace-dir "${LLVMDSDL_UAVCAN_ROOT}"
+          --strict
+          --out-dir "${out_dir}"
+      DEPENDS dsdlc
+      USES_TERMINAL
+      VERBATIM
+      COMMENT "Generating uavcan DSDL artifacts: ${target_name}"
+    )
+  endfunction()
+
+  function(llvmdsdl_add_uavcan_c_impl_target target_name out_subdir)
+    set(out_dir "${LLVMDSDL_GENERATED_UAVCAN_DIR}/${out_subdir}")
+    add_custom_target(${target_name}
+      COMMAND ${CMAKE_COMMAND} -E rm -rf "${out_dir}"
+      COMMAND ${CMAKE_COMMAND} -E make_directory "${out_dir}"
+      COMMAND
+        $<TARGET_FILE:dsdlc>
+          c
+          ${ARGN}
+          --root-namespace-dir "${LLVMDSDL_UAVCAN_ROOT}"
+          --strict
+          --out-dir "${out_dir}"
+      COMMAND
+        ${CMAKE_COMMAND}
+          -DC_COMPILER=${CMAKE_C_COMPILER}
+          -DSOURCE_ROOT=${out_dir}
+          -DINCLUDE_ROOT=${out_dir}
+          -P "${LLVMDSDL_SOURCE_DIR}/cmake/CompileGeneratedCSources.cmake"
+      DEPENDS dsdlc
+      USES_TERMINAL
+      VERBATIM
+      COMMENT "Generating and compiling uavcan C impl translation units: ${target_name}"
+    )
+  endfunction()
+
+  llvmdsdl_add_uavcan_c_impl_target(generate-uavcan-c
+                                    c)
+  llvmdsdl_add_uavcan_codegen_target(generate-uavcan-cpp-std
+                                     cpp-std
+                                     cpp --cpp-profile std)
+  llvmdsdl_add_uavcan_codegen_target(generate-uavcan-cpp-pmr
+                                     cpp-pmr
+                                     cpp --cpp-profile pmr)
+  llvmdsdl_add_uavcan_codegen_target(generate-uavcan-cpp-both
+                                     cpp-both
+                                     cpp --cpp-profile both)
+  llvmdsdl_add_uavcan_codegen_target(generate-uavcan-rust-std
+                                     rust-std
+                                     rust --rust-profile std --rust-crate-name
+                                     uavcan_dsdl_generated)
+
+  add_custom_target(generate-uavcan-all)
+  add_dependencies(generate-uavcan-all
+                   generate-uavcan-c
+                   generate-uavcan-cpp-both
+                   generate-uavcan-cpp-std
+                   generate-uavcan-cpp-pmr
+                   generate-uavcan-rust-std)
+else()
+  message(WARNING
+    "uavcan DSDL root not found. Expected either "
+    "${LLVMDSDL_SOURCE_DIR}/public_regulated_dsdl/uavcan or "
+    "${LLVMDSDL_SOURCE_DIR}/public_regulated_data_types/uavcan. "
+    "Skipping generation targets.")
+endif()
+
 enable_testing()
 add_subdirectory(test)

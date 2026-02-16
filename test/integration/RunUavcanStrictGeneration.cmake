@@ -64,6 +64,20 @@ if(stub_hits)
     "generated headers still reference dsdl_runtime_stub_: ${stub_hits}")
 endif()
 
+file(GLOB_RECURSE generated_impls "${OUT_DIR}/*.c")
+set(generic_lowering_hits "")
+foreach(c_file IN LISTS generated_impls)
+  file(READ "${c_file}" impl_text)
+  string(FIND "${impl_text}" "Generic bitstream mapping" hit_pos)
+  if(NOT hit_pos EQUAL -1)
+    list(APPEND generic_lowering_hits "${c_file}")
+  endif()
+endforeach()
+if(generic_lowering_hits)
+  message(FATAL_ERROR
+    "generated C implementations unexpectedly used generic lowering: ${generic_lowering_hits}")
+endif()
+
 set(scratch_dir "${OUT_DIR}/.compile-check")
 file(MAKE_DIRECTORY "${scratch_dir}")
 

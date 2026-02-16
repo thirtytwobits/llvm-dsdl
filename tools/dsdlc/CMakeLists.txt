@@ -4,15 +4,7 @@ add_executable(dsdlc
 
 target_link_libraries(dsdlc
   PRIVATE
-  llvmdsdlFrontend
-  llvmdsdlSemantics
-  llvmdsdlLowering
   llvmdsdlCodeGen
-  llvmdsdlTransforms
-  llvmdsdlIR
-  llvmdsdlSupport
-  MLIRIR
-  MLIRSupport
 )
 
 target_include_directories(dsdlc PRIVATE

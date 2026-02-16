@@ -15,8 +15,6 @@ namespace llvmdsdl {
 struct CEmitOptions final {
   std::string outDir;
   bool declareVariablesAtTop{true};
-  bool emitImplTranslationUnit{false};
-  bool emitHeaderOnly{true};
 };
 
 llvm::Error emitC(const SemanticModule &semantic, mlir::ModuleOp module,

@@ -4,13 +4,9 @@ add_executable(dsdl-opt
 
 target_link_libraries(dsdl-opt
   PRIVATE
-  llvmdsdlIR
   llvmdsdlTransforms
-  MLIRIR
-  MLIRParser
-  MLIRPass
-  MLIRSupport
-  MLIRMlirOptMain
+  MLIROptLib
+  MLIRSCFDialect
 )
 
 target_include_directories(dsdl-opt PRIVATE

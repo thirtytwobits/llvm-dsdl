@@ -16,11 +16,10 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
-#include <map>
-#include <optional>
 #include <set>
 #include <sstream>
 #include <unordered_map>
+#include <vector>
 
 namespace llvmdsdl {
 namespace {
@@ -81,6 +80,43 @@ std::string headerFileName(const DiscoveredDefinition &info) {
   return llvm::formatv("{0}_{1}_{2}.h", info.shortName, info.majorVersion,
                        info.minorVersion)
       .str();
+}
+
+std::string mangleSymbol(std::string fullName, std::uint32_t major,
+                         std::uint32_t minor) {
+  for (char &c : fullName) {
+    if (c == '.') {
+      c = '_';
+    }
+  }
+  return fullName + "_" + std::to_string(major) + "_" + std::to_string(minor);
+}
+
+std::string sectionSuffix(const std::string &sectionName) {
+  if (sectionName == "request") {
+    return "__request";
+  }
+  if (sectionName == "response") {
+    return "__response";
+  }
+  return "";
+}
+
+std::string sectionIRFunctionStem(const SemanticDefinition &def,
+                                  const std::string &sectionName) {
+  return mangleSymbol(def.info.fullName, def.info.majorVersion,
+                      def.info.minorVersion) +
+         sectionSuffix(sectionName);
+}
+
+std::string implFileName(const DiscoveredDefinition &info) {
+  auto name = headerFileName(info);
+  if (name.size() >= 2U && name.substr(name.size() - 2U) == ".h") {
+    name.replace(name.size() - 2U, 2U, ".c");
+  } else {
+    name += ".c";
+  }
+  return name;
 }
 
 std::string cTypeNameFromInfo(const DiscoveredDefinition &info) {
@@ -187,32 +223,6 @@ std::string signedStorageType(const std::uint32_t bitLength) {
   }
 }
 
-std::string unsignedGetter(const std::uint32_t bitLength) {
-  switch (scalarStorageBits(bitLength)) {
-  case 8:
-    return "dsdl_runtime_get_u8";
-  case 16:
-    return "dsdl_runtime_get_u16";
-  case 32:
-    return "dsdl_runtime_get_u32";
-  default:
-    return "dsdl_runtime_get_u64";
-  }
-}
-
-std::string signedGetter(const std::uint32_t bitLength) {
-  switch (scalarStorageBits(bitLength)) {
-  case 8:
-    return "dsdl_runtime_get_i8";
-  case 16:
-    return "dsdl_runtime_get_i16";
-  case 32:
-    return "dsdl_runtime_get_i32";
-  default:
-    return "dsdl_runtime_get_i64";
-  }
-}
-
 bool isVariableArray(const ArrayKind k) {
   return k == ArrayKind::VariableInclusive || k == ArrayKind::VariableExclusive;
 }
@@ -297,591 +307,6 @@ llvm::Error writeFile(const std::filesystem::path &p, llvm::StringRef content) {
 void emitLine(std::ostringstream &out, const int indent, const std::string &line) {
   out << std::string(static_cast<std::size_t>(indent) * 2U, ' ') << line << '\n';
 }
-
-class FunctionBodyEmitter final {
-public:
-  explicit FunctionBodyEmitter(const EmitterContext &ctx) : ctx_(ctx) {}
-
-  void emitSerializeFunction(std::ostringstream &out, const std::string &typeName,
-                             const SemanticSection &section) {
-    emitLine(out, 0, "static inline int8_t " + typeName +
-                        "__serialize_(const " + typeName +
-                        "* const obj, uint8_t* const buffer, size_t* const "
-                        "inout_buffer_size_bytes)");
-    emitLine(out, 0, "{");
-    emitLine(out, 1, "if ((obj == NULL) || (buffer == NULL) || (inout_buffer_size_bytes == NULL)) {");
-    emitLine(out, 2, "return -(int8_t)DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    emitLine(out, 1, "}");
-    emitLine(out, 1, "const size_t capacity_bytes = *inout_buffer_size_bytes;");
-    emitLine(out, 1, "if ((capacity_bytes * 8U) < " +
-                        std::to_string(section.serializationBufferSizeBits) + "ULL) {");
-    emitLine(out, 2,
-             "return -(int8_t)DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;");
-    emitLine(out, 1, "}");
-    emitLine(out, 1, "size_t offset_bits = 0U;");
-
-    if (section.isUnion) {
-      emitSerializeUnion(out, section, "obj", 1);
-    } else {
-      for (const auto &field : section.fields) {
-        emitAlign(out, field.resolvedType.alignmentBits, 1);
-        if (field.isPadding) {
-          emitSerializePadding(out, field.resolvedType, 1);
-        } else {
-          emitSerializeValue(out, field.resolvedType,
-                             "obj->" + sanitizeIdentifier(field.name), 1);
-        }
-      }
-    }
-
-    emitAlign(out, 8, 1);
-    emitLine(out, 1, "*inout_buffer_size_bytes = (size_t)(offset_bits / 8U);");
-    emitLine(out, 1, "return (int8_t)DSDL_RUNTIME_SUCCESS;");
-    emitLine(out, 0, "}");
-    out << "\n";
-  }
-
-  void emitDeserializeFunction(std::ostringstream &out,
-                               const std::string &typeName,
-                               const SemanticSection &section) {
-    emitLine(out, 0, "static inline int8_t " + typeName +
-                        "__deserialize_(" + typeName +
-                        "* const out_obj, const uint8_t* buffer, size_t* const "
-                        "inout_buffer_size_bytes)");
-    emitLine(out, 0, "{");
-    emitLine(out, 1,
-             "if ((out_obj == NULL) || (inout_buffer_size_bytes == NULL) || ((buffer == NULL) && (0U != *inout_buffer_size_bytes))) {");
-    emitLine(out, 2, "return -(int8_t)DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-    emitLine(out, 1, "}");
-    emitLine(out, 1, "if (buffer == NULL) {");
-    emitLine(out, 2, "buffer = (const uint8_t*)\"\";");
-    emitLine(out, 1, "}");
-    emitLine(out, 1, "const size_t capacity_bytes = *inout_buffer_size_bytes;");
-    emitLine(out, 1, "const size_t capacity_bits = capacity_bytes * 8U;");
-    emitLine(out, 1, "size_t offset_bits = 0U;");
-
-    if (section.isUnion) {
-      emitDeserializeUnion(out, section, "out_obj", 1);
-    } else {
-      for (const auto &field : section.fields) {
-        emitAlign(out, field.resolvedType.alignmentBits, 1);
-        if (field.isPadding) {
-          emitDeserializePadding(out, field.resolvedType, 1);
-        } else {
-          emitDeserializeValue(out, field.resolvedType,
-                               "out_obj->" + sanitizeIdentifier(field.name), 1);
-        }
-      }
-    }
-
-    emitAlign(out, 8, 1);
-    emitLine(out, 1,
-             "*inout_buffer_size_bytes = (size_t)(dsdl_runtime_choose_min(offset_bits, capacity_bits) / 8U);");
-    emitLine(out, 1, "return (int8_t)DSDL_RUNTIME_SUCCESS;");
-    emitLine(out, 0, "}");
-    out << "\n";
-  }
-
-private:
-  const EmitterContext &ctx_;
-  std::size_t id_{0};
-
-  std::string nextName(const std::string &prefix) {
-    return "_" + prefix + std::to_string(id_++) + "_";
-  }
-
-  void emitAlign(std::ostringstream &out, const std::int64_t alignmentBits,
-                 const int indent) {
-    if (alignmentBits <= 1) {
-      return;
-    }
-    emitLine(out, indent,
-             "offset_bits = (offset_bits + " + std::to_string(alignmentBits - 1) +
-                 "U) & ~(size_t)" + std::to_string(alignmentBits - 1) + "U;");
-  }
-
-  void emitSerializePadding(std::ostringstream &out, const SemanticFieldType &type,
-                            const int indent) {
-    if (type.bitLength == 0) {
-      return;
-    }
-    const auto err = nextName("err");
-    emitLine(out, indent,
-             "const int8_t " + err +
-                 " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits, 0U, " +
-                 std::to_string(type.bitLength) + "U);");
-    emitLine(out, indent, "if (" + err + " < 0) {");
-    emitLine(out, indent + 1, "return " + err + ";");
-    emitLine(out, indent, "}");
-    emitLine(out, indent,
-             "offset_bits += " + std::to_string(type.bitLength) + "U;");
-  }
-
-  void emitDeserializePadding(std::ostringstream &out,
-                              const SemanticFieldType &type,
-                              const int indent) {
-    if (type.bitLength == 0) {
-      return;
-    }
-    emitLine(out, indent,
-             "offset_bits += " + std::to_string(type.bitLength) + "U;");
-  }
-
-  void emitSerializeUnion(std::ostringstream &out, const SemanticSection &section,
-                          const std::string &objRef, const int indent) {
-    std::uint32_t tagBits = 8;
-    for (const auto &f : section.fields) {
-      if (!f.isPadding) {
-        tagBits = std::max<std::uint32_t>(8U, f.unionTagBits);
-        break;
-      }
-    }
-
-    const auto tagErr = nextName("err");
-    emitLine(out, indent,
-             "const int8_t " + tagErr +
-                 " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits, " +
-                 "(uint64_t)(" + objRef + "->_tag_), " +
-                 std::to_string(tagBits) + "U);");
-    emitLine(out, indent, "if (" + tagErr + " < 0) {");
-    emitLine(out, indent + 1, "return " + tagErr + ";");
-    emitLine(out, indent, "}");
-    emitLine(out, indent,
-             "offset_bits += " + std::to_string(tagBits) + "U;");
-
-    bool first = true;
-    for (const auto &field : section.fields) {
-      if (field.isPadding) {
-        continue;
-      }
-      const auto member = sanitizeIdentifier(field.name);
-      emitLine(out, indent,
-               std::string(first ? "if" : "else if") + " (" +
-                   objRef + "->_tag_ == " +
-                   std::to_string(field.unionOptionIndex) + "U) {");
-      emitAlign(out, field.resolvedType.alignmentBits, indent + 1);
-      emitSerializeValue(out, field.resolvedType,
-                         objRef + "->" + member, indent + 1);
-      emitLine(out, indent, "}");
-      first = false;
-    }
-
-    emitLine(out, indent, "else {");
-    emitLine(out, indent + 1,
-             "return -(int8_t)DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG;");
-    emitLine(out, indent, "}");
-  }
-
-  void emitDeserializeUnion(std::ostringstream &out,
-                            const SemanticSection &section,
-                            const std::string &objRef, const int indent) {
-    std::uint32_t tagBits = 8;
-    for (const auto &f : section.fields) {
-      if (!f.isPadding) {
-        tagBits = std::max<std::uint32_t>(8U, f.unionTagBits);
-        break;
-      }
-    }
-
-    emitLine(out, indent,
-             objRef + "->_tag_ = (uint8_t)" + unsignedGetter(tagBits) +
-                 "(buffer, capacity_bytes, offset_bits, " +
-                 std::to_string(tagBits) + "U);");
-    emitLine(out, indent,
-             "offset_bits += " + std::to_string(tagBits) + "U;");
-
-    bool first = true;
-    for (const auto &field : section.fields) {
-      if (field.isPadding) {
-        continue;
-      }
-      const auto member = sanitizeIdentifier(field.name);
-      emitLine(out, indent,
-               std::string(first ? "if" : "else if") + " (" +
-                   objRef + "->_tag_ == " +
-                   std::to_string(field.unionOptionIndex) + "U) {");
-      emitAlign(out, field.resolvedType.alignmentBits, indent + 1);
-      emitDeserializeValue(out, field.resolvedType,
-                           objRef + "->" + member, indent + 1);
-      emitLine(out, indent, "}");
-      first = false;
-    }
-
-    emitLine(out, indent, "else {");
-    emitLine(out, indent + 1,
-             "return -(int8_t)DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG;");
-    emitLine(out, indent, "}");
-  }
-
-  void emitSerializeValue(std::ostringstream &out, const SemanticFieldType &type,
-                          const std::string &expr, const int indent) {
-    if (type.arrayKind != ArrayKind::None) {
-      emitSerializeArray(out, type, expr, indent);
-      return;
-    }
-
-    switch (type.scalarCategory) {
-    case SemanticScalarCategory::Bool: {
-      const auto err = nextName("err");
-      emitLine(out, indent,
-               "const int8_t " + err +
-                   " = dsdl_runtime_set_bit(buffer, capacity_bytes, offset_bits, " +
-                   expr + ");");
-      emitLine(out, indent, "if (" + err + " < 0) {");
-      emitLine(out, indent + 1, "return " + err + ";");
-      emitLine(out, indent, "}");
-      emitLine(out, indent, "offset_bits += 1U;");
-      break;
-    }
-    case SemanticScalarCategory::Byte:
-    case SemanticScalarCategory::Utf8:
-    case SemanticScalarCategory::UnsignedInt: {
-      std::string valueExpr = "(uint64_t)(" + expr + ")";
-      if (type.castMode == CastMode::Saturated && type.bitLength < 64U) {
-        const auto sat = nextName("sat");
-        const auto maxVal = (1ULL << type.bitLength) - 1ULL;
-        emitLine(out, indent,
-                 "uint64_t " + sat + " = (uint64_t)(" + expr + ");");
-        emitLine(out, indent,
-                 "if (" + sat + " > " + std::to_string(maxVal) + "ULL) {");
-        emitLine(out, indent + 1,
-                 sat + " = " + std::to_string(maxVal) + "ULL;");
-        emitLine(out, indent, "}");
-        valueExpr = sat;
-      }
-      const auto err = nextName("err");
-      emitLine(out, indent,
-               "const int8_t " + err +
-                   " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits, " +
-                   valueExpr + ", " + std::to_string(type.bitLength) + "U);");
-      emitLine(out, indent, "if (" + err + " < 0) {");
-      emitLine(out, indent + 1, "return " + err + ";");
-      emitLine(out, indent, "}");
-      emitLine(out, indent,
-               "offset_bits += " + std::to_string(type.bitLength) + "U;");
-      break;
-    }
-    case SemanticScalarCategory::SignedInt: {
-      std::string valueExpr = "(int64_t)(" + expr + ")";
-      if (type.castMode == CastMode::Saturated && type.bitLength < 64U &&
-          type.bitLength > 0U) {
-        const auto sat = nextName("sat");
-        const auto minVal = -(1LL << (type.bitLength - 1U));
-        const auto maxVal = (1LL << (type.bitLength - 1U)) - 1LL;
-        emitLine(out, indent,
-                 "int64_t " + sat + " = (int64_t)(" + expr + ");");
-        emitLine(out, indent,
-                 "if (" + sat + " < " + std::to_string(minVal) + "LL) {");
-        emitLine(out, indent + 1,
-                 sat + " = " + std::to_string(minVal) + "LL;");
-        emitLine(out, indent, "}");
-        emitLine(out, indent,
-                 "if (" + sat + " > " + std::to_string(maxVal) + "LL) {");
-        emitLine(out, indent + 1,
-                 sat + " = " + std::to_string(maxVal) + "LL;");
-        emitLine(out, indent, "}");
-        valueExpr = sat;
-      }
-      const auto err = nextName("err");
-      emitLine(out, indent,
-               "const int8_t " + err +
-                   " = dsdl_runtime_set_ixx(buffer, capacity_bytes, offset_bits, " +
-                   valueExpr + ", " + std::to_string(type.bitLength) + "U);");
-      emitLine(out, indent, "if (" + err + " < 0) {");
-      emitLine(out, indent + 1, "return " + err + ";");
-      emitLine(out, indent, "}");
-      emitLine(out, indent,
-               "offset_bits += " + std::to_string(type.bitLength) + "U;");
-      break;
-    }
-    case SemanticScalarCategory::Float: {
-      const auto err = nextName("err");
-      std::string call;
-      if (type.bitLength == 16U) {
-        call = "dsdl_runtime_set_f16(buffer, capacity_bytes, offset_bits, (float)(" +
-               expr + "))";
-      } else if (type.bitLength == 32U) {
-        call = "dsdl_runtime_set_f32(buffer, capacity_bytes, offset_bits, (float)(" +
-               expr + "))";
-      } else {
-        call = "dsdl_runtime_set_f64(buffer, capacity_bytes, offset_bits, (double)(" +
-               expr + "))";
-      }
-      emitLine(out, indent, "const int8_t " + err + " = " + call + ";");
-      emitLine(out, indent, "if (" + err + " < 0) {");
-      emitLine(out, indent + 1, "return " + err + ";");
-      emitLine(out, indent, "}");
-      emitLine(out, indent,
-               "offset_bits += " + std::to_string(type.bitLength) + "U;");
-      break;
-    }
-    case SemanticScalarCategory::Void:
-      emitSerializePadding(out, type, indent);
-      break;
-    case SemanticScalarCategory::Composite:
-      emitSerializeComposite(out, type, expr, indent);
-      break;
-    }
-  }
-
-  void emitDeserializeValue(std::ostringstream &out, const SemanticFieldType &type,
-                            const std::string &expr, const int indent) {
-    if (type.arrayKind != ArrayKind::None) {
-      emitDeserializeArray(out, type, expr, indent);
-      return;
-    }
-
-    switch (type.scalarCategory) {
-    case SemanticScalarCategory::Bool:
-      emitLine(out, indent,
-               expr + " = dsdl_runtime_get_bit(buffer, capacity_bytes, offset_bits);");
-      emitLine(out, indent, "offset_bits += 1U;");
-      break;
-    case SemanticScalarCategory::Byte:
-    case SemanticScalarCategory::Utf8:
-    case SemanticScalarCategory::UnsignedInt:
-      emitLine(out, indent,
-               expr + " = (" + unsignedStorageType(type.bitLength) + ")" +
-                   unsignedGetter(type.bitLength) +
-                   "(buffer, capacity_bytes, offset_bits, " +
-                   std::to_string(type.bitLength) + "U);");
-      emitLine(out, indent,
-               "offset_bits += " + std::to_string(type.bitLength) + "U;");
-      break;
-    case SemanticScalarCategory::SignedInt:
-      emitLine(out, indent,
-               expr + " = (" + signedStorageType(type.bitLength) + ")" +
-                   signedGetter(type.bitLength) +
-                   "(buffer, capacity_bytes, offset_bits, " +
-                   std::to_string(type.bitLength) + "U);");
-      emitLine(out, indent,
-               "offset_bits += " + std::to_string(type.bitLength) + "U;");
-      break;
-    case SemanticScalarCategory::Float:
-      if (type.bitLength == 16U) {
-        emitLine(out, indent,
-                 expr + " = dsdl_runtime_get_f16(buffer, capacity_bytes, offset_bits);");
-      } else if (type.bitLength == 32U) {
-        emitLine(out, indent,
-                 expr + " = dsdl_runtime_get_f32(buffer, capacity_bytes, offset_bits);");
-      } else {
-        emitLine(out, indent,
-                 expr + " = dsdl_runtime_get_f64(buffer, capacity_bytes, offset_bits);");
-      }
-      emitLine(out, indent,
-               "offset_bits += " + std::to_string(type.bitLength) + "U;");
-      break;
-    case SemanticScalarCategory::Void:
-      emitDeserializePadding(out, type, indent);
-      break;
-    case SemanticScalarCategory::Composite:
-      emitDeserializeComposite(out, type, expr, indent);
-      break;
-    }
-  }
-
-  void emitSerializeArray(std::ostringstream &out, const SemanticFieldType &type,
-                          const std::string &expr, const int indent) {
-    const bool elementIsBool = type.scalarCategory == SemanticScalarCategory::Bool;
-    const bool variable = isVariableArray(type.arrayKind);
-
-    if (variable) {
-      emitLine(out, indent,
-               "if (" + expr + ".count > " + std::to_string(type.arrayCapacity) +
-                   "U) {");
-      emitLine(out, indent + 1,
-               "return -(int8_t)DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH;");
-      emitLine(out, indent, "}");
-
-      const auto err = nextName("err");
-      emitLine(out, indent,
-               "const int8_t " + err +
-                   " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits, "
-                   "(uint64_t)" +
-                   expr + ".count, " +
-                   std::to_string(type.arrayLengthPrefixBits) + "U);");
-      emitLine(out, indent, "if (" + err + " < 0) {");
-      emitLine(out, indent + 1, "return " + err + ";");
-      emitLine(out, indent, "}");
-      emitLine(out, indent,
-               "offset_bits += " + std::to_string(type.arrayLengthPrefixBits) + "U;");
-    }
-
-    if (elementIsBool) {
-      const auto source = variable ? ("&" + expr + ".bitpacked[0]") : ("&" + expr + "[0]");
-      const auto countExpr = variable ? (expr + ".count")
-                                      : std::to_string(type.arrayCapacity) + "U";
-      emitLine(out, indent,
-               "dsdl_runtime_copy_bits(&buffer[0], offset_bits, " + countExpr +
-                   ", " + source + ", 0U);");
-      emitLine(out, indent, "offset_bits += " + countExpr + ";");
-      return;
-    }
-
-    const auto index = nextName("index");
-    const auto bound = variable ? (expr + ".count")
-                                : std::to_string(type.arrayCapacity) + "U";
-    const auto accessPrefix = variable ? (expr + ".elements") : expr;
-
-    emitLine(out, indent,
-             "for (size_t " + index + " = 0U; " + index + " < " + bound +
-                 "; ++" + index + ") {");
-    SemanticFieldType elementType = type;
-    elementType.arrayKind = ArrayKind::None;
-    elementType.arrayCapacity = 0;
-    elementType.arrayLengthPrefixBits = 0;
-    emitSerializeValue(out, elementType,
-                       accessPrefix + "[" + index + "]", indent + 1);
-    emitLine(out, indent, "}");
-  }
-
-  void emitDeserializeArray(std::ostringstream &out,
-                            const SemanticFieldType &type,
-                            const std::string &expr, const int indent) {
-    const bool elementIsBool = type.scalarCategory == SemanticScalarCategory::Bool;
-    const bool variable = isVariableArray(type.arrayKind);
-
-    if (variable) {
-      emitLine(out, indent,
-               expr + ".count = (size_t)" +
-                   unsignedGetter(static_cast<std::uint32_t>(type.arrayLengthPrefixBits)) +
-                   "(buffer, capacity_bytes, offset_bits, " +
-                   std::to_string(type.arrayLengthPrefixBits) + "U);");
-      emitLine(out, indent,
-               "offset_bits += " + std::to_string(type.arrayLengthPrefixBits) + "U;");
-      emitLine(out, indent,
-               "if (" + expr + ".count > " + std::to_string(type.arrayCapacity) +
-                   "U) {");
-      emitLine(out, indent + 1,
-               "return -(int8_t)DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH;");
-      emitLine(out, indent, "}");
-    }
-
-    if (elementIsBool) {
-      const auto target = variable ? ("&" + expr + ".bitpacked[0]") : ("&" + expr + "[0]");
-      const auto countExpr = variable ? (expr + ".count")
-                                      : std::to_string(type.arrayCapacity) + "U";
-      emitLine(out, indent,
-               "dsdl_runtime_get_bits(" + target + ", &buffer[0], capacity_bytes, "
-               "offset_bits, " + countExpr + ");");
-      emitLine(out, indent, "offset_bits += " + countExpr + ";");
-      return;
-    }
-
-    const auto index = nextName("index");
-    const auto bound = variable ? (expr + ".count")
-                                : std::to_string(type.arrayCapacity) + "U";
-    const auto accessPrefix = variable ? (expr + ".elements") : expr;
-
-    emitLine(out, indent,
-             "for (size_t " + index + " = 0U; " + index + " < " + bound +
-                 "; ++" + index + ") {");
-    SemanticFieldType elementType = type;
-    elementType.arrayKind = ArrayKind::None;
-    elementType.arrayCapacity = 0;
-    elementType.arrayLengthPrefixBits = 0;
-    emitDeserializeValue(out, elementType,
-                         accessPrefix + "[" + index + "]", indent + 1);
-    emitLine(out, indent, "}");
-  }
-
-  void emitSerializeComposite(std::ostringstream &out,
-                              const SemanticFieldType &type,
-                              const std::string &expr, const int indent) {
-    if (!type.compositeType) {
-      emitLine(out, indent,
-               "return -(int8_t)DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-      return;
-    }
-
-    const auto nestedType = ctx_.cTypeName(*type.compositeType);
-    auto sizeVar = nextName("size_bytes");
-    auto errVar = nextName("err");
-
-    if (!type.compositeSealed) {
-      emitLine(out, indent,
-               "offset_bits += 32U;  // Delimiter header");
-    }
-
-    emitLine(out, indent,
-             "size_t " + sizeVar + " = " +
-                 std::to_string((type.bitLengthSet.max() + 7) / 8) + "U;");
-    emitLine(out, indent,
-             "int8_t " + errVar + " = " + nestedType +
-                 "__serialize_(&" + expr + ", &buffer[offset_bits / 8U], &" +
-                 sizeVar + ");");
-    emitLine(out, indent, "if (" + errVar + " < 0) {");
-    emitLine(out, indent + 1, "return " + errVar + ";");
-    emitLine(out, indent, "}");
-
-    if (!type.compositeSealed) {
-      auto hdrErr = nextName("err");
-      emitLine(out, indent,
-               "const int8_t " + hdrErr +
-                   " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits - 32U, "
-                   "(uint64_t)" +
-                   sizeVar + ", 32U);");
-      emitLine(out, indent, "if (" + hdrErr + " < 0) {");
-      emitLine(out, indent + 1, "return " + hdrErr + ";");
-      emitLine(out, indent, "}");
-    }
-
-    emitLine(out, indent, "offset_bits += " + sizeVar + " * 8U;");
-  }
-
-  void emitDeserializeComposite(std::ostringstream &out,
-                                const SemanticFieldType &type,
-                                const std::string &expr, const int indent) {
-    if (!type.compositeType) {
-      emitLine(out, indent,
-               "return -(int8_t)DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
-      return;
-    }
-
-    const auto nestedType = ctx_.cTypeName(*type.compositeType);
-    auto sizeVar = nextName("size_bytes");
-    auto errVar = nextName("err");
-
-    if (!type.compositeSealed) {
-      emitLine(out, indent,
-               "size_t " + sizeVar +
-                   " = (size_t)dsdl_runtime_get_u32(buffer, capacity_bytes, offset_bits, 32U);");
-      emitLine(out, indent, "offset_bits += 32U;");
-      emitLine(out, indent,
-               "const size_t _remaining_" + std::to_string(id_) +
-                   " = capacity_bytes - dsdl_runtime_choose_min(offset_bits / 8U, capacity_bytes);");
-      const auto remVar = "_remaining_" + std::to_string(id_);
-      ++id_;
-      emitLine(out, indent, "if (" + sizeVar + " > " + remVar + ") {");
-      emitLine(out, indent + 1,
-               "return -(int8_t)DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER;");
-      emitLine(out, indent, "}");
-      const auto consumed = nextName("consumed");
-      emitLine(out, indent, "size_t " + consumed + " = " + sizeVar + ";");
-      emitLine(out, indent,
-               "const int8_t " + errVar + " = " + nestedType +
-                   "__deserialize_(&" + expr + ", &buffer[offset_bits / 8U], &" +
-                   consumed + ");");
-      emitLine(out, indent, "if (" + errVar + " < 0) {");
-      emitLine(out, indent + 1, "return " + errVar + ";");
-      emitLine(out, indent, "}");
-      emitLine(out, indent, "offset_bits += " + sizeVar + " * 8U;");
-      return;
-    }
-
-    emitLine(out, indent,
-             "size_t " + sizeVar +
-                 " = capacity_bytes - dsdl_runtime_choose_min(offset_bits / 8U, capacity_bytes);");
-    emitLine(out, indent,
-             "const int8_t " + errVar + " = " + nestedType +
-                 "__deserialize_(&" + expr + ", &buffer[offset_bits / 8U], &" +
-                 sizeVar + ");");
-    emitLine(out, indent, "if (" + errVar + " < 0) {");
-    emitLine(out, indent + 1, "return " + errVar + ";");
-    emitLine(out, indent, "}");
-    emitLine(out, indent, "offset_bits += " + sizeVar + " * 8U;");
-  }
-};
 
 std::string cTypeFromFieldType(const SemanticFieldType &type,
                                const EmitterContext &ctx) {
@@ -1053,16 +478,46 @@ void emitSectionMetadata(std::ostringstream &out, const std::string &typeName,
 
 void emitSection(std::ostringstream &out, const EmitterContext &ctx,
                  const SemanticDefinition &def, const std::string &typeName,
-                 const std::string &fullName, const SemanticSection &section) {
+                 const std::string &fullName, const std::string &sectionName,
+                 const SemanticSection &section) {
   emitSectionMetadata(out, typeName, fullName, def.info.majorVersion,
                       def.info.minorVersion, section);
   emitSectionConstants(out, typeName, section);
   emitArrayMacros(out, typeName, section);
   emitSectionTypedef(out, typeName, section, ctx);
 
-  FunctionBodyEmitter bodyEmitter(ctx);
-  bodyEmitter.emitSerializeFunction(out, typeName, section);
-  bodyEmitter.emitDeserializeFunction(out, typeName, section);
+  const auto irStem = sectionIRFunctionStem(def, sectionName);
+  emitLine(out, 0,
+           "int8_t " + irStem + "__serialize_ir_(const " + typeName +
+               "* const obj, uint8_t* buffer, size_t* const "
+               "inout_buffer_size_bytes);");
+  emitLine(out, 0,
+           "int8_t " + irStem + "__deserialize_ir_(" + typeName +
+               "* const out_obj, const uint8_t* buffer, size_t* const "
+               "inout_buffer_size_bytes);");
+  out << "\n";
+
+  emitLine(out, 0,
+           "static inline int8_t " + typeName +
+               "__serialize_(const " + typeName +
+               "* const obj, uint8_t* const buffer, size_t* const "
+               "inout_buffer_size_bytes)");
+  emitLine(out, 0, "{");
+  emitLine(out, 1, "return " + irStem +
+                       "__serialize_ir_(obj, buffer, inout_buffer_size_bytes);");
+  emitLine(out, 0, "}");
+  out << "\n";
+
+  emitLine(out, 0,
+           "static inline int8_t " + typeName +
+               "__deserialize_(" + typeName +
+               "* const out_obj, const uint8_t* buffer, size_t* const "
+               "inout_buffer_size_bytes)");
+  emitLine(out, 0, "{");
+  emitLine(out, 1, "return " + irStem +
+                       "__deserialize_ir_(out_obj, buffer, inout_buffer_size_bytes);");
+  emitLine(out, 0, "}");
+  out << "\n";
 }
 
 llvm::Expected<std::string> loadRuntimeHeader() {
@@ -1134,10 +589,10 @@ std::string renderHeader(const SemanticDefinition &def, const EmitterContext &ct
     out << "\n";
 
     emitSection(out, ctx, def, requestType, def.info.fullName + ".Request",
-                def.request);
+                "request", def.request);
     if (def.response) {
       emitSection(out, ctx, def, responseType, def.info.fullName + ".Response",
-                  *def.response);
+                  "response", *def.response);
     }
 
     emitLine(out, 0, "typedef " + requestType + " " + baseTypeName + ";");
@@ -1173,7 +628,8 @@ std::string renderHeader(const SemanticDefinition &def, const EmitterContext &ct
                  "*)out_obj, buffer, inout_buffer_size_bytes);");
     emitLine(out, 0, "}");
   } else {
-    emitSection(out, ctx, def, baseTypeName, def.info.fullName, def.request);
+    emitSection(out, ctx, def, baseTypeName, def.info.fullName, "",
+                def.request);
   }
 
   out << "#endif /* " << guard << " */\n";
@@ -1192,9 +648,46 @@ llvm::Error emitC(const SemanticModule &semantic, mlir::ModuleOp module,
 
   std::error_code ec;
   llvm::sys::fs::create_directories(options.outDir, true);
+  std::filesystem::path outRoot(options.outDir);
+  EmitterContext ctx(semantic);
 
-  if (options.emitImplTranslationUnit) {
-    mlir::PassManager pm(module.getContext());
+  for (const auto &def : semantic.definitions) {
+    auto clonedModule = mlir::OwningOpRef<mlir::ModuleOp>(
+        mlir::cast<mlir::ModuleOp>(module->clone()));
+    mlir::ModuleOp perDefModule = *clonedModule;
+    perDefModule->setAttr("llvmdsdl.headers_available",
+                          mlir::UnitAttr::get(perDefModule.getContext()));
+    perDefModule->setAttr("llvmdsdl.require_typed_lowering",
+                          mlir::UnitAttr::get(perDefModule.getContext()));
+
+    const std::string targetHeaderPath = ctx.relativeHeaderPath(def);
+    std::vector<mlir::Operation *> eraseList;
+    bool foundTargetSchema = false;
+    for (mlir::Operation &op : perDefModule.getBodyRegion().front()) {
+      if (op.getName().getStringRef() != "dsdl.schema") {
+        continue;
+      }
+      const auto headerPathAttr =
+          op.getAttrOfType<mlir::StringAttr>("header_path");
+      const bool isTarget =
+          headerPathAttr && headerPathAttr.getValue() == targetHeaderPath;
+      if (isTarget) {
+        foundTargetSchema = true;
+      } else {
+        eraseList.push_back(&op);
+      }
+    }
+    for (mlir::Operation *op : eraseList) {
+      op->erase();
+    }
+    if (!foundTargetSchema) {
+      diagnostics.error({"<mlir>", 1, 1},
+                        "failed to locate schema op for " + def.info.fullName);
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "schema selection failed");
+    }
+
+    mlir::PassManager pm(perDefModule.getContext());
     pm.addPass(createLowerDSDLSerializationPass());
     pm.addPass(createConvertDSDLToEmitCPass());
     pm.addPass(mlir::createCanonicalizerPass());
@@ -1203,7 +696,7 @@ llvm::Error emitC(const SemanticModule &semantic, mlir::ModuleOp module,
     pm.addPass(mlir::createConvertArithToEmitC());
     pm.addPass(mlir::createConvertFuncToEmitC());
 
-    if (mlir::failed(pm.run(module))) {
+    if (mlir::failed(pm.run(perDefModule))) {
       diagnostics.error({"<mlir>", 1, 1}, "EmitC lowering pipeline failed");
       return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                      "EmitC lowering pipeline failed");
@@ -1211,41 +704,41 @@ llvm::Error emitC(const SemanticModule &semantic, mlir::ModuleOp module,
 
     std::string emitted;
     llvm::raw_string_ostream emittedStream(emitted);
-    if (mlir::failed(mlir::emitc::translateToCpp(module, emittedStream,
-                                                 options.declareVariablesAtTop))) {
+    if (mlir::failed(mlir::emitc::translateToCpp(
+            perDefModule, emittedStream, options.declareVariablesAtTop))) {
       diagnostics.error({"<mlir>", 1, 1}, "EmitC translation failed");
       return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                      "EmitC translation failed");
     }
 
-    std::filesystem::path outRoot(options.outDir);
-    if (auto err = writeFile(outRoot / "generated_impl.c", emitted)) {
+    std::filesystem::path implDir = outRoot;
+    for (const auto &ns : def.info.namespaceComponents) {
+      implDir /= ns;
+    }
+    std::filesystem::create_directories(implDir);
+    if (auto err = writeFile(implDir / implFileName(def.info), emitted)) {
       return err;
     }
   }
 
-  std::filesystem::path outRoot(options.outDir);
-  if (options.emitHeaderOnly) {
-    auto runtimeHeader = loadRuntimeHeader();
-    if (!runtimeHeader) {
-      return runtimeHeader.takeError();
+  auto runtimeHeader = loadRuntimeHeader();
+  if (!runtimeHeader) {
+    return runtimeHeader.takeError();
+  }
+  if (auto err = writeFile(outRoot / "dsdl_runtime.h", *runtimeHeader)) {
+    return err;
+  }
+
+  for (const auto &def : semantic.definitions) {
+    std::filesystem::path dir = outRoot;
+    for (const auto &ns : def.info.namespaceComponents) {
+      dir /= ns;
     }
-    if (auto err = writeFile(outRoot / "dsdl_runtime.h", *runtimeHeader)) {
+    std::filesystem::create_directories(dir);
+
+    if (auto err =
+            writeFile(dir / headerFileName(def.info), renderHeader(def, ctx))) {
       return err;
-    }
-
-    EmitterContext ctx(semantic);
-    for (const auto &def : semantic.definitions) {
-      std::filesystem::path dir = outRoot;
-      for (const auto &ns : def.info.namespaceComponents) {
-        dir /= ns;
-      }
-      std::filesystem::create_directories(dir);
-
-      if (auto err =
-              writeFile(dir / headerFileName(def.info), renderHeader(def, ctx))) {
-        return err;
-      }
     }
   }
 
