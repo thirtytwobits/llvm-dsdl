@@ -1,0 +1,377 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "dev",
+      "displayName": "Development",
+      "description": "RelWithDebInfo build; relies on LLVM/MLIR discovery from system paths.",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
+      "name": "dev-llvm-env",
+      "displayName": "Development (LLVM_DIR/MLIR_DIR from environment)",
+      "description": "RelWithDebInfo build using LLVM_DIR and MLIR_DIR from environment variables.",
+      "inherits": "dev",
+      "cacheVariables": {
+        "LLVM_DIR": "$env{LLVM_DIR}",
+        "MLIR_DIR": "$env{MLIR_DIR}"
+      }
+    },
+    {
+      "name": "dev-homebrew",
+      "displayName": "Development (macOS Homebrew LLVM)",
+      "description": "RelWithDebInfo build with LLVM/MLIR from /opt/homebrew/opt/llvm.",
+      "inherits": "dev",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "cacheVariables": {
+        "LLVM_DIR": "/opt/homebrew/opt/llvm/lib/cmake/llvm",
+        "MLIR_DIR": "/opt/homebrew/opt/llvm/lib/cmake/mlir"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "description": "Release build for optimized tooling binaries.",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "ci",
+      "displayName": "CI",
+      "description": "CI-friendly RelWithDebInfo build; use with test presets and workflows.",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "build-dev",
+      "displayName": "Build (dev)",
+      "configurePreset": "dev"
+    },
+    {
+      "name": "build-dev-llvm-env",
+      "displayName": "Build (dev-llvm-env)",
+      "configurePreset": "dev-llvm-env"
+    },
+    {
+      "name": "build-dev-homebrew",
+      "displayName": "Build (dev-homebrew)",
+      "configurePreset": "dev-homebrew"
+    },
+    {
+      "name": "build-release",
+      "displayName": "Build (release)",
+      "configurePreset": "release"
+    },
+    {
+      "name": "build-ci",
+      "displayName": "Build (ci)",
+      "configurePreset": "ci"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "test-dev",
+      "displayName": "Test (dev, fast)",
+      "configurePreset": "dev",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "integration"
+        }
+      }
+    },
+    {
+      "name": "test-dev-homebrew",
+      "displayName": "Test (dev-homebrew, fast)",
+      "configurePreset": "dev-homebrew",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "integration"
+        }
+      }
+    },
+    {
+      "name": "test-dev-llvm-env",
+      "displayName": "Test (dev-llvm-env, fast)",
+      "configurePreset": "dev-llvm-env",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "integration"
+        }
+      }
+    },
+    {
+      "name": "test-dev-full",
+      "displayName": "Test (dev, full)",
+      "configurePreset": "dev",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "test-uavcan",
+      "displayName": "Test (uavcan integration only)",
+      "configurePreset": "dev",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "uavcan"
+        }
+      }
+    },
+    {
+      "name": "test-uavcan-homebrew",
+      "displayName": "Test (uavcan integration only, dev-homebrew)",
+      "configurePreset": "dev-homebrew",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "uavcan"
+        }
+      }
+    },
+    {
+      "name": "test-uavcan-llvm-env",
+      "displayName": "Test (uavcan integration only, dev-llvm-env)",
+      "configurePreset": "dev-llvm-env",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "uavcan"
+        }
+      }
+    },
+    {
+      "name": "test-ci",
+      "displayName": "Test (ci, fast)",
+      "configurePreset": "ci",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "exclude": {
+          "label": "integration"
+        }
+      }
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "dev",
+      "displayName": "Workflow (dev fast)",
+      "description": "Configure + build + fast test set (unit/lit when available).",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev"
+        },
+        {
+          "type": "build",
+          "name": "build-dev"
+        },
+        {
+          "type": "test",
+          "name": "test-dev"
+        }
+      ]
+    },
+    {
+      "name": "dev-homebrew",
+      "displayName": "Workflow (dev fast, Homebrew LLVM)",
+      "description": "Configure + build + fast tests using Homebrew LLVM/MLIR paths.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev-homebrew"
+        },
+        {
+          "type": "build",
+          "name": "build-dev-homebrew"
+        },
+        {
+          "type": "test",
+          "name": "test-dev-homebrew"
+        }
+      ]
+    },
+    {
+      "name": "dev-llvm-env",
+      "displayName": "Workflow (dev fast, LLVM env vars)",
+      "description": "Configure + build + fast tests using LLVM_DIR/MLIR_DIR from environment.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev-llvm-env"
+        },
+        {
+          "type": "build",
+          "name": "build-dev-llvm-env"
+        },
+        {
+          "type": "test",
+          "name": "test-dev-llvm-env"
+        }
+      ]
+    },
+    {
+      "name": "full",
+      "displayName": "Workflow (full verification)",
+      "description": "Configure + build + full tests, including strict uavcan generation integration test.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev"
+        },
+        {
+          "type": "build",
+          "name": "build-dev"
+        },
+        {
+          "type": "test",
+          "name": "test-dev-full"
+        }
+      ]
+    },
+    {
+      "name": "uavcan",
+      "displayName": "Workflow (uavcan integration)",
+      "description": "Configure + build + run only strict uavcan integration validation.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev"
+        },
+        {
+          "type": "build",
+          "name": "build-dev"
+        },
+        {
+          "type": "test",
+          "name": "test-uavcan"
+        }
+      ]
+    },
+    {
+      "name": "uavcan-homebrew",
+      "displayName": "Workflow (uavcan integration, Homebrew LLVM)",
+      "description": "Configure + build + strict uavcan integration validation using Homebrew LLVM/MLIR paths.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev-homebrew"
+        },
+        {
+          "type": "build",
+          "name": "build-dev-homebrew"
+        },
+        {
+          "type": "test",
+          "name": "test-uavcan-homebrew"
+        }
+      ]
+    },
+    {
+      "name": "uavcan-llvm-env",
+      "displayName": "Workflow (uavcan integration, LLVM env vars)",
+      "description": "Configure + build + strict uavcan integration validation using LLVM_DIR/MLIR_DIR from environment.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev-llvm-env"
+        },
+        {
+          "type": "build",
+          "name": "build-dev-llvm-env"
+        },
+        {
+          "type": "test",
+          "name": "test-uavcan-llvm-env"
+        }
+      ]
+    },
+    {
+      "name": "ci",
+      "displayName": "Workflow (ci fast)",
+      "description": "Configure + build + fast CI tests on ci preset.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "ci"
+        },
+        {
+          "type": "build",
+          "name": "build-ci"
+        },
+        {
+          "type": "test",
+          "name": "test-ci"
+        }
+      ]
+    }
+  ]
+}

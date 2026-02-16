@@ -21,3 +21,8 @@ target_include_directories(llvmdsdlCodeGen PUBLIC
   ${LLVMDSDL_SOURCE_DIR}/include
   ${LLVMDSDL_BINARY_DIR}/include
 )
+
+target_compile_definitions(llvmdsdlCodeGen
+  PRIVATE
+  LLVMDSDL_SOURCE_DIR="${LLVMDSDL_SOURCE_DIR}"
+)

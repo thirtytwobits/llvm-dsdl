@@ -1066,10 +1066,17 @@ void emitSection(std::ostringstream &out, const EmitterContext &ctx,
 }
 
 llvm::Expected<std::string> loadRuntimeHeader() {
-  std::ifstream in("runtime/dsdl_runtime.h");
+  const std::filesystem::path absoluteRuntimeHeader =
+      std::filesystem::path(LLVMDSDL_SOURCE_DIR) / "runtime" / "dsdl_runtime.h";
+  std::ifstream in(absoluteRuntimeHeader.string());
+  if (!in) {
+    // Fallback for environments where compile-time source definitions are
+    // unavailable or altered.
+    in.open("runtime/dsdl_runtime.h");
+  }
   if (!in) {
     return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                   "failed to read runtime/dsdl_runtime.h");
+                                   "failed to read runtime header");
   }
   std::ostringstream content;
   content << in.rdbuf();

@@ -55,6 +55,49 @@ ctest --test-dir build --output-on-failure
 If `llvm-lit` or Python `lit` is not installed, CMake will skip lit tests and
 print a warning. Unit tests still run via `ctest`.
 
+## Preset-Driven Automation
+
+`CMakePresets.json` is configured with `configure`, `build`, `test`, and
+`workflow` presets so contributors can run the common pipelines with one command.
+
+List available presets:
+
+```bash
+cmake --list-presets=all
+```
+
+Fast dev workflow (configure + build + fast tests):
+
+```bash
+cmake --workflow --preset dev
+```
+
+Full verification workflow (includes strict `uavcan` integration test):
+
+```bash
+cmake --workflow --preset full
+```
+
+Run only strict `uavcan` integration validation:
+
+```bash
+cmake --workflow --preset uavcan
+```
+
+macOS Homebrew LLVM workflow:
+
+```bash
+cmake --workflow --preset dev-homebrew
+```
+
+Environment-driven LLVM workflow:
+
+```bash
+export LLVM_DIR=/path/to/llvm/lib/cmake/llvm
+export MLIR_DIR=/path/to/llvm/lib/cmake/mlir
+cmake --workflow --preset dev-llvm-env
+```
+
 ## CLI Usage
 
 ### AST dump
