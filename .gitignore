@@ -1,0 +1,21 @@
+# Build directories
+build/
+
+# IDE and editor files
+.cache/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Compiled objects
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+
+# CMake generated files
+CMakeUserPresets.json

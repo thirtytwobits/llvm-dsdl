@@ -1,0 +1,755 @@
+#include "llvmdsdl/Frontend/Parser.h"
+
+#include "llvmdsdl/Frontend/Discovery.h"
+#include "llvmdsdl/Frontend/Lexer.h"
+
+#include "llvm/Support/Error.h"
+
+#include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <functional>
+#include <limits>
+#include <optional>
+#include <regex>
+
+namespace llvmdsdl {
+namespace {
+
+std::int64_t pow10i(int n) {
+  std::int64_t out = 1;
+  for (int i = 0; i < n; ++i) {
+    if (out > std::numeric_limits<std::int64_t>::max() / 10) {
+      return std::numeric_limits<std::int64_t>::max();
+    }
+    out *= 10;
+  }
+  return out;
+}
+
+std::string removeUnderscores(const std::string &s) {
+  std::string out;
+  out.reserve(s.size());
+  for (char c : s) {
+    if (c != '_') {
+      out.push_back(c);
+    }
+  }
+  return out;
+}
+
+std::optional<std::int64_t> parseIntegerLiteral(const std::string &in) {
+  std::string s = removeUnderscores(in);
+  int base = 10;
+  std::size_t start = 0;
+
+  if (s.size() > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
+    base = 16;
+    start = 2;
+  } else if (s.size() > 2 && s[0] == '0' && (s[1] == 'b' || s[1] == 'B')) {
+    base = 2;
+    start = 2;
+  } else if (s.size() > 2 && s[0] == '0' && (s[1] == 'o' || s[1] == 'O')) {
+    base = 8;
+    start = 2;
+  }
+
+  std::int64_t out = 0;
+  for (std::size_t i = start; i < s.size(); ++i) {
+    const char c = s[i];
+    int v = -1;
+    if (c >= '0' && c <= '9') {
+      v = c - '0';
+    } else if (c >= 'a' && c <= 'f') {
+      v = 10 + (c - 'a');
+    } else if (c >= 'A' && c <= 'F') {
+      v = 10 + (c - 'A');
+    }
+    if (v < 0 || v >= base) {
+      return std::nullopt;
+    }
+    if (out > (std::numeric_limits<std::int64_t>::max() - v) / base) {
+      return std::nullopt;
+    }
+    out = out * base + v;
+  }
+  return out;
+}
+
+std::optional<Rational> parseRealLiteral(const std::string &in) {
+  std::string s = removeUnderscores(in);
+  const auto ePos = s.find_first_of("eE");
+
+  std::string significand = s;
+  int exp = 0;
+  if (ePos != std::string::npos) {
+    significand = s.substr(0, ePos);
+    const auto expPart = s.substr(ePos + 1);
+    try {
+      exp = std::stoi(expPart);
+    } catch (...) {
+      return std::nullopt;
+    }
+  }
+
+  const auto dot = significand.find('.');
+  std::string digits = significand;
+  int fracDigits = 0;
+  if (dot != std::string::npos) {
+    fracDigits = static_cast<int>(significand.size() - dot - 1);
+    digits = significand;
+    digits.erase(dot, 1);
+  }
+
+  if (digits.empty() || digits == "+" || digits == "-") {
+    return std::nullopt;
+  }
+
+  bool neg = false;
+  if (digits[0] == '+' || digits[0] == '-') {
+    neg = digits[0] == '-';
+    digits.erase(digits.begin());
+  }
+
+  std::int64_t num = 0;
+  for (char c : digits) {
+    if (!std::isdigit(static_cast<unsigned char>(c))) {
+      return std::nullopt;
+    }
+    if (num > (std::numeric_limits<std::int64_t>::max() - (c - '0')) / 10) {
+      return std::nullopt;
+    }
+    num = num * 10 + (c - '0');
+  }
+  if (neg) {
+    num = -num;
+  }
+
+  std::int64_t den = pow10i(fracDigits);
+  if (exp > 0) {
+    const auto p = pow10i(exp);
+    if (p == std::numeric_limits<std::int64_t>::max()) {
+      return std::nullopt;
+    }
+    if (num > 0 && num > std::numeric_limits<std::int64_t>::max() / p) {
+      return std::nullopt;
+    }
+    if (num < 0 && num < std::numeric_limits<std::int64_t>::min() / p) {
+      return std::nullopt;
+    }
+    num *= p;
+  } else if (exp < 0) {
+    const auto p = pow10i(-exp);
+    if (p == std::numeric_limits<std::int64_t>::max()) {
+      return std::nullopt;
+    }
+    if (den > std::numeric_limits<std::int64_t>::max() / p) {
+      return std::nullopt;
+    }
+    den *= p;
+  }
+
+  return Rational(num, den);
+}
+
+std::optional<std::pair<std::uint32_t, std::uint32_t>>
+parseVersionTokenAsMajorMinor(const std::string &text) {
+  const auto dot = text.find('.');
+  if (dot == std::string::npos || dot == 0 || dot + 1 >= text.size()) {
+    return std::nullopt;
+  }
+  if (text.find('.', dot + 1) != std::string::npos) {
+    return std::nullopt;
+  }
+
+  const auto major = parseIntegerLiteral(text.substr(0, dot));
+  const auto minor = parseIntegerLiteral(text.substr(dot + 1));
+  if (!major || !minor || *major < 0 || *minor < 0) {
+    return std::nullopt;
+  }
+  return std::make_pair(static_cast<std::uint32_t>(*major),
+                        static_cast<std::uint32_t>(*minor));
+}
+
+} // namespace
+
+Parser::Parser(std::string filePath, std::vector<Token> tokens,
+               DiagnosticEngine &diagnostics)
+    : filePath_(std::move(filePath)), tokens_(std::move(tokens)),
+      diagnostics_(diagnostics) {}
+
+const Token &Parser::current() const { return tokens_[cursor_]; }
+
+const Token &Parser::previous() const { return tokens_[cursor_ - 1]; }
+
+bool Parser::isAtEnd() const { return current().kind == TokenKind::Eof; }
+
+bool Parser::check(TokenKind kind) const { return current().kind == kind; }
+
+bool Parser::match(TokenKind kind) {
+  if (!check(kind)) {
+    return false;
+  }
+  (void)advance();
+  return true;
+}
+
+bool Parser::matchAny(std::initializer_list<TokenKind> kinds) {
+  for (TokenKind k : kinds) {
+    if (check(k)) {
+      (void)advance();
+      return true;
+    }
+  }
+  return false;
+}
+
+const Token &Parser::advance() {
+  if (!isAtEnd()) {
+    ++cursor_;
+  }
+  return previous();
+}
+
+bool Parser::expect(TokenKind kind, const std::string &message) {
+  if (check(kind)) {
+    (void)advance();
+    return true;
+  }
+  diagnostics_.error(current().location, message);
+  return false;
+}
+
+void Parser::syncToNextLine() {
+  while (!isAtEnd() && !check(TokenKind::Newline)) {
+    (void)advance();
+  }
+  while (match(TokenKind::Newline)) {
+  }
+}
+
+llvm::Expected<DefinitionAST> Parser::parseDefinition() {
+  DefinitionAST def;
+  def.location = SourceLocation{filePath_, 1, 1};
+
+  while (!isAtEnd()) {
+    while (match(TokenKind::Newline)) {
+    }
+    if (isAtEnd()) {
+      break;
+    }
+
+    auto stmt = parseStatement();
+    if (!stmt) {
+      syncToNextLine();
+    } else {
+      def.statements.push_back(*stmt);
+      while (match(TokenKind::Newline)) {
+      }
+    }
+  }
+
+  if (diagnostics_.hasErrors()) {
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "DSDL parse failed");
+  }
+  return def;
+}
+
+std::optional<StatementAST> Parser::parseStatement() {
+  if (check(TokenKind::At)) {
+    auto d = parseDirective();
+    if (d) {
+      return StatementAST(*d);
+    }
+    return std::nullopt;
+  }
+  if (check(TokenKind::ServiceResponseMarker)) {
+    ServiceResponseMarkerAST m;
+    m.location = current().location;
+    (void)advance();
+    return StatementAST(m);
+  }
+  return parseAttribute();
+}
+
+std::optional<DirectiveAST> Parser::parseDirective() {
+  DirectiveAST out;
+  out.location = current().location;
+
+  if (!expect(TokenKind::At, "expected '@' to begin directive")) {
+    return std::nullopt;
+  }
+  if (!check(TokenKind::Identifier)) {
+    diagnostics_.error(current().location, "expected directive name");
+    return std::nullopt;
+  }
+
+  const std::string name = advance().text;
+  out.rawName = name;
+  if (name == "union") {
+    out.kind = DirectiveKind::Union;
+  } else if (name == "extent") {
+    out.kind = DirectiveKind::Extent;
+  } else if (name == "sealed") {
+    out.kind = DirectiveKind::Sealed;
+  } else if (name == "deprecated") {
+    out.kind = DirectiveKind::Deprecated;
+  } else if (name == "assert") {
+    out.kind = DirectiveKind::Assert;
+  } else if (name == "print") {
+    out.kind = DirectiveKind::Print;
+  } else {
+    out.kind = DirectiveKind::Unknown;
+  }
+
+  if (!check(TokenKind::Newline) && !check(TokenKind::Eof)) {
+    out.expression = parseExpression();
+  }
+  return out;
+}
+
+std::optional<StatementAST> Parser::parseAttribute() {
+  auto type = parseTypeExpr(false);
+  if (!type) {
+    diagnostics_.error(current().location, "expected type expression");
+    return std::nullopt;
+  }
+
+  if (check(TokenKind::Identifier)) {
+    const Token nameTok = advance();
+    if (match(TokenKind::Equal)) {
+      auto value = parseExpression();
+      if (!value) {
+        diagnostics_.error(current().location,
+                          "expected expression after '=' in constant");
+        return std::nullopt;
+      }
+      ConstantDeclAST c;
+      c.location = nameTok.location;
+      c.type = *type;
+      c.name = nameTok.text;
+      c.value = value;
+      return StatementAST(c);
+    }
+
+    FieldDeclAST f;
+    f.location = nameTok.location;
+    f.type = *type;
+    f.name = nameTok.text;
+    f.isPadding = false;
+    return StatementAST(f);
+  }
+
+  if (type->isVoid()) {
+    FieldDeclAST f;
+    f.location = type->location;
+    f.type = *type;
+    f.name = "";
+    f.isPadding = true;
+    return StatementAST(f);
+  }
+
+  diagnostics_.error(current().location,
+                    "expected field name or constant initializer");
+  return std::nullopt;
+}
+
+std::optional<TypeExprAST> Parser::parseTypeExpr(bool silent) {
+  const std::size_t start = cursor_;
+
+  auto fail = [&]() -> std::optional<TypeExprAST> {
+    cursor_ = start;
+    return std::nullopt;
+  };
+
+  TypeExprAST type;
+  type.location = current().location;
+
+  CastMode castMode = CastMode::Saturated;
+  if (check(TokenKind::Identifier) &&
+      (current().text == "saturated" || current().text == "truncated")) {
+    castMode = current().text == "truncated" ? CastMode::Truncated
+                                              : CastMode::Saturated;
+    (void)advance();
+  }
+
+  if (!check(TokenKind::Identifier)) {
+    return fail();
+  }
+
+  const Token baseTok = advance();
+  const std::string &name = baseTok.text;
+
+  if (name == "bool" || name == "byte" || name == "utf8" ||
+      std::regex_match(name, std::regex(R"(^u?int[1-9][0-9]*$)")) ||
+      std::regex_match(name, std::regex(R"(^float[1-9][0-9]*$)")) ||
+      std::regex_match(name, std::regex(R"(^void[1-9][0-9]*$)"))) {
+
+    if (name.rfind("void", 0) == 0) {
+      VoidTypeExprAST v;
+      v.bitLength = static_cast<std::uint32_t>(std::stoul(name.substr(4)));
+      type.scalar = v;
+    } else {
+      PrimitiveTypeExprAST p;
+      p.castMode = castMode;
+
+      if (name == "bool") {
+        p.kind = PrimitiveKind::Bool;
+        p.bitLength = 1;
+      } else if (name == "byte") {
+        p.kind = PrimitiveKind::Byte;
+        p.castMode = CastMode::Truncated;
+        p.bitLength = 8;
+      } else if (name == "utf8") {
+        p.kind = PrimitiveKind::Utf8;
+        p.castMode = CastMode::Truncated;
+        p.bitLength = 8;
+      } else if (name.rfind("uint", 0) == 0) {
+        p.kind = PrimitiveKind::UnsignedInt;
+        p.bitLength = static_cast<std::uint32_t>(std::stoul(name.substr(4)));
+      } else if (name.rfind("int", 0) == 0) {
+        p.kind = PrimitiveKind::SignedInt;
+        p.bitLength = static_cast<std::uint32_t>(std::stoul(name.substr(3)));
+      } else if (name.rfind("float", 0) == 0) {
+        p.kind = PrimitiveKind::Float;
+        p.bitLength = static_cast<std::uint32_t>(std::stoul(name.substr(5)));
+      }
+      type.scalar = p;
+    }
+  } else {
+    VersionedTypeExprAST v;
+    v.nameComponents.push_back(name);
+
+    bool seenVersion = false;
+    while (check(TokenKind::Dot)) {
+      if (cursor_ + 3 < tokens_.size() && tokens_[cursor_ + 1].kind == TokenKind::Integer &&
+          tokens_[cursor_ + 2].kind == TokenKind::Dot &&
+          tokens_[cursor_ + 3].kind == TokenKind::Integer) {
+        (void)advance();
+        const auto maybeMajor = parseIntegerLiteral(advance().text);
+        (void)expect(TokenKind::Dot, "expected '.' between major/minor version");
+        const auto maybeMinor = parseIntegerLiteral(advance().text);
+        if (!maybeMajor || !maybeMinor || *maybeMajor < 0 || *maybeMinor < 0) {
+          if (!silent) {
+            diagnostics_.error(baseTok.location, "invalid version specifier");
+          }
+          return fail();
+        }
+        v.major = static_cast<std::uint32_t>(*maybeMajor);
+        v.minor = static_cast<std::uint32_t>(*maybeMinor);
+        seenVersion = true;
+        break;
+      }
+
+      if (cursor_ + 1 < tokens_.size() &&
+          tokens_[cursor_ + 1].kind == TokenKind::Real) {
+        (void)advance();
+        const auto version =
+            parseVersionTokenAsMajorMinor(advance().text);
+        if (!version) {
+          if (!silent) {
+            diagnostics_.error(baseTok.location, "invalid version specifier");
+          }
+          return fail();
+        }
+        v.major = version->first;
+        v.minor = version->second;
+        seenVersion = true;
+        break;
+      }
+
+      (void)advance();
+      if (!check(TokenKind::Identifier)) {
+        if (!silent) {
+          diagnostics_.error(current().location,
+                            "expected identifier in versioned type name");
+        }
+        return fail();
+      }
+      v.nameComponents.push_back(advance().text);
+    }
+
+    if (!seenVersion) {
+      if (!silent) {
+        diagnostics_.error(baseTok.location,
+                          "expected version suffix '.major.minor' for composite type");
+      }
+      return fail();
+    }
+
+    type.scalar = v;
+  }
+
+  if (match(TokenKind::LBracket)) {
+    if (match(TokenKind::LessEqual)) {
+      type.arrayKind = ArrayKind::VariableInclusive;
+    } else if (match(TokenKind::Less)) {
+      type.arrayKind = ArrayKind::VariableExclusive;
+    } else {
+      type.arrayKind = ArrayKind::Fixed;
+    }
+
+    type.arrayCapacity = parseExpression();
+    if (!expect(TokenKind::RBracket, "expected closing ']' in array type")) {
+      return fail();
+    }
+  }
+
+  return type;
+}
+
+std::shared_ptr<ExprAST> Parser::parseExpression(int precedence) {
+  auto lhs = parseUnary();
+  if (!lhs) {
+    return nullptr;
+  }
+
+  while (true) {
+    const TokenKind tk = current().kind;
+    const int opPrec = precedenceOf(tk);
+    if (opPrec < precedence) {
+      break;
+    }
+    const auto maybeOp = toBinaryOp(tk);
+    if (!maybeOp) {
+      break;
+    }
+    const SourceLocation loc = current().location;
+    (void)advance();
+
+    const int rhsPrec = opPrec + (isRightAssociative(tk) ? 0 : 1);
+    auto rhs = parseExpression(rhsPrec);
+    if (!rhs) {
+      diagnostics_.error(loc, "expected right-hand side expression");
+      return lhs;
+    }
+
+    auto node = std::make_shared<ExprAST>();
+    node->location = loc;
+    node->value = ExprAST::Binary{*maybeOp, lhs, rhs};
+    lhs = node;
+  }
+
+  return lhs;
+}
+
+std::shared_ptr<ExprAST> Parser::parseUnary() {
+  if (matchAny({TokenKind::Plus, TokenKind::Minus, TokenKind::Bang})) {
+    const Token opTok = previous();
+    auto operand = parseUnary();
+    if (!operand) {
+      diagnostics_.error(opTok.location, "expected expression after unary operator");
+      return nullptr;
+    }
+
+    UnaryOp op = UnaryOp::Plus;
+    if (opTok.kind == TokenKind::Minus) {
+      op = UnaryOp::Minus;
+    } else if (opTok.kind == TokenKind::Bang) {
+      op = UnaryOp::LogicalNot;
+    }
+
+    auto node = std::make_shared<ExprAST>();
+    node->location = opTok.location;
+    node->value = ExprAST::Unary{op, operand};
+    return node;
+  }
+  return parsePrimary();
+}
+
+std::shared_ptr<ExprAST> Parser::parsePrimary() {
+  if (match(TokenKind::True) || match(TokenKind::False)) {
+    auto n = std::make_shared<ExprAST>();
+    n->location = previous().location;
+    n->value = previous().kind == TokenKind::True;
+    return n;
+  }
+
+  if (match(TokenKind::Integer)) {
+    const auto maybe = parseIntegerLiteral(previous().text);
+    auto n = std::make_shared<ExprAST>();
+    n->location = previous().location;
+    n->value = Rational(maybe.value_or(0), 1);
+    return n;
+  }
+
+  if (match(TokenKind::Real)) {
+    const auto maybe = parseRealLiteral(previous().text);
+    auto n = std::make_shared<ExprAST>();
+    n->location = previous().location;
+    n->value = maybe.value_or(Rational(0, 1));
+    return n;
+  }
+
+  if (match(TokenKind::String)) {
+    auto n = std::make_shared<ExprAST>();
+    n->location = previous().location;
+    n->value = previous().text;
+    return n;
+  }
+
+  if (match(TokenKind::LParen)) {
+    auto e = parseExpression();
+    (void)expect(TokenKind::RParen, "expected ')' after expression");
+    return e;
+  }
+
+  if (match(TokenKind::LBrace)) {
+    return parseSetLiteral(previous().location);
+  }
+
+  if (check(TokenKind::Identifier)) {
+    const std::size_t save = cursor_;
+    if (auto t = parseTypeExpr(true)) {
+      auto n = std::make_shared<ExprAST>();
+      n->location = t->location;
+      n->value = ExprAST::TypeLiteral{*t};
+      return n;
+    }
+    cursor_ = save;
+  }
+
+  if (match(TokenKind::Identifier)) {
+    auto n = std::make_shared<ExprAST>();
+    n->location = previous().location;
+    n->value = ExprAST::Identifier{previous().text};
+    return n;
+  }
+
+  diagnostics_.error(current().location, "expected expression atom");
+  return nullptr;
+}
+
+std::shared_ptr<ExprAST>
+Parser::parseSetLiteral(const SourceLocation &location) {
+  std::vector<std::shared_ptr<ExprAST>> elements;
+
+  if (!check(TokenKind::RBrace)) {
+    while (true) {
+      auto item = parseExpression();
+      if (!item) {
+        break;
+      }
+      elements.push_back(item);
+      if (!match(TokenKind::Comma)) {
+        break;
+      }
+    }
+  }
+
+  (void)expect(TokenKind::RBrace, "expected '}' to close set literal");
+
+  auto n = std::make_shared<ExprAST>();
+  n->location = location;
+  n->value = ExprAST::SetLiteral{elements};
+  return n;
+}
+
+int Parser::precedenceOf(TokenKind kind) {
+  switch (kind) {
+  case TokenKind::Dot:
+    return 90;
+  case TokenKind::StarStar:
+    return 80;
+  case TokenKind::Star:
+  case TokenKind::Slash:
+  case TokenKind::Percent:
+    return 70;
+  case TokenKind::Plus:
+  case TokenKind::Minus:
+    return 60;
+  case TokenKind::Pipe:
+  case TokenKind::Caret:
+  case TokenKind::Amp:
+    return 50;
+  case TokenKind::EqualEqual:
+  case TokenKind::BangEqual:
+  case TokenKind::LessEqual:
+  case TokenKind::GreaterEqual:
+  case TokenKind::Less:
+  case TokenKind::Greater:
+    return 40;
+  case TokenKind::PipePipe:
+  case TokenKind::AmpAmp:
+    return 30;
+  default:
+    return -1;
+  }
+}
+
+bool Parser::isRightAssociative(TokenKind kind) {
+  return kind == TokenKind::StarStar;
+}
+
+std::optional<BinaryOp> Parser::toBinaryOp(TokenKind kind) {
+  switch (kind) {
+  case TokenKind::Dot:
+    return BinaryOp::Attribute;
+  case TokenKind::StarStar:
+    return BinaryOp::Pow;
+  case TokenKind::Star:
+    return BinaryOp::Mul;
+  case TokenKind::Slash:
+    return BinaryOp::Div;
+  case TokenKind::Percent:
+    return BinaryOp::Mod;
+  case TokenKind::Plus:
+    return BinaryOp::Add;
+  case TokenKind::Minus:
+    return BinaryOp::Sub;
+  case TokenKind::Pipe:
+    return BinaryOp::BitOr;
+  case TokenKind::Caret:
+    return BinaryOp::BitXor;
+  case TokenKind::Amp:
+    return BinaryOp::BitAnd;
+  case TokenKind::EqualEqual:
+    return BinaryOp::Eq;
+  case TokenKind::BangEqual:
+    return BinaryOp::Ne;
+  case TokenKind::LessEqual:
+    return BinaryOp::Le;
+  case TokenKind::GreaterEqual:
+    return BinaryOp::Ge;
+  case TokenKind::Less:
+    return BinaryOp::Lt;
+  case TokenKind::Greater:
+    return BinaryOp::Gt;
+  case TokenKind::PipePipe:
+    return BinaryOp::LogicalOr;
+  case TokenKind::AmpAmp:
+    return BinaryOp::LogicalAnd;
+  default:
+    return std::nullopt;
+  }
+}
+
+llvm::Expected<ASTModule>
+parseDefinitions(const std::vector<std::string> &rootNamespaceDirs,
+                 const std::vector<std::string> &lookupDirs,
+                 DiagnosticEngine &diagnostics) {
+  ASTModule module;
+  auto defs = discoverDefinitions(rootNamespaceDirs, lookupDirs, diagnostics);
+
+  for (const auto &def : defs) {
+    Lexer lexer(def.filePath, def.text);
+    auto tokens = lexer.lex();
+    Parser parser(def.filePath, std::move(tokens), diagnostics);
+
+    auto parsed = parser.parseDefinition();
+    if (!parsed) {
+      llvm::consumeError(parsed.takeError());
+      continue;
+    }
+    module.definitions.push_back(ParsedDefinition{def, *parsed});
+  }
+
+  if (diagnostics.hasErrors()) {
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "parsing failed");
+  }
+  return module;
+}
+
+} // namespace llvmdsdl

@@ -1,0 +1,12 @@
+#include "llvmdsdl/IR/DSDLAttrs.h"
+
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/DialectImplementation.h"
+#include "mlir/IR/OpImplementation.h"
+#include "llvm/ADT/TypeSwitch.h"
+
+using namespace mlir;
+using namespace mlir::dsdl;
+
+#define GET_ATTRDEF_CLASSES
+#include "llvmdsdl/IR/DSDLAttrs.cpp.inc"

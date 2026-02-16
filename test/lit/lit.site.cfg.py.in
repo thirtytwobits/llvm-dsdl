@@ -1,0 +1,7 @@
+import os
+config.test_source_root = os.path.dirname(__file__)
+config.test_exec_root = os.path.dirname(__file__)
+config.dsdlc = "@LLVMDSDL_BINARY_DIR@/tools/dsdlc/dsdlc"
+config.dsdl_opt = "@LLVMDSDL_BINARY_DIR@/tools/dsdl-opt/dsdl-opt"
+
+lit_config.load_config(config, os.path.join(config.test_source_root, "lit.cfg.py"))

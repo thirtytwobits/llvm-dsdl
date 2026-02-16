@@ -1,0 +1,291 @@
+#include "llvmdsdl/Frontend/Lexer.h"
+
+#include <cctype>
+
+namespace llvmdsdl {
+
+Lexer::Lexer(std::string file, std::string text)
+    : file_(std::move(file)), text_(std::move(text)) {}
+
+bool Lexer::isAtEnd() const { return index_ >= text_.size(); }
+
+char Lexer::peek(std::size_t lookahead) const {
+  const std::size_t i = index_ + lookahead;
+  return i < text_.size() ? text_[i] : '\0';
+}
+
+char Lexer::advance() {
+  if (isAtEnd()) {
+    return '\0';
+  }
+  const char c = text_[index_++];
+  if (c == '\n') {
+    ++line_;
+    column_ = 1;
+  } else {
+    ++column_;
+  }
+  return c;
+}
+
+void Lexer::emit(TokenKind kind, std::string text, std::uint32_t line,
+                 std::uint32_t column) {
+  tokens_.push_back(Token{kind, std::move(text), SourceLocation{file_, line, column}});
+}
+
+void Lexer::lexIdentifierOrKeyword(std::uint32_t line, std::uint32_t column) {
+  std::string text;
+  while (std::isalnum(static_cast<unsigned char>(peek())) || peek() == '_') {
+    text.push_back(advance());
+  }
+
+  if (text == "true") {
+    emit(TokenKind::True, text, line, column);
+    return;
+  }
+  if (text == "false") {
+    emit(TokenKind::False, text, line, column);
+    return;
+  }
+  emit(TokenKind::Identifier, text, line, column);
+}
+
+void Lexer::lexNumber(std::uint32_t line, std::uint32_t column) {
+  std::string text;
+  bool hasDot = false;
+  bool hasExp = false;
+
+  if (peek() == '0' &&
+      (peek(1) == 'x' || peek(1) == 'X' || peek(1) == 'b' || peek(1) == 'B' ||
+       peek(1) == 'o' || peek(1) == 'O')) {
+    text.push_back(advance());
+    text.push_back(advance());
+    while (std::isalnum(static_cast<unsigned char>(peek())) || peek() == '_') {
+      text.push_back(advance());
+    }
+    emit(TokenKind::Integer, text, line, column);
+    return;
+  }
+
+  if (peek() == '.') {
+    hasDot = true;
+    text.push_back(advance());
+  }
+
+  while (std::isdigit(static_cast<unsigned char>(peek())) || peek() == '_') {
+    text.push_back(advance());
+  }
+
+  if (!hasDot && peek() == '.' && std::isdigit(static_cast<unsigned char>(peek(1)))) {
+    hasDot = true;
+    text.push_back(advance());
+    while (std::isdigit(static_cast<unsigned char>(peek())) || peek() == '_') {
+      text.push_back(advance());
+    }
+  }
+
+  if (peek() == 'e' || peek() == 'E') {
+    hasExp = true;
+    text.push_back(advance());
+    if (peek() == '+' || peek() == '-') {
+      text.push_back(advance());
+    }
+    while (std::isdigit(static_cast<unsigned char>(peek())) || peek() == '_') {
+      text.push_back(advance());
+    }
+  }
+
+  emit((hasDot || hasExp) ? TokenKind::Real : TokenKind::Integer, text, line,
+       column);
+}
+
+void Lexer::lexString(std::uint32_t line, std::uint32_t column, char quote) {
+  std::string value;
+  (void)advance();
+  while (!isAtEnd() && peek() != quote && peek() != '\n' && peek() != '\r') {
+    char c = advance();
+    if (c == '\\' && !isAtEnd()) {
+      const char esc = advance();
+      switch (esc) {
+      case 'n':
+        value.push_back('\n');
+        break;
+      case 'r':
+        value.push_back('\r');
+        break;
+      case 't':
+        value.push_back('\t');
+        break;
+      case '\\':
+      case '\'':
+      case '"':
+        value.push_back(esc);
+        break;
+      default:
+        value.push_back(esc);
+        break;
+      }
+    } else {
+      value.push_back(c);
+    }
+  }
+  if (peek() == quote) {
+    (void)advance();
+  }
+  emit(TokenKind::String, value, line, column);
+}
+
+std::vector<Token> Lexer::lex() {
+  while (!isAtEnd()) {
+    const std::uint32_t tokLine = line_;
+    const std::uint32_t tokCol = column_;
+    const char c = peek();
+
+    if (c == '\r') {
+      (void)advance();
+      continue;
+    }
+    if (c == '\n') {
+      (void)advance();
+      emit(TokenKind::Newline, "\\n", tokLine, tokCol);
+      continue;
+    }
+    if (c == ' ' || c == '\t') {
+      (void)advance();
+      continue;
+    }
+    if (c == '#') {
+      while (!isAtEnd() && peek() != '\n') {
+        (void)advance();
+      }
+      continue;
+    }
+
+    if (c == '-' && peek(1) == '-' && peek(2) == '-') {
+      (void)advance();
+      (void)advance();
+      (void)advance();
+      while (peek() == '-') {
+        (void)advance();
+      }
+      emit(TokenKind::ServiceResponseMarker, "---", tokLine, tokCol);
+      continue;
+    }
+
+    if (std::isalpha(static_cast<unsigned char>(c)) || c == '_') {
+      lexIdentifierOrKeyword(tokLine, tokCol);
+      continue;
+    }
+
+    if (std::isdigit(static_cast<unsigned char>(c))) {
+      lexNumber(tokLine, tokCol);
+      continue;
+    }
+
+    if (c == '\'' || c == '"') {
+      lexString(tokLine, tokCol, c);
+      continue;
+    }
+
+    const char n = peek(1);
+    if (c == '<' && n == '=') {
+      (void)advance();
+      (void)advance();
+      emit(TokenKind::LessEqual, "<=", tokLine, tokCol);
+      continue;
+    }
+    if (c == '>' && n == '=') {
+      (void)advance();
+      (void)advance();
+      emit(TokenKind::GreaterEqual, ">=", tokLine, tokCol);
+      continue;
+    }
+    if (c == '=' && n == '=') {
+      (void)advance();
+      (void)advance();
+      emit(TokenKind::EqualEqual, "==", tokLine, tokCol);
+      continue;
+    }
+    if (c == '!' && n == '=') {
+      (void)advance();
+      (void)advance();
+      emit(TokenKind::BangEqual, "!=", tokLine, tokCol);
+      continue;
+    }
+    if (c == '|' && n == '|') {
+      (void)advance();
+      (void)advance();
+      emit(TokenKind::PipePipe, "||", tokLine, tokCol);
+      continue;
+    }
+    if (c == '&' && n == '&') {
+      (void)advance();
+      (void)advance();
+      emit(TokenKind::AmpAmp, "&&", tokLine, tokCol);
+      continue;
+    }
+    if (c == '*' && n == '*') {
+      (void)advance();
+      (void)advance();
+      emit(TokenKind::StarStar, "**", tokLine, tokCol);
+      continue;
+    }
+
+    const TokenKind kind = [&]() {
+      switch (c) {
+      case '@':
+        return TokenKind::At;
+      case '(':
+        return TokenKind::LParen;
+      case ')':
+        return TokenKind::RParen;
+      case '[':
+        return TokenKind::LBracket;
+      case ']':
+        return TokenKind::RBracket;
+      case '{':
+        return TokenKind::LBrace;
+      case '}':
+        return TokenKind::RBrace;
+      case ',':
+        return TokenKind::Comma;
+      case '.':
+        return TokenKind::Dot;
+      case '=':
+        return TokenKind::Equal;
+      case '+':
+        return TokenKind::Plus;
+      case '-':
+        return TokenKind::Minus;
+      case '*':
+        return TokenKind::Star;
+      case '/':
+        return TokenKind::Slash;
+      case '%':
+        return TokenKind::Percent;
+      case '|':
+        return TokenKind::Pipe;
+      case '^':
+        return TokenKind::Caret;
+      case '&':
+        return TokenKind::Amp;
+      case '!':
+        return TokenKind::Bang;
+      case '<':
+        return TokenKind::Less;
+      case '>':
+        return TokenKind::Greater;
+      default:
+        return TokenKind::Identifier;
+      }
+    }();
+
+    (void)advance();
+    emit(kind, std::string(1, c), tokLine, tokCol);
+  }
+
+  emit(TokenKind::Eof, "", line_, column_);
+  return tokens_;
+}
+
+} // namespace llvmdsdl
