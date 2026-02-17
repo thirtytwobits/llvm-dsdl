@@ -1,4 +1,5 @@
 #include "llvmdsdl/CodeGen/CEmitter.h"
+#include "llvmdsdl/CodeGen/TypeStorage.h"
 
 #include "llvmdsdl/Transforms/Passes.h"
 
@@ -184,19 +185,6 @@ std::string valueToCExpr(const Value &value) {
   return value.str();
 }
 
-std::uint32_t scalarStorageBits(const std::uint32_t bitLength) {
-  if (bitLength <= 8) {
-    return 8;
-  }
-  if (bitLength <= 16) {
-    return 16;
-  }
-  if (bitLength <= 32) {
-    return 32;
-  }
-  return 64;
-}
-
 std::string unsignedStorageType(const std::uint32_t bitLength) {
   switch (scalarStorageBits(bitLength)) {
   case 8:
@@ -221,10 +209,6 @@ std::string signedStorageType(const std::uint32_t bitLength) {
   default:
     return "int64_t";
   }
-}
-
-bool isVariableArray(const ArrayKind k) {
-  return k == ArrayKind::VariableInclusive || k == ArrayKind::VariableExclusive;
 }
 
 class EmitterContext final {

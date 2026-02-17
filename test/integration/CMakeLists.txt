@@ -22,6 +22,73 @@ if(EXISTS "${LLVMDSDL_FIXTURES_ROOT}")
   )
 endif()
 
+if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER)
+  add_test(
+    NAME llvmdsdl-signed-narrow-cpp-c-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/signed-narrow-cpp-c-parity-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCPP_PROFILE=std
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunSignedNarrowCppCParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-signed-narrow-cpp-c-parity
+    PROPERTIES
+      LABELS "integration;fixtures;cpp;differential"
+  )
+
+  add_test(
+    NAME llvmdsdl-signed-narrow-cpp-pmr-c-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/signed-narrow-cpp-pmr-c-parity-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCPP_PROFILE=pmr
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunSignedNarrowCppCParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-signed-narrow-cpp-pmr-c-parity
+    PROPERTIES
+      LABELS "integration;fixtures;cpp;differential"
+  )
+else()
+  message(STATUS "Skipping signed_narrow C/C++ parity tests: C/C++ compiler unavailable")
+endif()
+
+find_program(CARGO_EXECUTABLE cargo QUIET)
+find_program(RUSTC_EXECUTABLE rustc QUIET)
+if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
+  add_test(
+    NAME llvmdsdl-signed-narrow-c-rust-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/signed-narrow-c-rust-parity-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DAR_EXECUTABLE=${CMAKE_AR}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunSignedNarrowCRustParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-signed-narrow-c-rust-parity
+    PROPERTIES
+      LABELS "integration;fixtures;rust;differential"
+  )
+else()
+  message(STATUS "Skipping signed_narrow C/Rust parity test: C compiler or cargo/rustc unavailable")
+endif()
+
 if(NOT EXISTS "${LLVMDSDL_UAVCAN_ROOT}")
   message(WARNING "Skipping uavcan integration test: ${LLVMDSDL_UAVCAN_ROOT} missing")
   return()

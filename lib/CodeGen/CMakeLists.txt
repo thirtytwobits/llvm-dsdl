@@ -1,8 +1,16 @@
 add_library(llvmdsdlCodeGen
+  ArrayWirePlan.cpp
   CEmitter.cpp
   CppEmitter.cpp
+  HelperBindingRender.cpp
+  HelperSymbolResolver.cpp
+  MlirLoweredFacts.cpp
   RustEmitter.cpp
+  SectionHelperBindingPlan.cpp
+  SerDesStatementPlan.cpp
   SerDesHelperDescriptors.cpp
+  TypeStorage.cpp
+  WireLayoutFacts.cpp
 )
 
 target_link_libraries(llvmdsdlCodeGen

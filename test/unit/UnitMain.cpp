@@ -5,6 +5,13 @@ bool runBitLengthSetTests();
 bool runEvaluatorTests();
 bool runAnalyzerTests();
 bool runRuntimeTests();
+bool runArrayWirePlanTests();
+bool runSectionHelperBindingPlanTests();
+bool runSerDesStatementPlanTests();
+bool runHelperBindingRenderTests();
+bool runHelperSymbolResolverTests();
+bool runWireLayoutFactsTests();
+bool runTypeStorageTests();
 
 int main() {
   bool ok = true;
@@ -13,6 +20,13 @@ int main() {
   ok = runEvaluatorTests() && ok;
   ok = runAnalyzerTests() && ok;
   ok = runRuntimeTests() && ok;
+  ok = runArrayWirePlanTests() && ok;
+  ok = runSectionHelperBindingPlanTests() && ok;
+  ok = runSerDesStatementPlanTests() && ok;
+  ok = runHelperBindingRenderTests() && ok;
+  ok = runHelperSymbolResolverTests() && ok;
+  ok = runWireLayoutFactsTests() && ok;
+  ok = runTypeStorageTests() && ok;
   if (!ok) {
     std::cerr << "unit tests failed\n";
     return 1;

@@ -1,14 +1,18 @@
 #include "llvmdsdl/CodeGen/CppEmitter.h"
+#include "llvmdsdl/CodeGen/ArrayWirePlan.h"
+#include "llvmdsdl/CodeGen/HelperBindingRender.h"
+#include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
+#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
 #include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
-#include "llvmdsdl/Transforms/Passes.h"
+#include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
+#include "llvmdsdl/CodeGen/TypeStorage.h"
+#include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
-
-#include "mlir/Pass/PassManager.h"
-#include "mlir/Pass/Pass.h"
 
 #include <cctype>
 #include <filesystem>
@@ -22,373 +26,6 @@
 
 namespace llvmdsdl {
 namespace {
-
-std::string typeKey(const std::string &name, std::uint32_t major,
-                    std::uint32_t minor) {
-  return name + ":" + std::to_string(major) + ":" + std::to_string(minor);
-}
-
-struct LoweredFieldFacts final {
-  std::optional<std::uint32_t> arrayLengthPrefixBits;
-  std::string serArrayLengthPrefixHelper;
-  std::string deserArrayLengthPrefixHelper;
-  std::string arrayLengthValidateHelper;
-  std::string delimiterValidateHelper;
-  std::string serUnsignedHelper;
-  std::string deserUnsignedHelper;
-  std::string serSignedHelper;
-  std::string deserSignedHelper;
-  std::string serFloatHelper;
-  std::string deserFloatHelper;
-};
-
-struct LoweredSectionFacts final {
-  std::string capacityCheckHelper;
-  std::optional<std::uint32_t> unionTagBits;
-  std::string unionTagValidateHelper;
-  std::string serUnionTagHelper;
-  std::string deserUnionTagHelper;
-  std::unordered_map<std::string, LoweredFieldFacts> fieldsByName;
-};
-
-using LoweredDefinitionFacts = std::unordered_map<std::string, LoweredSectionFacts>;
-using LoweredFactsMap = std::unordered_map<std::string, LoweredDefinitionFacts>;
-
-bool validateMlirSchemaCoverage(const SemanticModule &semantic,
-                                mlir::ModuleOp module,
-                                DiagnosticEngine &diagnostics,
-                                LoweredFactsMap *const outFacts = nullptr) {
-  std::unordered_map<std::string, std::set<std::string>> keyToSections;
-  LoweredFactsMap loweredFacts;
-  auto loweredModule = mlir::OwningOpRef<mlir::ModuleOp>(
-      mlir::cast<mlir::ModuleOp>(module->clone()));
-  mlir::PassManager pm(module.getContext());
-  pm.addPass(createLowerDSDLSerializationPass());
-  if (mlir::failed(pm.run(*loweredModule))) {
-    diagnostics.error({"<mlir>", 1, 1},
-                      "failed to run lower-dsdl-serialization for C++ "
-                      "backend validation");
-    return false;
-  }
-
-  for (mlir::Operation &op : loweredModule->getBodyRegion().front()) {
-    if (op.getName().getStringRef() != "dsdl.schema") {
-      continue;
-    }
-
-    const auto fullName = op.getAttrOfType<mlir::StringAttr>("full_name");
-    const auto major = op.getAttrOfType<mlir::IntegerAttr>("major");
-    const auto minor = op.getAttrOfType<mlir::IntegerAttr>("minor");
-    if (!fullName || !major || !minor) {
-      diagnostics.error({"<mlir>", 1, 1},
-                        "dsdl.schema missing identity attributes");
-      return false;
-    }
-
-    const auto key = typeKey(fullName.getValue().str(),
-                             static_cast<std::uint32_t>(major.getInt()),
-                             static_cast<std::uint32_t>(minor.getInt()));
-    auto &sections = keyToSections[key];
-
-    if (op.getNumRegions() == 0 || op.getRegion(0).empty()) {
-      diagnostics.error({"<mlir>", 1, 1},
-                        "dsdl.schema has no body region for " +
-                            fullName.getValue().str());
-      return false;
-    }
-
-    for (mlir::Operation &child : op.getRegion(0).front()) {
-      if (child.getName().getStringRef() != "dsdl.serialization_plan") {
-        continue;
-      }
-      std::string section;
-      if (const auto sectionAttr =
-              child.getAttrOfType<mlir::StringAttr>("section")) {
-        section = sectionAttr.getValue().str();
-      }
-      auto &sectionFacts = loweredFacts[key][section];
-      if (!sections.insert(section).second) {
-        diagnostics.error({"<mlir>", 1, 1},
-                          "duplicate dsdl.serialization_plan section '" +
-                              section + "' for " + fullName.getValue().str());
-        return false;
-      }
-
-      const auto minBits = child.getAttrOfType<mlir::IntegerAttr>("min_bits");
-      const auto maxBits = child.getAttrOfType<mlir::IntegerAttr>("max_bits");
-      if (!minBits || !maxBits) {
-        diagnostics.error({"<mlir>", 1, 1},
-                          "serialization plan missing min_bits/max_bits for " +
-                              fullName.getValue().str());
-        return false;
-      }
-      const auto capacityCheckHelper =
-          child.getAttrOfType<mlir::StringAttr>("lowered_capacity_check_helper");
-      if (!capacityCheckHelper) {
-        diagnostics.error({"<mlir>", 1, 1},
-                          "serialization plan missing lowered capacity helper for " +
-                              fullName.getValue().str());
-        return false;
-      }
-      sectionFacts.capacityCheckHelper = capacityCheckHelper.getValue().str();
-
-      if (child.hasAttr("is_union")) {
-        const auto unionTagBits =
-            child.getAttrOfType<mlir::IntegerAttr>("union_tag_bits");
-        const auto unionOptionCount =
-            child.getAttrOfType<mlir::IntegerAttr>("union_option_count");
-        if (!unionTagBits || !unionOptionCount) {
-          diagnostics.error(
-              {"<mlir>", 1, 1},
-              "union plan missing union_tag_bits/union_option_count for " +
-                  fullName.getValue().str());
-          return false;
-        }
-        const auto serUnionTagHelper =
-            child.getAttrOfType<mlir::StringAttr>("lowered_ser_union_tag_helper");
-        const auto deserUnionTagHelper = child.getAttrOfType<mlir::StringAttr>(
-            "lowered_deser_union_tag_helper");
-        const auto unionTagValidateHelper = child.getAttrOfType<mlir::StringAttr>(
-            "lowered_union_tag_validate_helper");
-        if (!serUnionTagHelper || !deserUnionTagHelper ||
-            !unionTagValidateHelper) {
-          diagnostics.error({"<mlir>", 1, 1},
-                            "union plan missing lowered union-tag helpers for " +
-                                fullName.getValue().str());
-          return false;
-        }
-        sectionFacts.unionTagBits =
-            static_cast<std::uint32_t>(unionTagBits.getInt());
-        sectionFacts.unionTagValidateHelper =
-            unionTagValidateHelper.getValue().str();
-        sectionFacts.serUnionTagHelper = serUnionTagHelper.getValue().str();
-        sectionFacts.deserUnionTagHelper = deserUnionTagHelper.getValue().str();
-      }
-
-      if (child.getNumRegions() == 0 || child.getRegion(0).empty()) {
-        diagnostics.error({"<mlir>", 1, 1},
-                          "serialization plan has no body for " +
-                              fullName.getValue().str());
-        return false;
-      }
-      for (mlir::Operation &step : child.getRegion(0).front()) {
-        const auto stepName = step.getName().getStringRef();
-        if (stepName == "dsdl.align") {
-          if (!step.getAttrOfType<mlir::IntegerAttr>("bits")) {
-            diagnostics.error({"<mlir>", 1, 1},
-                              "dsdl.align missing bits attribute for " +
-                                  fullName.getValue().str());
-            return false;
-          }
-          continue;
-        }
-        if (stepName != "dsdl.io") {
-          continue;
-        }
-
-        const auto scalarCategory =
-            step.getAttrOfType<mlir::StringAttr>("scalar_category");
-        const auto arrayKind = step.getAttrOfType<mlir::StringAttr>("array_kind");
-        const auto kind = step.getAttrOfType<mlir::StringAttr>("kind");
-        const auto bitLength = step.getAttrOfType<mlir::IntegerAttr>("bit_length");
-        const auto alignmentBits =
-            step.getAttrOfType<mlir::IntegerAttr>("alignment_bits");
-        if (!scalarCategory || !arrayKind || !kind || !bitLength ||
-            !alignmentBits) {
-          diagnostics.error({"<mlir>", 1, 1},
-                            "dsdl.io missing core type metadata for " +
-                                fullName.getValue().str());
-          return false;
-        }
-        const bool isPadding = kind.getValue() == "padding";
-
-        const auto arrayPrefixBits =
-            step.getAttrOfType<mlir::IntegerAttr>("array_length_prefix_bits");
-        if (arrayKind.getValue().starts_with("variable") &&
-            (!arrayPrefixBits || arrayPrefixBits.getInt() <= 0)) {
-          diagnostics.error({"<mlir>", 1, 1},
-                            "variable array step missing valid prefix width for " +
-                                fullName.getValue().str());
-          return false;
-        }
-        if (!isPadding && arrayKind.getValue().starts_with("variable")) {
-          const auto serArrayPrefixHelper = step.getAttrOfType<mlir::StringAttr>(
-              "lowered_ser_array_length_prefix_helper");
-          const auto deserArrayPrefixHelper =
-              step.getAttrOfType<mlir::StringAttr>(
-                  "lowered_deser_array_length_prefix_helper");
-          const auto arrayValidateHelper = step.getAttrOfType<mlir::StringAttr>(
-              "lowered_array_length_validate_helper");
-          if (!serArrayPrefixHelper || !deserArrayPrefixHelper ||
-              !arrayValidateHelper) {
-            diagnostics.error(
-                {"<mlir>", 1, 1},
-                "variable array step missing lowered array-length helpers for " +
-                    fullName.getValue().str());
-            return false;
-          }
-        }
-
-        if (!isPadding && arrayKind.getValue() == "none") {
-          const auto category = scalarCategory.getValue();
-          if (category == "unsigned" || category == "byte" ||
-              category == "utf8") {
-            if (!step.getAttrOfType<mlir::StringAttr>("lowered_ser_unsigned_helper") ||
-                !step.getAttrOfType<mlir::StringAttr>(
-                    "lowered_deser_unsigned_helper")) {
-              diagnostics.error(
-                  {"<mlir>", 1, 1},
-                  "unsigned scalar step missing lowered scalar helpers for " +
-                      fullName.getValue().str());
-              return false;
-            }
-          } else if (category == "signed") {
-            if (!step.getAttrOfType<mlir::StringAttr>("lowered_ser_signed_helper") ||
-                !step.getAttrOfType<mlir::StringAttr>(
-                    "lowered_deser_signed_helper")) {
-              diagnostics.error(
-                  {"<mlir>", 1, 1},
-                  "signed scalar step missing lowered scalar helpers for " +
-                      fullName.getValue().str());
-              return false;
-            }
-          } else if (category == "float") {
-            if (!step.getAttrOfType<mlir::StringAttr>("lowered_ser_float_helper") ||
-                !step.getAttrOfType<mlir::StringAttr>(
-                    "lowered_deser_float_helper")) {
-              diagnostics.error(
-                  {"<mlir>", 1, 1},
-                  "float scalar step missing lowered scalar helpers for " +
-                      fullName.getValue().str());
-              return false;
-            }
-          }
-        }
-
-        if (scalarCategory.getValue() == "composite") {
-          const auto compositeFullName =
-              step.getAttrOfType<mlir::StringAttr>("composite_full_name");
-          const auto compositeCTypeName =
-              step.getAttrOfType<mlir::StringAttr>("composite_c_type_name");
-          if (!compositeFullName || !compositeCTypeName) {
-            diagnostics.error({"<mlir>", 1, 1},
-                              "composite dsdl.io missing target metadata for " +
-                                  fullName.getValue().str());
-            return false;
-          }
-          const auto compositeSealed =
-              step.getAttrOfType<mlir::BoolAttr>("composite_sealed");
-          if (compositeSealed && !compositeSealed.getValue() &&
-              !step.getAttrOfType<mlir::IntegerAttr>("composite_extent_bits")) {
-            diagnostics.error(
-                {"<mlir>", 1, 1},
-                "delimited composite step missing composite_extent_bits for " +
-                    fullName.getValue().str());
-            return false;
-          }
-          if (!isPadding && compositeSealed && !compositeSealed.getValue() &&
-              !step.getAttrOfType<mlir::StringAttr>(
-                  "lowered_delimiter_validate_helper")) {
-            diagnostics.error(
-                {"<mlir>", 1, 1},
-                  "delimited composite step missing lowered delimiter helper for " +
-                    fullName.getValue().str());
-            return false;
-          }
-        }
-
-        if (const auto fieldNameAttr = step.getAttrOfType<mlir::StringAttr>("name");
-            fieldNameAttr) {
-          auto &fieldFacts =
-              sectionFacts.fieldsByName[fieldNameAttr.getValue().str()];
-          if (arrayKind.getValue().starts_with("variable") && arrayPrefixBits &&
-              arrayPrefixBits.getInt() > 0) {
-            fieldFacts.arrayLengthPrefixBits =
-                static_cast<std::uint32_t>(arrayPrefixBits.getInt());
-            if (const auto serArrayPrefixHelper =
-                    step.getAttrOfType<mlir::StringAttr>(
-                        "lowered_ser_array_length_prefix_helper")) {
-              fieldFacts.serArrayLengthPrefixHelper =
-                  serArrayPrefixHelper.getValue().str();
-            }
-            if (const auto deserArrayPrefixHelper =
-                    step.getAttrOfType<mlir::StringAttr>(
-                        "lowered_deser_array_length_prefix_helper")) {
-              fieldFacts.deserArrayLengthPrefixHelper =
-                  deserArrayPrefixHelper.getValue().str();
-            }
-            if (const auto arrayValidateHelper =
-                    step.getAttrOfType<mlir::StringAttr>(
-                        "lowered_array_length_validate_helper")) {
-              fieldFacts.arrayLengthValidateHelper =
-                  arrayValidateHelper.getValue().str();
-            }
-          }
-          if (const auto serUnsigned = step.getAttrOfType<mlir::StringAttr>(
-                  "lowered_ser_unsigned_helper")) {
-            fieldFacts.serUnsignedHelper = serUnsigned.getValue().str();
-          }
-          if (const auto deserUnsigned = step.getAttrOfType<mlir::StringAttr>(
-                  "lowered_deser_unsigned_helper")) {
-            fieldFacts.deserUnsignedHelper = deserUnsigned.getValue().str();
-          }
-          if (const auto serSigned = step.getAttrOfType<mlir::StringAttr>(
-                  "lowered_ser_signed_helper")) {
-            fieldFacts.serSignedHelper = serSigned.getValue().str();
-          }
-          if (const auto deserSigned = step.getAttrOfType<mlir::StringAttr>(
-                  "lowered_deser_signed_helper")) {
-            fieldFacts.deserSignedHelper = deserSigned.getValue().str();
-          }
-          if (const auto serFloat = step.getAttrOfType<mlir::StringAttr>(
-                  "lowered_ser_float_helper")) {
-            fieldFacts.serFloatHelper = serFloat.getValue().str();
-          }
-          if (const auto deserFloat = step.getAttrOfType<mlir::StringAttr>(
-                  "lowered_deser_float_helper")) {
-            fieldFacts.deserFloatHelper = deserFloat.getValue().str();
-          }
-          if (const auto delimiterValidateHelper =
-                  step.getAttrOfType<mlir::StringAttr>(
-                      "lowered_delimiter_validate_helper")) {
-            fieldFacts.delimiterValidateHelper =
-                delimiterValidateHelper.getValue().str();
-          }
-        }
-      }
-    }
-  }
-
-  for (const auto &def : semantic.definitions) {
-    const auto key = typeKey(def.info.fullName, def.info.majorVersion,
-                             def.info.minorVersion);
-    const auto it = keyToSections.find(key);
-    if (it == keyToSections.end()) {
-      diagnostics.error({"<mlir>", 1, 1},
-                        "missing dsdl.schema for " + def.info.fullName);
-      return false;
-    }
-    const auto &sections = it->second;
-    if (def.isService) {
-      if (sections.find("request") == sections.end() ||
-          sections.find("response") == sections.end()) {
-        diagnostics.error({"<mlir>", 1, 1},
-                          "service schema missing request/response plans for " +
-                              def.info.fullName);
-        return false;
-      }
-    } else if (sections.find("") == sections.end()) {
-      diagnostics.error({"<mlir>", 1, 1},
-                        "message schema missing default plan for " +
-                            def.info.fullName);
-      return false;
-    }
-  }
-  if (outFacts != nullptr) {
-    *outFacts = std::move(loweredFacts);
-  }
-  return true;
-}
 
 bool isCppKeyword(const std::string &name) {
   static const std::set<std::string> kKeywords = {
@@ -502,19 +139,6 @@ std::string valueToCppExpr(const Value &value) {
   return value.str();
 }
 
-std::uint32_t scalarStorageBits(const std::uint32_t bitLength) {
-  if (bitLength <= 8) {
-    return 8;
-  }
-  if (bitLength <= 16) {
-    return 16;
-  }
-  if (bitLength <= 32) {
-    return 32;
-  }
-  return 64;
-}
-
 std::string unsignedStorageType(const std::uint32_t bitLength) {
   switch (scalarStorageBits(bitLength)) {
   case 8:
@@ -567,10 +191,6 @@ std::string signedGetter(const std::uint32_t bitLength) {
   }
 }
 
-bool isVariableArray(const ArrayKind k) {
-  return k == ArrayKind::VariableInclusive || k == ArrayKind::VariableExclusive;
-}
-
 std::string cppNamespacePath(const std::vector<std::string> &components) {
   std::string out;
   for (const auto &component : components) {
@@ -602,7 +222,7 @@ class EmitterContext final {
 public:
   explicit EmitterContext(const SemanticModule &semantic) {
     for (const auto &def : semantic.definitions) {
-      const auto key = typeKey(def.info.fullName, def.info.majorVersion,
+      const auto key = loweredTypeKey(def.info.fullName, def.info.majorVersion,
                                def.info.minorVersion);
       byKey_.emplace(key, &def);
       versionCountByFullName_[def.info.fullName] += 1U;
@@ -610,7 +230,7 @@ public:
   }
 
   const SemanticDefinition *find(const SemanticTypeRef &ref) const {
-    const auto it = byKey_.find(typeKey(ref.fullName, ref.majorVersion,
+    const auto it = byKey_.find(loweredTypeKey(ref.fullName, ref.majorVersion,
                                         ref.minorVersion));
     if (it == byKey_.end()) {
       return nullptr;
@@ -696,16 +316,6 @@ void emitLine(std::ostringstream &out, const int indent, const std::string &line
   out << std::string(static_cast<std::size_t>(indent) * 2U, ' ') << line << '\n';
 }
 
-std::string u64MaskLiteral(const std::uint32_t bits) {
-  if (bits == 0U) {
-    return "0ULL";
-  }
-  if (bits >= 64U) {
-    return "18446744073709551615ULL";
-  }
-  return std::to_string((1ULL << bits) - 1ULL) + "ULL";
-}
-
 class FunctionBodyEmitter final {
 public:
   explicit FunctionBodyEmitter(const EmitterContext &ctx, const bool pmrMode)
@@ -733,8 +343,11 @@ public:
     emitLine(out, 1, "const std::size_t capacity_bytes = *inout_buffer_size_bytes;");
     emitLine(out, 1, "std::size_t offset_bits = 0U;");
     emitSerializeMlirHelperBindings(out, section, 1, sectionFacts);
-    if (const auto capacityHelper = capacityCheckHelperBinding(sectionFacts);
-        !capacityHelper.empty()) {
+    const auto fieldPlan = buildSectionStatementPlan(section, sectionFacts);
+    if (const auto capacityHelperSymbol =
+            resolveSectionCapacityCheckHelperSymbol(sectionFacts);
+        !capacityHelperSymbol.empty()) {
+      const auto capacityHelper = helperBindingName(capacityHelperSymbol);
       const auto errCapacity = nextName("err_capacity");
       emitLine(out, 1,
                "const std::int8_t " + errCapacity + " = " + capacityHelper +
@@ -752,19 +365,18 @@ public:
     }
 
     if (section.isUnion) {
-      emitSerializeUnion(out, section, "obj", 1, sectionFacts);
+      emitSerializeUnion(out, section, fieldPlan.unionBranches, "obj", 1,
+                         sectionFacts);
     } else {
-      for (const auto &field : section.fields) {
+      for (const auto &step : fieldPlan.orderedFields) {
+        const auto &field = *step.field;
         emitAlignSerialize(out, field.resolvedType.alignmentBits, 1);
         if (field.isPadding) {
           emitSerializePadding(out, field.resolvedType, 1);
         } else {
-          const auto prefixBits =
-              fieldArrayPrefixBits(sectionFacts, field.name);
-          const auto *const fieldFacts = getFieldFacts(sectionFacts, field.name);
           emitSerializeValue(out, field.resolvedType,
                              "obj->" + sanitizeIdentifier(field.name), 1,
-                             prefixBits, fieldFacts);
+                             step.arrayLengthPrefixBits, step.fieldFacts);
         }
       }
     }
@@ -806,21 +418,21 @@ public:
     emitLine(out, 1, "const std::size_t capacity_bits = capacity_bytes * 8U;");
     emitLine(out, 1, "std::size_t offset_bits = 0U;");
     emitDeserializeMlirHelperBindings(out, section, 1, sectionFacts);
+    const auto fieldPlan = buildSectionStatementPlan(section, sectionFacts);
 
     if (section.isUnion) {
-      emitDeserializeUnion(out, section, "out_obj", 1, sectionFacts);
+      emitDeserializeUnion(out, section, fieldPlan.unionBranches, "out_obj", 1,
+                           sectionFacts);
     } else {
-      for (const auto &field : section.fields) {
+      for (const auto &step : fieldPlan.orderedFields) {
+        const auto &field = *step.field;
         emitAlignDeserialize(out, field.resolvedType.alignmentBits, 1);
         if (field.isPadding) {
           emitDeserializePadding(out, field.resolvedType, 1);
         } else {
-          const auto prefixBits =
-              fieldArrayPrefixBits(sectionFacts, field.name);
-          const auto *const fieldFacts = getFieldFacts(sectionFacts, field.name);
           emitDeserializeValue(out, field.resolvedType,
                                "out_obj->" + sanitizeIdentifier(field.name), 1,
-                               prefixBits, fieldFacts);
+                               step.arrayLengthPrefixBits, step.fieldFacts);
         }
       }
     }
@@ -846,394 +458,35 @@ private:
     return "mlir_" + sanitizeIdentifier(helperSymbol);
   }
 
-  const LoweredFieldFacts *
-  getFieldFacts(const LoweredSectionFacts *const sectionFacts,
-                const std::string &fieldName) const {
-    if (sectionFacts == nullptr) {
-      return nullptr;
-    }
-    const auto it = sectionFacts->fieldsByName.find(fieldName);
-    if (it == sectionFacts->fieldsByName.end()) {
-      return nullptr;
-    }
-    return &it->second;
-  }
-
-  std::optional<std::uint32_t>
-  fieldArrayPrefixBits(const LoweredSectionFacts *const sectionFacts,
-                       const std::string &fieldName) const {
-    const auto *const fieldFacts = getFieldFacts(sectionFacts, fieldName);
-    if (fieldFacts == nullptr) {
-      return std::nullopt;
-    }
-    return fieldFacts->arrayLengthPrefixBits;
-  }
-
-  std::uint32_t resolvedUnionTagBits(
-      const SemanticSection &section,
-      const LoweredSectionFacts *const sectionFacts) const {
-    if (sectionFacts && sectionFacts->unionTagBits) {
-      return *sectionFacts->unionTagBits;
-    }
-    std::uint32_t tagBits = 8;
-    for (const auto &f : section.fields) {
-      if (!f.isPadding) {
-        tagBits = std::max<std::uint32_t>(8U, f.unionTagBits);
-        break;
-      }
-    }
-    return tagBits;
-  }
-
-  std::string serUnionTagHelperBinding(
-      const LoweredSectionFacts *const sectionFacts) const {
-    if (sectionFacts == nullptr || sectionFacts->serUnionTagHelper.empty()) {
-      return {};
-    }
-    return helperBindingName(sectionFacts->serUnionTagHelper);
-  }
-
-  std::string capacityCheckHelperBinding(
-      const LoweredSectionFacts *const sectionFacts) const {
-    if (sectionFacts == nullptr || sectionFacts->capacityCheckHelper.empty()) {
-      return {};
-    }
-    return helperBindingName(sectionFacts->capacityCheckHelper);
-  }
-
-  std::string deserUnionTagHelperBinding(
-      const LoweredSectionFacts *const sectionFacts) const {
-    if (sectionFacts == nullptr || sectionFacts->deserUnionTagHelper.empty()) {
-      return {};
-    }
-    return helperBindingName(sectionFacts->deserUnionTagHelper);
-  }
-
-  std::string unionTagValidateHelperBinding(
-      const LoweredSectionFacts *const sectionFacts) const {
-    if (sectionFacts == nullptr || sectionFacts->unionTagValidateHelper.empty()) {
-      return {};
-    }
-    return helperBindingName(sectionFacts->unionTagValidateHelper);
-  }
-
-  void emitUnionTagValidateBinding(std::ostringstream &out, const int indent,
-                                   const std::string &helper,
-                                   const std::vector<std::int64_t> &allowedTags) {
-    emitLine(out, indent,
-             "const auto " + helper +
-                 " = [](const std::int64_t tag_value) -> std::int8_t {");
-    std::string condition;
-    for (const auto tag : allowedTags) {
-      if (!condition.empty()) {
-        condition += " || ";
-      }
-      condition += "(tag_value == " + std::to_string(tag) + "LL)";
-    }
-    if (condition.empty()) {
-      emitLine(out, indent + 1,
-               "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG);");
-    } else {
-      emitLine(out, indent + 1,
-               "return (" + condition + ") ? static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS) : "
-                                          "static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG);");
-    }
-    emitLine(out, indent, "};");
-  }
-
-  void emitDelimiterValidateBinding(std::ostringstream &out, const int indent,
-                                    const std::string &helper) {
-    emitLine(out, indent,
-             "const auto " + helper +
-                 " = [](const std::int64_t payload_bytes, const std::int64_t remaining_bytes) -> std::int8_t {");
-    emitLine(out, indent + 1,
-             "return ((payload_bytes < 0LL) || (payload_bytes > remaining_bytes)) ? "
-             "static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER) : "
-             "static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS);");
-    emitLine(out, indent, "};");
-  }
-
-  void emitScalarSerializeBinding(std::ostringstream &out, const int indent,
-                                  const std::string &helper,
-                                  const ScalarHelperDescriptor &descriptor) {
-    switch (descriptor.kind) {
-    case ScalarHelperKind::Unsigned:
-      emitLine(out, indent,
-               "const auto " + helper +
-                   " = [](const std::uint64_t value) -> std::uint64_t {");
-      if (descriptor.castMode == CastMode::Saturated &&
-          descriptor.bitLength < 64U) {
-        emitLine(out, indent + 1,
-                 "return (value > " + u64MaskLiteral(descriptor.bitLength) +
-                     ") ? " + u64MaskLiteral(descriptor.bitLength) + " : value;");
-      } else if (descriptor.bitLength < 64U) {
-        emitLine(out, indent + 1,
-                 "return value & " + u64MaskLiteral(descriptor.bitLength) + ";");
-      } else {
-        emitLine(out, indent + 1, "return value;");
-      }
-      emitLine(out, indent, "};");
-      return;
-    case ScalarHelperKind::Signed:
-      emitLine(out, indent,
-               "const auto " + helper +
-                   " = [](const std::int64_t value) -> std::int64_t {");
-      if (descriptor.castMode == CastMode::Saturated &&
-          descriptor.bitLength > 0U && descriptor.bitLength < 64U) {
-        const auto minVal = -(1LL << (descriptor.bitLength - 1U));
-        const auto maxVal = (1LL << (descriptor.bitLength - 1U)) - 1LL;
-        emitLine(out, indent + 1,
-                 "if (value < " + std::to_string(minVal) +
-                     "LL) { return " + std::to_string(minVal) + "LL; }");
-        emitLine(out, indent + 1,
-                 "if (value > " + std::to_string(maxVal) +
-                     "LL) { return " + std::to_string(maxVal) + "LL; }");
-        emitLine(out, indent + 1, "return value;");
-      } else {
-        emitLine(out, indent + 1, "return value;");
-      }
-      emitLine(out, indent, "};");
-      return;
-    case ScalarHelperKind::Float:
-      emitLine(out, indent,
-               "const auto " + helper +
-                   " = [](const double value) -> double { return value; };");
-      return;
-    }
-  }
-
-  void emitScalarDeserializeBinding(std::ostringstream &out, const int indent,
-                                    const std::string &helper,
-                                    const ScalarHelperDescriptor &descriptor) {
-    switch (descriptor.kind) {
-    case ScalarHelperKind::Unsigned:
-      emitLine(out, indent,
-               "const auto " + helper +
-                   " = [](const std::uint64_t value) -> std::uint64_t {");
-      if (descriptor.bitLength < 64U) {
-        emitLine(out, indent + 1,
-                 "return value & " + u64MaskLiteral(descriptor.bitLength) + ";");
-      } else {
-        emitLine(out, indent + 1, "return value;");
-      }
-      emitLine(out, indent, "};");
-      return;
-    case ScalarHelperKind::Signed:
-      emitLine(out, indent,
-               "const auto " + helper +
-                   " = [](const std::int64_t value) -> std::int64_t {");
-      if (descriptor.bitLength > 0U && descriptor.bitLength < 64U) {
-        const auto mask = u64MaskLiteral(descriptor.bitLength);
-        const auto signMask = std::to_string((1ULL << (descriptor.bitLength - 1U))) + "ULL";
-        emitLine(out, indent + 1,
-                 "const std::uint64_t raw = static_cast<std::uint64_t>(value) & " +
-                     mask + ";");
-        emitLine(out, indent + 1,
-                 "if ((raw & " + signMask + ") != 0ULL) {");
-        emitLine(out, indent + 2,
-                 "return static_cast<std::int64_t>(raw | (~" + mask +
-                     "));");
-        emitLine(out, indent + 1, "}");
-        emitLine(out, indent + 1, "return static_cast<std::int64_t>(raw);");
-      } else {
-        emitLine(out, indent + 1, "return value;");
-      }
-      emitLine(out, indent, "};");
-      return;
-    case ScalarHelperKind::Float:
-      emitLine(out, indent,
-               "const auto " + helper +
-                   " = [](const double value) -> double { return value; };");
-      return;
-    }
-  }
-
   void emitSerializeMlirHelperBindings(
       std::ostringstream &out, const SemanticSection &section, const int indent,
       const LoweredSectionFacts *const sectionFacts) {
-    std::set<std::string> emitted;
-    const auto shared = buildSharedSerDesHelperDescriptors(
-        section,
-        sectionFacts ? sectionFacts->capacityCheckHelper : std::string{},
-        sectionFacts ? sectionFacts->unionTagValidateHelper : std::string{});
-    if (shared.capacityCheck) {
-      const auto capacityHelper = helperBindingName(shared.capacityCheck->symbol);
-      if (emitted.insert(capacityHelper).second) {
-        emitLine(out, indent,
-                 "const auto " + capacityHelper +
-                     " = [](const std::int64_t capacity_bits) -> std::int8_t {");
-        emitLine(out, indent + 1,
-                 "return (" + std::to_string(shared.capacityCheck->requiredBits) +
-                     "LL > capacity_bits) ? static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL) : "
-                     "static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS);");
-        emitLine(out, indent, "};");
-      }
-    }
-    if (section.isUnion) {
-      if (shared.unionTagValidate) {
-        const auto validateHelper =
-            helperBindingName(shared.unionTagValidate->symbol);
-        if (emitted.insert(validateHelper).second) {
-          emitUnionTagValidateBinding(out, indent, validateHelper,
-                                      shared.unionTagValidate->allowedTags);
-        }
-      }
-      const auto helper = serUnionTagHelperBinding(sectionFacts);
-      const auto tagBits = resolvedUnionTagBits(section, sectionFacts);
-      if (!helper.empty() && emitted.insert(helper).second) {
-        emitLine(out, indent,
-                 "const auto " + helper +
-                     " = [](const std::uint64_t value) -> std::uint64_t { return value & " +
-                     u64MaskLiteral(tagBits) + "; };");
-      }
-    }
-    for (const auto &field : section.fields) {
-      if (field.isPadding) {
-        continue;
-      }
-      const auto *const fieldFacts = getFieldFacts(sectionFacts, field.name);
-      const auto scalarDescriptor = buildScalarHelperDescriptor(
-          field, ScalarHelperSymbols{
-                     fieldFacts ? fieldFacts->serUnsignedHelper : std::string{},
-                     fieldFacts ? fieldFacts->deserUnsignedHelper : std::string{},
-                     fieldFacts ? fieldFacts->serSignedHelper : std::string{},
-                     fieldFacts ? fieldFacts->deserSignedHelper : std::string{},
-                     fieldFacts ? fieldFacts->serFloatHelper : std::string{},
-                     fieldFacts ? fieldFacts->deserFloatHelper : std::string{}});
-      if (scalarDescriptor && !scalarDescriptor->serSymbol.empty()) {
-        const auto helper = helperBindingName(scalarDescriptor->serSymbol);
-        if (emitted.insert(helper).second) {
-          emitScalarSerializeBinding(out, indent, helper, *scalarDescriptor);
-        }
-      }
-
-      const auto delimiterDescriptor = buildDelimiterValidateHelperDescriptor(
-          field, fieldFacts ? fieldFacts->delimiterValidateHelper : std::string{});
-      if (delimiterDescriptor) {
-        const auto helper = helperBindingName(delimiterDescriptor->symbol);
-        if (emitted.insert(helper).second) {
-          emitDelimiterValidateBinding(out, indent, helper);
-        }
-      }
-      const auto arrayDescriptor = buildArrayLengthHelperDescriptor(
-          field, fieldArrayPrefixBits(sectionFacts, field.name),
-          fieldFacts ? fieldFacts->serArrayLengthPrefixHelper : std::string{},
-          fieldFacts ? fieldFacts->arrayLengthValidateHelper : std::string{});
-      if (!arrayDescriptor) {
-        continue;
-      }
-      const auto serPrefix =
-          arrayDescriptor->prefixSymbol.empty()
-              ? std::string{}
-              : helperBindingName(arrayDescriptor->prefixSymbol);
-      if (!serPrefix.empty() && emitted.insert(serPrefix).second) {
-        emitLine(out, indent,
-                 "const auto " + serPrefix +
-                     " = [](const std::uint64_t value) -> std::uint64_t { return value & " +
-                     u64MaskLiteral(arrayDescriptor->prefixBits) + "; };");
-      }
-      const auto validate =
-          arrayDescriptor->validateSymbol.empty()
-              ? std::string{}
-              : helperBindingName(arrayDescriptor->validateSymbol);
-      if (!validate.empty() && emitted.insert(validate).second) {
-        emitLine(out, indent,
-                 "const auto " + validate +
-                     " = [](const std::int64_t value) -> std::int8_t {");
-        emitLine(out, indent + 1,
-                 "return ((value < 0LL) || (value > " +
-                     std::to_string(arrayDescriptor->capacity) +
-                     "LL)) ? static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH) : static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS);");
-        emitLine(out, indent, "};");
-      }
+    const auto plan = buildSectionHelperBindingPlan(
+        section, sectionFacts, HelperBindingDirection::Serialize);
+    for (const auto &line : renderSectionHelperBindings(
+             plan, HelperBindingRenderLanguage::Cpp,
+             ScalarBindingRenderDirection::Serialize,
+             [this](const std::string &symbol) {
+               return helperBindingName(symbol);
+             },
+             /*emitCapacityCheck=*/true)) {
+      emitLine(out, indent, line);
     }
   }
 
   void emitDeserializeMlirHelperBindings(
       std::ostringstream &out, const SemanticSection &section, const int indent,
       const LoweredSectionFacts *const sectionFacts) {
-    std::set<std::string> emitted;
-    const auto shared = buildSharedSerDesHelperDescriptors(
-        section,
-        sectionFacts ? sectionFacts->capacityCheckHelper : std::string{},
-        sectionFacts ? sectionFacts->unionTagValidateHelper : std::string{});
-    if (section.isUnion) {
-      if (shared.unionTagValidate) {
-        const auto validateHelper =
-            helperBindingName(shared.unionTagValidate->symbol);
-        if (emitted.insert(validateHelper).second) {
-          emitUnionTagValidateBinding(out, indent, validateHelper,
-                                      shared.unionTagValidate->allowedTags);
-        }
-      }
-      const auto helper = deserUnionTagHelperBinding(sectionFacts);
-      const auto tagBits = resolvedUnionTagBits(section, sectionFacts);
-      if (!helper.empty() && emitted.insert(helper).second) {
-        emitLine(out, indent,
-                 "const auto " + helper +
-                     " = [](const std::uint64_t value) -> std::uint64_t { return value & " +
-                     u64MaskLiteral(tagBits) + "; };");
-      }
-    }
-    for (const auto &field : section.fields) {
-      if (field.isPadding) {
-        continue;
-      }
-      const auto *const fieldFacts = getFieldFacts(sectionFacts, field.name);
-      const auto scalarDescriptor = buildScalarHelperDescriptor(
-          field, ScalarHelperSymbols{
-                     fieldFacts ? fieldFacts->serUnsignedHelper : std::string{},
-                     fieldFacts ? fieldFacts->deserUnsignedHelper : std::string{},
-                     fieldFacts ? fieldFacts->serSignedHelper : std::string{},
-                     fieldFacts ? fieldFacts->deserSignedHelper : std::string{},
-                     fieldFacts ? fieldFacts->serFloatHelper : std::string{},
-                     fieldFacts ? fieldFacts->deserFloatHelper : std::string{}});
-      if (scalarDescriptor && !scalarDescriptor->deserSymbol.empty()) {
-        const auto helper = helperBindingName(scalarDescriptor->deserSymbol);
-        if (emitted.insert(helper).second) {
-          emitScalarDeserializeBinding(out, indent, helper, *scalarDescriptor);
-        }
-      }
-
-      const auto delimiterDescriptor = buildDelimiterValidateHelperDescriptor(
-          field, fieldFacts ? fieldFacts->delimiterValidateHelper : std::string{});
-      if (delimiterDescriptor) {
-        const auto helper = helperBindingName(delimiterDescriptor->symbol);
-        if (emitted.insert(helper).second) {
-          emitDelimiterValidateBinding(out, indent, helper);
-        }
-      }
-      const auto arrayDescriptor = buildArrayLengthHelperDescriptor(
-          field, fieldArrayPrefixBits(sectionFacts, field.name),
-          fieldFacts ? fieldFacts->deserArrayLengthPrefixHelper : std::string{},
-          fieldFacts ? fieldFacts->arrayLengthValidateHelper : std::string{});
-      if (!arrayDescriptor) {
-        continue;
-      }
-      const auto deserPrefix =
-          arrayDescriptor->prefixSymbol.empty()
-              ? std::string{}
-              : helperBindingName(arrayDescriptor->prefixSymbol);
-      if (!deserPrefix.empty() && emitted.insert(deserPrefix).second) {
-        emitLine(out, indent,
-                 "const auto " + deserPrefix +
-                     " = [](const std::uint64_t value) -> std::uint64_t { return value & " +
-                     u64MaskLiteral(arrayDescriptor->prefixBits) + "; };");
-      }
-      const auto validate =
-          arrayDescriptor->validateSymbol.empty()
-              ? std::string{}
-              : helperBindingName(arrayDescriptor->validateSymbol);
-      if (!validate.empty() && emitted.insert(validate).second) {
-        emitLine(out, indent,
-                 "const auto " + validate +
-                     " = [](const std::int64_t value) -> std::int8_t {");
-        emitLine(out, indent + 1,
-                 "return ((value < 0LL) || (value > " +
-                     std::to_string(arrayDescriptor->capacity) +
-                     "LL)) ? static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH) : static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS);");
-        emitLine(out, indent, "};");
-      }
+    const auto plan = buildSectionHelperBindingPlan(
+        section, sectionFacts, HelperBindingDirection::Deserialize);
+    for (const auto &line : renderSectionHelperBindings(
+             plan, HelperBindingRenderLanguage::Cpp,
+             ScalarBindingRenderDirection::Deserialize,
+             [this](const std::string &symbol) {
+               return helperBindingName(symbol);
+             },
+             /*emitCapacityCheck=*/false)) {
+      emitLine(out, indent, line);
     }
   }
 
@@ -1325,11 +578,17 @@ private:
              "offset_bits += " + std::to_string(type.bitLength) + "U;");
   }
 
-  void emitSerializeUnion(std::ostringstream &out, const SemanticSection &section,
-                          const std::string &objRef, const int indent,
-                          const LoweredSectionFacts *const sectionFacts) {
-    const auto tagBits = resolvedUnionTagBits(section, sectionFacts);
-    const auto validateHelper = unionTagValidateHelperBinding(sectionFacts);
+  void emitSerializeUnion(
+      std::ostringstream &out, const SemanticSection &section,
+      const std::vector<PlannedFieldStep> &unionBranches,
+      const std::string &objRef, const int indent,
+      const LoweredSectionFacts *const sectionFacts) {
+    const auto tagBits = resolveUnionTagBits(section, sectionFacts);
+    const auto validateHelperSymbol =
+        resolveSectionUnionTagValidateHelperSymbol(sectionFacts);
+    const auto validateHelper = validateHelperSymbol.empty()
+                                    ? std::string{}
+                                    : helperBindingName(validateHelperSymbol);
     if (!validateHelper.empty()) {
       const auto validateErr = nextName("err_union_tag");
       emitLine(out, indent,
@@ -1340,7 +599,11 @@ private:
       emitLine(out, indent + 1, "return " + validateErr + ";");
       emitLine(out, indent, "}");
     }
-    const auto tagHelper = serUnionTagHelperBinding(sectionFacts);
+    const auto tagHelperSymbol = resolveSectionUnionTagMaskHelperSymbol(
+        sectionFacts, HelperBindingDirection::Serialize);
+    const auto tagHelper = tagHelperSymbol.empty()
+                               ? std::string{}
+                               : helperBindingName(tagHelperSymbol);
     std::string tagExpr = "static_cast<std::uint64_t>(" + objRef + "->_tag_)";
     if (!tagHelper.empty()) {
       tagExpr = tagHelper + "(" + tagExpr + ")";
@@ -1359,21 +622,17 @@ private:
              "offset_bits += " + std::to_string(tagBits) + "U;");
 
     bool first = true;
-    for (const auto &field : section.fields) {
-      if (field.isPadding) {
-        continue;
-      }
+    for (const auto &step : unionBranches) {
+      const auto &field = *step.field;
       const auto member = sanitizeIdentifier(field.name);
       emitLine(out, indent,
                std::string(first ? "if" : "else if") + " (" +
                    objRef + "->_tag_ == " +
                    std::to_string(field.unionOptionIndex) + "U) {");
       emitAlignSerialize(out, field.resolvedType.alignmentBits, indent + 1);
-      const auto prefixBits = fieldArrayPrefixBits(sectionFacts, field.name);
-      const auto *const fieldFacts = getFieldFacts(sectionFacts, field.name);
       emitSerializeValue(out, field.resolvedType,
-                         objRef + "->" + member, indent + 1, prefixBits,
-                         fieldFacts);
+                         objRef + "->" + member, indent + 1,
+                         step.arrayLengthPrefixBits, step.fieldFacts);
       emitLine(out, indent, "}");
       first = false;
     }
@@ -1386,16 +645,21 @@ private:
 
   void emitDeserializeUnion(std::ostringstream &out,
                             const SemanticSection &section,
+                            const std::vector<PlannedFieldStep> &unionBranches,
                             const std::string &objRef, const int indent,
                             const LoweredSectionFacts *const sectionFacts) {
-    const auto tagBits = resolvedUnionTagBits(section, sectionFacts);
+    const auto tagBits = resolveUnionTagBits(section, sectionFacts);
     const auto rawTag = nextName("tag_raw");
     emitLine(out, indent,
              "const std::uint64_t " + rawTag + " = static_cast<std::uint64_t>(" +
                  unsignedGetter(tagBits) +
                  "(buffer, capacity_bytes, offset_bits, " +
                  std::to_string(tagBits) + "U));");
-    const auto tagHelper = deserUnionTagHelperBinding(sectionFacts);
+    const auto tagHelperSymbol = resolveSectionUnionTagMaskHelperSymbol(
+        sectionFacts, HelperBindingDirection::Deserialize);
+    const auto tagHelper = tagHelperSymbol.empty()
+                               ? std::string{}
+                               : helperBindingName(tagHelperSymbol);
     std::string tagExpr = rawTag;
     if (!tagHelper.empty()) {
       tagExpr = tagHelper + "(" + tagExpr + ")";
@@ -1403,7 +667,11 @@ private:
 
     emitLine(out, indent,
              objRef + "->_tag_ = static_cast<std::uint8_t>(" + tagExpr + ");");
-    const auto validateHelper = unionTagValidateHelperBinding(sectionFacts);
+    const auto validateHelperSymbol =
+        resolveSectionUnionTagValidateHelperSymbol(sectionFacts);
+    const auto validateHelper = validateHelperSymbol.empty()
+                                    ? std::string{}
+                                    : helperBindingName(validateHelperSymbol);
     if (!validateHelper.empty()) {
       const auto validateErr = nextName("err_union_tag");
       emitLine(out, indent,
@@ -1418,21 +686,17 @@ private:
              "offset_bits += " + std::to_string(tagBits) + "U;");
 
     bool first = true;
-    for (const auto &field : section.fields) {
-      if (field.isPadding) {
-        continue;
-      }
+    for (const auto &step : unionBranches) {
+      const auto &field = *step.field;
       const auto member = sanitizeIdentifier(field.name);
       emitLine(out, indent,
                std::string(first ? "if" : "else if") + " (" +
                    objRef + "->_tag_ == " +
                    std::to_string(field.unionOptionIndex) + "U) {");
       emitAlignDeserialize(out, field.resolvedType.alignmentBits, indent + 1);
-      const auto prefixBits = fieldArrayPrefixBits(sectionFacts, field.name);
-      const auto *const fieldFacts = getFieldFacts(sectionFacts, field.name);
       emitDeserializeValue(out, field.resolvedType,
-                           objRef + "->" + member, indent + 1, prefixBits,
-                           fieldFacts);
+                           objRef + "->" + member, indent + 1,
+                           step.arrayLengthPrefixBits, step.fieldFacts);
       emitLine(out, indent, "}");
       first = false;
     }
@@ -1470,19 +734,11 @@ private:
     case SemanticScalarCategory::Byte:
     case SemanticScalarCategory::Utf8:
     case SemanticScalarCategory::UnsignedInt: {
-      const auto scalarDescriptor = buildScalarHelperDescriptor(
-          type, ScalarHelperSymbols{
-                    fieldFacts ? fieldFacts->serUnsignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->deserUnsignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->serSignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->deserSignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->serFloatHelper : std::string{},
-                    fieldFacts ? fieldFacts->deserFloatHelper : std::string{}});
       std::string valueExpr = "static_cast<std::uint64_t>(" + expr + ")";
-      std::string helper;
-      if (scalarDescriptor && !scalarDescriptor->serSymbol.empty()) {
-        helper = helperBindingName(scalarDescriptor->serSymbol);
-      }
+      const auto helperSymbol = resolveScalarHelperSymbol(
+          type, fieldFacts, HelperBindingDirection::Serialize);
+      const auto helper = helperSymbol.empty() ? std::string{}
+                                               : helperBindingName(helperSymbol);
       if (!helper.empty()) {
         valueExpr = helper + "(" + valueExpr + ")";
       } else if (type.castMode == CastMode::Saturated && type.bitLength < 64U) {
@@ -1510,19 +766,11 @@ private:
       break;
     }
     case SemanticScalarCategory::SignedInt: {
-      const auto scalarDescriptor = buildScalarHelperDescriptor(
-          type, ScalarHelperSymbols{
-                    fieldFacts ? fieldFacts->serUnsignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->deserUnsignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->serSignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->deserSignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->serFloatHelper : std::string{},
-                    fieldFacts ? fieldFacts->deserFloatHelper : std::string{}});
       std::string valueExpr = "static_cast<std::int64_t>(" + expr + ")";
-      std::string helper;
-      if (scalarDescriptor && !scalarDescriptor->serSymbol.empty()) {
-        helper = helperBindingName(scalarDescriptor->serSymbol);
-      }
+      const auto helperSymbol = resolveScalarHelperSymbol(
+          type, fieldFacts, HelperBindingDirection::Serialize);
+      const auto helper = helperSymbol.empty() ? std::string{}
+                                               : helperBindingName(helperSymbol);
       if (!helper.empty()) {
         valueExpr = helper + "(" + valueExpr + ")";
       } else if (type.castMode == CastMode::Saturated && type.bitLength < 64U &&
@@ -1558,19 +806,11 @@ private:
     }
     case SemanticScalarCategory::Float: {
       const auto err = nextName("err");
-      const auto scalarDescriptor = buildScalarHelperDescriptor(
-          type, ScalarHelperSymbols{
-                    fieldFacts ? fieldFacts->serUnsignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->deserUnsignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->serSignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->deserSignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->serFloatHelper : std::string{},
-                    fieldFacts ? fieldFacts->deserFloatHelper : std::string{}});
       std::string normalizedExpr = "static_cast<double>(" + expr + ")";
-      std::string helper;
-      if (scalarDescriptor && !scalarDescriptor->serSymbol.empty()) {
-        helper = helperBindingName(scalarDescriptor->serSymbol);
-      }
+      const auto helperSymbol = resolveScalarHelperSymbol(
+          type, fieldFacts, HelperBindingDirection::Serialize);
+      const auto helper = helperSymbol.empty() ? std::string{}
+                                               : helperBindingName(helperSymbol);
       if (!helper.empty()) {
         normalizedExpr = helper + "(" + normalizedExpr + ")";
       }
@@ -1622,18 +862,10 @@ private:
     case SemanticScalarCategory::Byte:
     case SemanticScalarCategory::Utf8:
     case SemanticScalarCategory::UnsignedInt: {
-      const auto scalarDescriptor = buildScalarHelperDescriptor(
-          type, ScalarHelperSymbols{
-                    fieldFacts ? fieldFacts->serUnsignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->deserUnsignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->serSignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->deserSignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->serFloatHelper : std::string{},
-                    fieldFacts ? fieldFacts->deserFloatHelper : std::string{}});
-      std::string helper;
-      if (scalarDescriptor && !scalarDescriptor->deserSymbol.empty()) {
-        helper = helperBindingName(scalarDescriptor->deserSymbol);
-      }
+      const auto helperSymbol = resolveScalarHelperSymbol(
+          type, fieldFacts, HelperBindingDirection::Deserialize);
+      const auto helper = helperSymbol.empty() ? std::string{}
+                                               : helperBindingName(helperSymbol);
       if (!helper.empty()) {
         const auto raw = nextName("raw");
         emitLine(out, indent,
@@ -1656,18 +888,10 @@ private:
       break;
     }
     case SemanticScalarCategory::SignedInt: {
-      const auto scalarDescriptor = buildScalarHelperDescriptor(
-          type, ScalarHelperSymbols{
-                    fieldFacts ? fieldFacts->serUnsignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->deserUnsignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->serSignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->deserSignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->serFloatHelper : std::string{},
-                    fieldFacts ? fieldFacts->deserFloatHelper : std::string{}});
-      std::string helper;
-      if (scalarDescriptor && !scalarDescriptor->deserSymbol.empty()) {
-        helper = helperBindingName(scalarDescriptor->deserSymbol);
-      }
+      const auto helperSymbol = resolveScalarHelperSymbol(
+          type, fieldFacts, HelperBindingDirection::Deserialize);
+      const auto helper = helperSymbol.empty() ? std::string{}
+                                               : helperBindingName(helperSymbol);
       if (!helper.empty()) {
         const auto raw = nextName("raw");
         emitLine(out, indent,
@@ -1690,18 +914,10 @@ private:
       break;
     }
     case SemanticScalarCategory::Float: {
-      const auto scalarDescriptor = buildScalarHelperDescriptor(
-          type, ScalarHelperSymbols{
-                    fieldFacts ? fieldFacts->serUnsignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->deserUnsignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->serSignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->deserSignedHelper : std::string{},
-                    fieldFacts ? fieldFacts->serFloatHelper : std::string{},
-                    fieldFacts ? fieldFacts->deserFloatHelper : std::string{}});
-      std::string helper;
-      if (scalarDescriptor && !scalarDescriptor->deserSymbol.empty()) {
-        helper = helperBindingName(scalarDescriptor->deserSymbol);
-      }
+      const auto helperSymbol = resolveScalarHelperSymbol(
+          type, fieldFacts, HelperBindingDirection::Deserialize);
+      const auto helper = helperSymbol.empty() ? std::string{}
+                                               : helperBindingName(helperSymbol);
       if (type.bitLength == 16U) {
         if (!helper.empty()) {
           emitLine(out, indent,
@@ -1749,13 +965,12 @@ private:
                               arrayLengthPrefixBitsOverride,
                           const LoweredFieldFacts *const fieldFacts) {
     const bool elementIsBool = type.scalarCategory == SemanticScalarCategory::Bool;
-    const bool variable = isVariableArray(type.arrayKind);
-    const auto prefixBits =
-        arrayLengthPrefixBitsOverride.value_or(type.arrayLengthPrefixBits);
-    const auto arrayDescriptor = buildArrayLengthHelperDescriptor(
-        type, prefixBits,
-        fieldFacts ? fieldFacts->serArrayLengthPrefixHelper : std::string{},
-        fieldFacts ? fieldFacts->arrayLengthValidateHelper : std::string{});
+    const auto arrayPlan = buildArrayWirePlan(
+        type, fieldFacts, arrayLengthPrefixBitsOverride,
+        HelperBindingDirection::Serialize);
+    const bool variable = arrayPlan.variable;
+    const auto prefixBits = arrayPlan.prefixBits;
+    const auto &arrayDescriptor = arrayPlan.descriptor;
 
     if (variable) {
       std::string validateHelper;
@@ -1818,10 +1033,7 @@ private:
     emitLine(out, indent,
              "for (std::size_t " + index + " = 0U; " + index + " < " + bound +
                  "; ++" + index + ") {");
-    SemanticFieldType elementType = type;
-    elementType.arrayKind = ArrayKind::None;
-    elementType.arrayCapacity = 0;
-    elementType.arrayLengthPrefixBits = 0;
+    const auto elementType = arrayElementType(type);
     emitSerializeValue(out, elementType,
                        accessPrefix + "[" + index + "]", indent + 1,
                        std::nullopt, fieldFacts);
@@ -1835,13 +1047,12 @@ private:
                                 arrayLengthPrefixBitsOverride,
                             const LoweredFieldFacts *const fieldFacts) {
     const bool elementIsBool = type.scalarCategory == SemanticScalarCategory::Bool;
-    const bool variable = isVariableArray(type.arrayKind);
-    const auto prefixBits =
-        arrayLengthPrefixBitsOverride.value_or(type.arrayLengthPrefixBits);
-    const auto arrayDescriptor = buildArrayLengthHelperDescriptor(
-        type, prefixBits,
-        fieldFacts ? fieldFacts->deserArrayLengthPrefixHelper : std::string{},
-        fieldFacts ? fieldFacts->arrayLengthValidateHelper : std::string{});
+    const auto arrayPlan = buildArrayWirePlan(
+        type, fieldFacts, arrayLengthPrefixBitsOverride,
+        HelperBindingDirection::Deserialize);
+    const bool variable = arrayPlan.variable;
+    const auto prefixBits = arrayPlan.prefixBits;
+    const auto &arrayDescriptor = arrayPlan.descriptor;
     std::string countExpr;
 
     if (variable) {
@@ -1928,10 +1139,7 @@ private:
     emitLine(out, indent,
              "for (std::size_t " + index + " = 0U; " + index + " < " + bound +
                  "; ++" + index + ") {");
-    SemanticFieldType elementType = type;
-    elementType.arrayKind = ArrayKind::None;
-    elementType.arrayCapacity = 0;
-    elementType.arrayLengthPrefixBits = 0;
+    const auto elementType = arrayElementType(type);
     emitDeserializeValue(out, elementType,
                          accessPrefix + "[" + index + "]", indent + 1,
                          std::nullopt, fieldFacts);
@@ -1965,12 +1173,10 @@ private:
       emitLine(out, indent,
                "const std::size_t " + remaining +
                    " = capacity_bytes - dsdl_runtime_choose_min(offset_bits / 8U, capacity_bytes);");
-      std::string helper;
-      const auto delimiterDescriptor = buildDelimiterValidateHelperDescriptor(
-          type, fieldFacts ? fieldFacts->delimiterValidateHelper : std::string{});
-      if (delimiterDescriptor) {
-        helper = helperBindingName(delimiterDescriptor->symbol);
-      }
+      const auto helperSymbol =
+          resolveDelimiterValidateHelperSymbol(type, fieldFacts);
+      const auto helper = helperSymbol.empty() ? std::string{}
+                                               : helperBindingName(helperSymbol);
       if (!helper.empty()) {
         const auto validateRc = nextName("rc");
         emitLine(out, indent,
@@ -2034,12 +1240,10 @@ private:
                    " = capacity_bytes - dsdl_runtime_choose_min(offset_bits / 8U, capacity_bytes);");
       const auto remVar = "_remaining_" + std::to_string(id_);
       ++id_;
-      std::string helper;
-      const auto delimiterDescriptor = buildDelimiterValidateHelperDescriptor(
-          type, fieldFacts ? fieldFacts->delimiterValidateHelper : std::string{});
-      if (delimiterDescriptor) {
-        helper = helperBindingName(delimiterDescriptor->symbol);
-      }
+      const auto helperSymbol =
+          resolveDelimiterValidateHelperSymbol(type, fieldFacts);
+      const auto helper = helperSymbol.empty() ? std::string{}
+                                               : helperBindingName(helperSymbol);
       if (!helper.empty()) {
         const auto validateRc = nextName("rc");
         emitLine(out, indent,
@@ -2114,7 +1318,7 @@ void collectSectionDependencies(const SemanticSection &section,
   for (const auto &field : section.fields) {
     if (field.resolvedType.compositeType) {
       const auto &ref = *field.resolvedType.compositeType;
-      out.insert(typeKey(ref.fullName, ref.majorVersion, ref.minorVersion));
+      out.insert(loweredTypeKey(ref.fullName, ref.majorVersion, ref.minorVersion));
     }
   }
 }
@@ -2369,7 +1573,7 @@ findLoweredSectionFacts(const LoweredFactsMap &loweredFacts,
                         const SemanticDefinition &def,
                         llvm::StringRef sectionKey) {
   const auto defIt = loweredFacts.find(
-      typeKey(def.info.fullName, def.info.majorVersion, def.info.minorVersion));
+      loweredTypeKey(def.info.fullName, def.info.majorVersion, def.info.minorVersion));
   if (defIt == loweredFacts.end()) {
     return nullptr;
   }
@@ -2577,8 +1781,8 @@ llvm::Error emitCpp(const SemanticModule &semantic, mlir::ModuleOp module,
                                    "output directory is required");
   }
   LoweredFactsMap loweredFacts;
-  if (!validateMlirSchemaCoverage(semantic, module, diagnostics,
-                                  &loweredFacts)) {
+  if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "C++",
+                                   &loweredFacts)) {
     return llvm::createStringError(
         llvm::inconvertibleErrorCode(),
         "MLIR schema coverage validation failed for C++ emission");

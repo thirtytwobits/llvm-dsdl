@@ -1,0 +1,296 @@
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <type_traits>
+
+extern "C" {
+#include "vendor/Int3Sat_1_0.h"
+#include "vendor/Int3Trunc_1_0.h"
+}
+
+#include "vendor/Int3Sat_1_0.hpp"
+#include "vendor/Int3Trunc_1_0.hpp"
+
+namespace {
+
+std::uint64_t gRngState = UINT64_C(0xE6A1FD3BC9157A2D);
+
+std::uint32_t nextRandomU32() {
+  gRngState ^= gRngState << 13U;
+  gRngState ^= gRngState >> 7U;
+  gRngState ^= gRngState << 17U;
+  return static_cast<std::uint32_t>(gRngState & UINT64_C(0xFFFFFFFF));
+}
+
+void fillRandomBytes(std::uint8_t *const dst, const std::size_t size) {
+  for (std::size_t i = 0; i < size; ++i) {
+    dst[i] = static_cast<std::uint8_t>(nextRandomU32() & UINT32_C(0xFF));
+  }
+}
+
+template <typename CObj, typename CppObj>
+int runCase(const char *const name, const std::size_t iterations,
+            const std::size_t cMaxSize, const std::size_t cppMaxSize,
+            std::int8_t (*cDeserialize)(CObj *, const std::uint8_t *,
+                                        std::size_t *),
+            std::int8_t (*cSerialize)(const CObj *, std::uint8_t *,
+                                      std::size_t *),
+            std::int8_t (*cppDeserialize)(CppObj *, const std::uint8_t *,
+                                          std::size_t *),
+            std::int8_t (*cppSerialize)(const CppObj *, std::uint8_t *,
+                                        std::size_t *)) {
+  static_assert(std::is_trivially_copyable_v<CObj>);
+  constexpr std::size_t kMaxIoBuffer = 32U;
+  std::uint8_t input[kMaxIoBuffer];
+  std::uint8_t cOutput[kMaxIoBuffer];
+  std::uint8_t cppOutput[kMaxIoBuffer];
+  const std::size_t maxSerialized = (cMaxSize > cppMaxSize) ? cMaxSize : cppMaxSize;
+  const std::size_t maxInput = maxSerialized + 8U;
+
+  for (std::size_t iter = 0; iter < iterations; ++iter) {
+    const std::size_t inputSize =
+        static_cast<std::size_t>(nextRandomU32() % static_cast<std::uint32_t>(maxInput + 1U));
+    fillRandomBytes(input, inputSize);
+
+    CObj cObj{};
+    std::memset(&cObj, 0, sizeof(cObj));
+    CppObj cppObj{};
+
+    std::size_t cConsumed = inputSize;
+    std::size_t cppConsumed = inputSize;
+    const std::int8_t cDesResult = cDeserialize(&cObj, input, &cConsumed);
+    const std::int8_t cppDesResult = cppDeserialize(&cppObj, input, &cppConsumed);
+    if ((cDesResult != cppDesResult) || (cConsumed != cppConsumed)) {
+      std::fprintf(stderr,
+                   "Deserialize mismatch in %s iter=%zu C(rc=%d,consumed=%zu) "
+                   "C++(rc=%d,consumed=%zu)\n",
+                   name, iter, static_cast<int>(cDesResult), cConsumed,
+                   static_cast<int>(cppDesResult), cppConsumed);
+      return 1;
+    }
+    if (cDesResult < 0) {
+      continue;
+    }
+
+    std::memset(cOutput, 0xA5, sizeof(cOutput));
+    std::memset(cppOutput, 0xA5, sizeof(cppOutput));
+    std::size_t cSize = maxSerialized;
+    std::size_t cppSize = maxSerialized;
+    const std::int8_t cSerResult = cSerialize(&cObj, cOutput, &cSize);
+    const std::int8_t cppSerResult = cppSerialize(&cppObj, cppOutput, &cppSize);
+    const bool byteMismatch =
+        (cSize == cppSize) && (std::memcmp(cOutput, cppOutput, cSize) != 0);
+    if ((cSerResult != cppSerResult) || (cSize != cppSize) || byteMismatch) {
+      std::fprintf(stderr,
+                   "Serialize mismatch in %s iter=%zu C(rc=%d,size=%zu) C++(rc=%d,size=%zu)\n",
+                   name, iter, static_cast<int>(cSerResult), cSize,
+                   static_cast<int>(cppSerResult), cppSize);
+      return 1;
+    }
+  }
+
+  std::printf("PASS %s (%zu iterations)\n", name, iterations);
+  return 0;
+}
+
+std::int8_t cInt3SatDeserialize(vendor__Int3Sat *outObj, const std::uint8_t *buffer,
+                                std::size_t *inoutSize) {
+  return vendor__Int3Sat__deserialize_(outObj, buffer, inoutSize);
+}
+std::int8_t cInt3SatSerialize(const vendor__Int3Sat *obj, std::uint8_t *buffer,
+                              std::size_t *inoutSize) {
+  return vendor__Int3Sat__serialize_(obj, buffer, inoutSize);
+}
+std::int8_t cppInt3SatDeserialize(vendor::Int3Sat *outObj, const std::uint8_t *buffer,
+                                  std::size_t *inoutSize) {
+  return outObj->deserialize(buffer, inoutSize);
+}
+std::int8_t cppInt3SatSerialize(const vendor::Int3Sat *obj, std::uint8_t *buffer,
+                                std::size_t *inoutSize) {
+  return obj->serialize(buffer, inoutSize);
+}
+
+std::int8_t cInt3TruncDeserialize(vendor__Int3Trunc *outObj,
+                                  const std::uint8_t *buffer,
+                                  std::size_t *inoutSize) {
+  return vendor__Int3Trunc__deserialize_(outObj, buffer, inoutSize);
+}
+std::int8_t cInt3TruncSerialize(const vendor__Int3Trunc *obj, std::uint8_t *buffer,
+                                std::size_t *inoutSize) {
+  return vendor__Int3Trunc__serialize_(obj, buffer, inoutSize);
+}
+std::int8_t cppInt3TruncDeserialize(vendor::Int3Trunc *outObj,
+                                    const std::uint8_t *buffer,
+                                    std::size_t *inoutSize) {
+  return outObj->deserialize(buffer, inoutSize);
+}
+std::int8_t cppInt3TruncSerialize(const vendor::Int3Trunc *obj, std::uint8_t *buffer,
+                                  std::size_t *inoutSize) {
+  return obj->serialize(buffer, inoutSize);
+}
+
+int runDirectedChecks() {
+  {
+    // Saturated int3: +7 -> +3 (0b011).
+    vendor__Int3Sat cObj{};
+    vendor::Int3Sat cppObj{};
+    cObj.value = static_cast<std::int8_t>(7);
+    cppObj.value = static_cast<std::int8_t>(7);
+    std::uint8_t cBuffer[8]{};
+    std::uint8_t cppBuffer[8]{};
+    std::size_t cSize = static_cast<std::size_t>(vendor__Int3Sat_SERIALIZATION_BUFFER_SIZE_BYTES_);
+    std::size_t cppSize = vendor::Int3Sat::SERIALIZATION_BUFFER_SIZE_BYTES;
+    const std::int8_t cRc = cInt3SatSerialize(&cObj, cBuffer, &cSize);
+    const std::int8_t cppRc = cppInt3SatSerialize(&cppObj, cppBuffer, &cppSize);
+    if ((cRc != 0) || (cppRc != 0) || (cSize != 1U) || (cppSize != 1U) ||
+        (cBuffer[0] != cppBuffer[0]) || (cBuffer[0] != 0x03U)) {
+      std::fprintf(stderr,
+                   "Directed mismatch (Int3Sat +7 serialize): "
+                   "C(rc=%d,size=%zu,byte=%02X) C++(rc=%d,size=%zu,byte=%02X)\n",
+                   static_cast<int>(cRc), cSize, cBuffer[0], static_cast<int>(cppRc),
+                   cppSize, cppBuffer[0]);
+      return 1;
+    }
+  }
+
+  {
+    // Saturated int3: -9 -> -4 (0b100).
+    vendor__Int3Sat cObj{};
+    vendor::Int3Sat cppObj{};
+    cObj.value = static_cast<std::int8_t>(-9);
+    cppObj.value = static_cast<std::int8_t>(-9);
+    std::uint8_t cBuffer[8]{};
+    std::uint8_t cppBuffer[8]{};
+    std::size_t cSize = static_cast<std::size_t>(vendor__Int3Sat_SERIALIZATION_BUFFER_SIZE_BYTES_);
+    std::size_t cppSize = vendor::Int3Sat::SERIALIZATION_BUFFER_SIZE_BYTES;
+    const std::int8_t cRc = cInt3SatSerialize(&cObj, cBuffer, &cSize);
+    const std::int8_t cppRc = cppInt3SatSerialize(&cppObj, cppBuffer, &cppSize);
+    if ((cRc != 0) || (cppRc != 0) || (cSize != 1U) || (cppSize != 1U) ||
+        (cBuffer[0] != cppBuffer[0]) || (cBuffer[0] != 0x04U)) {
+      std::fprintf(stderr,
+                   "Directed mismatch (Int3Sat -9 serialize): "
+                   "C(rc=%d,size=%zu,byte=%02X) C++(rc=%d,size=%zu,byte=%02X)\n",
+                   static_cast<int>(cRc), cSize, cBuffer[0], static_cast<int>(cppRc),
+                   cppSize, cppBuffer[0]);
+      return 1;
+    }
+  }
+
+  {
+    // Truncated int3: +5 -> 0b101 (decode -3).
+    vendor__Int3Trunc cObj{};
+    vendor::Int3Trunc cppObj{};
+    cObj.value = static_cast<std::int8_t>(5);
+    cppObj.value = static_cast<std::int8_t>(5);
+    std::uint8_t cBuffer[8]{};
+    std::uint8_t cppBuffer[8]{};
+    std::size_t cSize = static_cast<std::size_t>(vendor__Int3Trunc_SERIALIZATION_BUFFER_SIZE_BYTES_);
+    std::size_t cppSize = vendor::Int3Trunc::SERIALIZATION_BUFFER_SIZE_BYTES;
+    const std::int8_t cRc = cInt3TruncSerialize(&cObj, cBuffer, &cSize);
+    const std::int8_t cppRc = cppInt3TruncSerialize(&cppObj, cppBuffer, &cppSize);
+    if ((cRc != 0) || (cppRc != 0) || (cSize != 1U) || (cppSize != 1U) ||
+        (cBuffer[0] != cppBuffer[0]) || (cBuffer[0] != 0x05U)) {
+      std::fprintf(stderr,
+                   "Directed mismatch (Int3Trunc +5 serialize): "
+                   "C(rc=%d,size=%zu,byte=%02X) C++(rc=%d,size=%zu,byte=%02X)\n",
+                   static_cast<int>(cRc), cSize, cBuffer[0], static_cast<int>(cppRc),
+                   cppSize, cppBuffer[0]);
+      return 1;
+    }
+  }
+
+  {
+    // Truncated int3: -5 -> low bits 0b011.
+    vendor__Int3Trunc cObj{};
+    vendor::Int3Trunc cppObj{};
+    cObj.value = static_cast<std::int8_t>(-5);
+    cppObj.value = static_cast<std::int8_t>(-5);
+    std::uint8_t cBuffer[8]{};
+    std::uint8_t cppBuffer[8]{};
+    std::size_t cSize = static_cast<std::size_t>(vendor__Int3Trunc_SERIALIZATION_BUFFER_SIZE_BYTES_);
+    std::size_t cppSize = vendor::Int3Trunc::SERIALIZATION_BUFFER_SIZE_BYTES;
+    const std::int8_t cRc = cInt3TruncSerialize(&cObj, cBuffer, &cSize);
+    const std::int8_t cppRc = cppInt3TruncSerialize(&cppObj, cppBuffer, &cppSize);
+    if ((cRc != 0) || (cppRc != 0) || (cSize != 1U) || (cppSize != 1U) ||
+        (cBuffer[0] != cppBuffer[0]) || (cBuffer[0] != 0x03U)) {
+      std::fprintf(stderr,
+                   "Directed mismatch (Int3Trunc -5 serialize): "
+                   "C(rc=%d,size=%zu,byte=%02X) C++(rc=%d,size=%zu,byte=%02X)\n",
+                   static_cast<int>(cRc), cSize, cBuffer[0], static_cast<int>(cppRc),
+                   cppSize, cppBuffer[0]);
+      return 1;
+    }
+  }
+
+  {
+    // Sign extension in deserialize path: 0b111 -> -1, 0b100 -> -4.
+    for (const auto sample : {std::uint8_t{0x07U}, std::uint8_t{0x04U}}) {
+      vendor__Int3Sat cObj{};
+      vendor::Int3Sat cppObj{};
+      std::size_t cConsumed = 1U;
+      std::size_t cppConsumed = 1U;
+      const std::int8_t cRc = cInt3SatDeserialize(&cObj, &sample, &cConsumed);
+      const std::int8_t cppRc = cppInt3SatDeserialize(&cppObj, &sample, &cppConsumed);
+      if ((cRc != 0) || (cppRc != 0) || (cConsumed != cppConsumed) ||
+          (cObj.value != cppObj.value)) {
+        std::fprintf(stderr,
+                     "Directed mismatch (Int3Sat deserialize sign extension sample=%02X)\n",
+                     sample);
+        return 1;
+      }
+      const std::int8_t expected = (sample == 0x07U) ? static_cast<std::int8_t>(-1)
+                                                     : static_cast<std::int8_t>(-4);
+      if (cObj.value != expected) {
+        std::fprintf(stderr,
+                     "Directed mismatch (Int3Sat deserialize expected=%d got=%d sample=%02X)\n",
+                     static_cast<int>(expected), static_cast<int>(cObj.value), sample);
+        return 1;
+      }
+    }
+  }
+
+  std::printf("PASS signed-narrow-directed\n");
+  return 0;
+}
+
+} // namespace
+
+int main(int argc, char **argv) {
+  std::size_t iterations = 256U;
+  if (argc > 1) {
+    char *endptr = nullptr;
+    const unsigned long parsed = std::strtoul(argv[1], &endptr, 10);
+    if ((endptr == nullptr) || (*endptr != '\0') || (parsed == 0UL)) {
+      std::fprintf(stderr, "Invalid iteration count: %s\n", argv[1]);
+      return 2;
+    }
+    iterations = static_cast<std::size_t>(parsed);
+  }
+
+  if (runCase<vendor__Int3Sat, vendor::Int3Sat>(
+          "vendor.Int3Sat.1.0", iterations,
+          static_cast<std::size_t>(vendor__Int3Sat_SERIALIZATION_BUFFER_SIZE_BYTES_),
+          vendor::Int3Sat::SERIALIZATION_BUFFER_SIZE_BYTES, cInt3SatDeserialize,
+          cInt3SatSerialize, cppInt3SatDeserialize,
+          cppInt3SatSerialize) != 0) {
+    return 1;
+  }
+
+  if (runCase<vendor__Int3Trunc, vendor::Int3Trunc>(
+          "vendor.Int3Trunc.1.0", iterations,
+          static_cast<std::size_t>(vendor__Int3Trunc_SERIALIZATION_BUFFER_SIZE_BYTES_),
+          vendor::Int3Trunc::SERIALIZATION_BUFFER_SIZE_BYTES,
+          cInt3TruncDeserialize, cInt3TruncSerialize, cppInt3TruncDeserialize,
+          cppInt3TruncSerialize) != 0) {
+    return 1;
+  }
+
+  if (runDirectedChecks() != 0) {
+    return 1;
+  }
+
+  std::printf("Signed narrow C/C++ parity PASS\n");
+  return 0;
+}

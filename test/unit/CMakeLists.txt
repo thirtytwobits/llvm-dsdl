@@ -5,11 +5,19 @@ add_executable(llvmdsdl-unit-tests
   EvaluatorTests.cpp
   AnalyzerTests.cpp
   RuntimeTests.cpp
+  ArrayWirePlanTests.cpp
+  SectionHelperBindingPlanTests.cpp
+  SerDesStatementPlanTests.cpp
+  HelperBindingRenderTests.cpp
+  HelperSymbolResolverTests.cpp
+  WireLayoutFactsTests.cpp
+  TypeStorageTests.cpp
 )
 
 target_link_libraries(llvmdsdl-unit-tests
   PRIVATE
   llvmdsdlSemantics
+  llvmdsdlCodeGen
 )
 
 target_include_directories(llvmdsdl-unit-tests
