@@ -1,5 +1,5 @@
-#ifndef LLVMDSDL_FRONTEND_SOURCELOCATION_H
-#define LLVMDSDL_FRONTEND_SOURCELOCATION_H
+#ifndef LLVMDSDL_FRONTEND_SOURCE_LOCATION_H
+#define LLVMDSDL_FRONTEND_SOURCE_LOCATION_H
 
 #include <cstdint>
 #include <string>
@@ -16,4 +16,4 @@ struct SourceLocation {
 
 } // namespace llvmdsdl
 
-#endif // LLVMDSDL_FRONTEND_SOURCELOCATION_H
+#endif // LLVMDSDL_FRONTEND_SOURCE_LOCATION_H

@@ -1,0 +1,22 @@
+{
+    "clangd.arguments": [
+        "--compile-commands-dir=build/dev-homebrew"
+    ],
+    "cSpell.words": [
+        "CEMITTER",
+        "CODEGEN",
+        "CPPEMITTER",
+        "cstdint",
+        "deser",
+        "dsdl",
+        "dsdlc",
+        "emitc",
+        "ifndef",
+        "llvmdsdl",
+        "metaserializable",
+        "mlir",
+        "nodiscard",
+        "RUSTEMITTER",
+        "SERDES"
+    ]
+}

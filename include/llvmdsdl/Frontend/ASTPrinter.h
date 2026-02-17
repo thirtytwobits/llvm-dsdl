@@ -1,5 +1,5 @@
-#ifndef LLVMDSDL_FRONTEND_ASTPRINTER_H
-#define LLVMDSDL_FRONTEND_ASTPRINTER_H
+#ifndef LLVMDSDL_FRONTEND_AST_PRINTER_H
+#define LLVMDSDL_FRONTEND_AST_PRINTER_H
 
 #include "llvmdsdl/Frontend/AST.h"
 
@@ -11,4 +11,4 @@ std::string printAST(const ASTModule &module);
 
 } // namespace llvmdsdl
 
-#endif // LLVMDSDL_FRONTEND_ASTPRINTER_H
+#endif // LLVMDSDL_FRONTEND_AST_PRINTER_H

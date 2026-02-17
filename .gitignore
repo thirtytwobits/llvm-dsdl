@@ -3,7 +3,6 @@ build/
 
 # IDE and editor files
 .cache/
-.vscode/
 .idea/
 *.swp
 *.swo

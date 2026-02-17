@@ -11,6 +11,7 @@ extern "C" {
 #include "uavcan/node/Heartbeat_1_0.h"
 #include "uavcan/node/Health_1_0.h"
 #include "uavcan/node/port/List_1_0.h"
+#include "uavcan/primitive/scalar/Integer8_1_0.h"
 #include "uavcan/time/SynchronizedTimestamp_1_0.h"
 }
 
@@ -19,6 +20,7 @@ extern "C" {
 #include "uavcan/node/Heartbeat_1_0.hpp"
 #include "uavcan/node/Health_1_0.hpp"
 #include "uavcan/node/port/List_1_0.hpp"
+#include "uavcan/primitive/scalar/Integer8_1_0.hpp"
 #include "uavcan/time/SynchronizedTimestamp_1_0.hpp"
 
 namespace {
@@ -191,6 +193,17 @@ std::int8_t cppSynchronizedTimestampDeserialize(
     std::size_t *inoutSize);
 std::int8_t cppSynchronizedTimestampSerialize(
     const uavcan::time::SynchronizedTimestamp *obj, std::uint8_t *buffer,
+    std::size_t *inoutSize);
+std::int8_t cInteger8Deserialize(uavcan__primitive__scalar__Integer8 *outObj,
+                                 const std::uint8_t *buffer,
+                                 std::size_t *inoutSize);
+std::int8_t cInteger8Serialize(const uavcan__primitive__scalar__Integer8 *obj,
+                               std::uint8_t *buffer, std::size_t *inoutSize);
+std::int8_t cppInteger8Deserialize(uavcan::primitive::scalar::Integer8 *outObj,
+                                   const std::uint8_t *buffer,
+                                   std::size_t *inoutSize);
+std::int8_t cppInteger8Serialize(
+    const uavcan::primitive::scalar::Integer8 *obj, std::uint8_t *buffer,
     std::size_t *inoutSize);
 
 int runDirectedErrorCases() {
@@ -687,6 +700,48 @@ int runDirectedErrorCases() {
     }
   }
 
+  {
+    // Signed scalar edge vectors for Integer8.
+    const std::uint8_t input[1] = {0x80U}; // -128 in two's complement.
+    uavcan__primitive__scalar__Integer8 cObj{};
+    uavcan::primitive::scalar::Integer8 cppObj{};
+    std::size_t cConsumed = sizeof(input);
+    std::size_t cppConsumed = sizeof(input);
+    const std::int8_t cDesRc = cInteger8Deserialize(&cObj, input, &cConsumed);
+    const std::int8_t cppDesRc = cppInteger8Deserialize(&cppObj, input, &cppConsumed);
+    if ((cDesRc != 0) || (cppDesRc != 0) || (cConsumed != cppConsumed) ||
+        (cObj.value != static_cast<std::int8_t>(-128)) ||
+        (cppObj.value != static_cast<std::int8_t>(-128))) {
+      std::fprintf(stderr,
+                   "Directed mismatch (Integer8 signed deserialize): "
+                   "C(rc=%d,consumed=%zu,value=%d) C++(rc=%d,consumed=%zu,value=%d)\n",
+                   static_cast<int>(cDesRc), cConsumed, static_cast<int>(cObj.value),
+                   static_cast<int>(cppDesRc), cppConsumed,
+                   static_cast<int>(cppObj.value));
+      return 1;
+    }
+
+    cObj.value = static_cast<std::int8_t>(-1);
+    cppObj.value = static_cast<std::int8_t>(-1);
+    std::uint8_t cBuffer[8]{};
+    std::uint8_t cppBuffer[8]{};
+    std::size_t cSize = static_cast<std::size_t>(
+        uavcan__primitive__scalar__Integer8_SERIALIZATION_BUFFER_SIZE_BYTES_);
+    std::size_t cppSize =
+        uavcan::primitive::scalar::Integer8::SERIALIZATION_BUFFER_SIZE_BYTES;
+    const std::int8_t cSerRc = cInteger8Serialize(&cObj, cBuffer, &cSize);
+    const std::int8_t cppSerRc = cppInteger8Serialize(&cppObj, cppBuffer, &cppSize);
+    if ((cSerRc != 0) || (cppSerRc != 0) || (cSize != 1U) || (cppSize != 1U) ||
+        (cBuffer[0] != cppBuffer[0]) || (cBuffer[0] != 0xFFU)) {
+      std::fprintf(stderr,
+                   "Directed mismatch (Integer8 signed serialize): "
+                   "C(rc=%d,size=%zu,byte=%02X) C++(rc=%d,size=%zu,byte=%02X)\n",
+                   static_cast<int>(cSerRc), cSize, cBuffer[0],
+                   static_cast<int>(cppSerRc), cppSize, cppBuffer[0]);
+      return 1;
+    }
+  }
+
   std::printf("PASS directed-error-parity\n");
   return 0;
 }
@@ -823,6 +878,27 @@ std::int8_t cppSynchronizedTimestampSerialize(
   return obj->serialize(buffer, inoutSize);
 }
 
+std::int8_t cInteger8Deserialize(
+    uavcan__primitive__scalar__Integer8 *const outObj,
+    const std::uint8_t *const buffer, std::size_t *const inoutSize) {
+  return uavcan__primitive__scalar__Integer8__deserialize_(outObj, buffer, inoutSize);
+}
+std::int8_t cInteger8Serialize(
+    const uavcan__primitive__scalar__Integer8 *const obj,
+    std::uint8_t *const buffer, std::size_t *const inoutSize) {
+  return uavcan__primitive__scalar__Integer8__serialize_(obj, buffer, inoutSize);
+}
+std::int8_t cppInteger8Deserialize(
+    uavcan::primitive::scalar::Integer8 *const outObj,
+    const std::uint8_t *const buffer, std::size_t *const inoutSize) {
+  return outObj->deserialize(buffer, inoutSize);
+}
+std::int8_t cppInteger8Serialize(
+    const uavcan::primitive::scalar::Integer8 *const obj,
+    std::uint8_t *const buffer, std::size_t *const inoutSize) {
+  return obj->serialize(buffer, inoutSize);
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -899,6 +975,17 @@ int main(int argc, char **argv) {
           cSynchronizedTimestampDeserialize, cSynchronizedTimestampSerialize,
           cppSynchronizedTimestampDeserialize,
           cppSynchronizedTimestampSerialize) != 0) {
+    return 1;
+  }
+
+  if (runCase<uavcan__primitive__scalar__Integer8,
+              uavcan::primitive::scalar::Integer8>(
+          "uavcan.primitive.scalar.Integer8.1.0", iterations,
+          static_cast<std::size_t>(
+              uavcan__primitive__scalar__Integer8_SERIALIZATION_BUFFER_SIZE_BYTES_),
+          uavcan::primitive::scalar::Integer8::SERIALIZATION_BUFFER_SIZE_BYTES,
+          cInteger8Deserialize, cInteger8Serialize, cppInteger8Deserialize,
+          cppInteger8Serialize) != 0) {
     return 1;
   }
 

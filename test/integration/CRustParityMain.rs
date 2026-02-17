@@ -12,6 +12,7 @@ use uavcan_dsdl_generated::uavcan::node::heartbeat_1_0::uavcan_node_Heartbeat_1_
 use uavcan_dsdl_generated::uavcan::node::health_1_0::uavcan_node_Health_1_0;
 use uavcan_dsdl_generated::uavcan::node::port::list_1_0::uavcan_node_port_List_1_0;
 use uavcan_dsdl_generated::uavcan::node::port::subject_id_1_0::uavcan_node_port_SubjectID_1_0;
+use uavcan_dsdl_generated::uavcan::primitive::scalar::integer8_1_0::uavcan_primitive_scalar_Integer8_1_0;
 use uavcan_dsdl_generated::uavcan::register::value_1_0::uavcan_register_Value_1_0;
 use uavcan_dsdl_generated::uavcan::time::synchronized_timestamp_1_0::uavcan_time_SynchronizedTimestamp_1_0;
 
@@ -45,6 +46,13 @@ unsafe extern "C" {
         result: *mut CCaseResult,
     ) -> c_int;
     fn c_synchronized_timestamp_roundtrip(
+        input: *const u8,
+        input_size: usize,
+        output: *mut u8,
+        output_capacity: usize,
+        result: *mut CCaseResult,
+    ) -> c_int;
+    fn c_integer8_roundtrip(
         input: *const u8,
         input_size: usize,
         output: *mut u8,
@@ -264,6 +272,17 @@ fn synchronized_timestamp_deserialize(
 
 fn synchronized_timestamp_serialize(
     obj: &uavcan_time_SynchronizedTimestamp_1_0,
+    buffer: &mut [u8],
+) -> Result<usize, i8> {
+    obj.serialize(buffer)
+}
+
+fn integer8_deserialize(out: &mut uavcan_primitive_scalar_Integer8_1_0, buffer: &[u8]) -> (i8, usize) {
+    out.deserialize_with_consumed(buffer)
+}
+
+fn integer8_serialize(
+    obj: &uavcan_primitive_scalar_Integer8_1_0,
     buffer: &mut [u8],
 ) -> Result<usize, i8> {
     obj.serialize(buffer)
@@ -963,6 +982,68 @@ fn run_directed_error_cases() -> Result<(), String> {
         }
     }
 
+    {
+        for input_byte in [0x80u8, 0xFFu8] {
+            let input = [input_byte];
+            let mut c_result = CCaseResult::default();
+            let mut c_output = [0u8; MAX_IO_BUFFER];
+            let c_status = unsafe {
+                c_integer8_roundtrip(
+                    input.as_ptr(),
+                    input.len(),
+                    c_output.as_mut_ptr(),
+                    uavcan_primitive_scalar_Integer8_1_0::SERIALIZATION_BUFFER_SIZE_BYTES,
+                    &mut c_result,
+                )
+            };
+            if c_status != 0 {
+                return Err(format!(
+                    "C harness call failed for Integer8 signed roundtrip input={input_byte:#04X}: status={c_status}"
+                ));
+            }
+            let mut rust_obj = uavcan_primitive_scalar_Integer8_1_0::default();
+            let (rust_des_rc, rust_consumed) = rust_obj.deserialize_with_consumed(&input);
+            if rust_des_rc != c_result.deserialize_rc
+                || rust_consumed != c_result.deserialize_consumed
+            {
+                return Err(format!(
+                    "Directed mismatch (Integer8 signed deserialize input={input_byte:#04X}): \
+                     C(rc={},consumed={}) Rust(rc={},consumed={})",
+                    c_result.deserialize_rc,
+                    c_result.deserialize_consumed,
+                    rust_des_rc,
+                    rust_consumed
+                ));
+            }
+            let mut rust_output =
+                vec![0u8; uavcan_primitive_scalar_Integer8_1_0::SERIALIZATION_BUFFER_SIZE_BYTES];
+            let rust_size = match rust_obj.serialize(&mut rust_output) {
+                Ok(size) => size,
+                Err(rc) => {
+                    return Err(format!(
+                        "Rust Integer8 signed serialize unexpectedly failed input={input_byte:#04X} rc={rc}"
+                    ));
+                }
+            };
+            if c_result.serialize_rc != 0
+                || rust_size != c_result.serialize_size
+                || rust_size != 1usize
+                || c_output[0] != rust_output[0]
+                || rust_output[0] != input_byte
+            {
+                return Err(format!(
+                    "Directed mismatch (Integer8 signed serialize input={input_byte:#04X}): \
+                     C(rc={},size={},byte={:02X}) Rust(size={},byte={:02X})",
+                    c_result.serialize_rc,
+                    c_result.serialize_size,
+                    c_output[0],
+                    rust_size,
+                    rust_output[0]
+                ));
+            }
+        }
+    }
+
     println!("PASS directed-error-parity");
     Ok(())
 }
@@ -1071,6 +1152,18 @@ fn main() {
             c_synchronized_timestamp_roundtrip,
             synchronized_timestamp_deserialize,
             synchronized_timestamp_serialize,
+            true,
+            &mut rng_state,
+        )
+    })
+    .and_then(|_| {
+        run_case(
+            "uavcan.primitive.scalar.Integer8.1.0",
+            iterations,
+            uavcan_primitive_scalar_Integer8_1_0::SERIALIZATION_BUFFER_SIZE_BYTES,
+            c_integer8_roundtrip,
+            integer8_deserialize,
+            integer8_serialize,
             true,
             &mut rng_state,
         )
