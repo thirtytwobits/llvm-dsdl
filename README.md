@@ -15,12 +15,14 @@ It currently provides:
   - Per-type headers (`.hpp`) mirroring namespace directories.
   - Header-only inline SerDes for both `std` and allocator-oriented `pmr` profiles.
   - A C++ runtime wrapper (`dsdl_runtime.hpp`) over the core bit-level runtime.
+  - MLIR schema/plan metadata validation before emission (fail-fast on malformed IR facts).
 - Rust code generation (`dsdlc rust`) with:
   - A generated crate layout (`Cargo.toml`, `src/lib.rs`, `src/**`).
   - Per-type Rust data types and inline SerDes methods.
   - A local Rust runtime module (`src/dsdl_runtime.rs`) with bit-level primitives.
   - `std` profile enabled now, with an explicit reserved seam for future
     `no_std + alloc`.
+  - MLIR schema/plan metadata validation before emission (matching C++ structural checks).
 - Strict-mode-first semantics (`--strict` is default).
 
 ## Repository Layout
@@ -88,6 +90,74 @@ Full verification workflow (includes strict `uavcan` C, C++, and Rust integratio
 cmake --workflow --preset full
 ```
 
+The full test set now also includes `llvmdsdl-uavcan-mlir-lowering`, which
+validates full-`uavcan` MLIR lowering and `convert-dsdl-to-emitc` pass
+execution under `dsdl-opt`.
+
+It also includes `llvmdsdl-uavcan-cpp-c-parity`, a cross-backend integration
+gate that compares generated C and generated C++ (`std` profile) SerDes
+behavior over randomized inputs for representative types.
+
+It also includes `llvmdsdl-uavcan-cpp-pmr-c-parity`, which runs the same
+cross-backend parity harness against the generated C++ `pmr` profile to verify
+allocator-oriented API paths preserve the same wire behavior.
+
+With Rust tooling available, the suite also enables
+`llvmdsdl-uavcan-rust-cargo-check` to compile-check the full generated `uavcan`
+Rust crate using `cargo check`.
+
+When Rust tooling is available (`cargo` + `rustc`), `ctest` also enables
+`llvmdsdl-uavcan-c-rust-parity`, which links generated C implementation units
+into a Rust harness and checks deserialize/serialize return codes, consumed and
+produced sizes, and output bytes for representative `uavcan` types.
+
+Demo artifact workflow (creates `build/<preset>/demo-2026-02-16/` with
+generated outputs, full-`uavcan` MLIR + lowered MLIR snapshots, selected test
+logs, and `DEMO.md`):
+
+```bash
+cmake --workflow --preset demo
+```
+
+On macOS with Homebrew LLVM:
+
+```bash
+cmake --workflow --preset demo-homebrew
+```
+
+Differential parity workflow note:
+
+- If sibling repositories `../nunavut` and `../pydsdl` are present and Python 3
+  is available, `ctest` auto-enables `llvmdsdl-differential-parity`.
+- This test generates reference C with Nunavut for representative `uavcan`
+  types, then compares deserialize/serialize behavior against `llvm-dsdl`.
+- The current differential gate enforces byte parity for non-float-focused
+  cases and return-code/size parity for float-involved cases.
+
+Run only the differential parity test:
+
+```bash
+ctest --test-dir build -R llvmdsdl-differential-parity --output-on-failure
+```
+
+Run only the C/Rust parity test (when `cargo` and `rustc` are available):
+
+```bash
+ctest --test-dir build -R llvmdsdl-uavcan-c-rust-parity --output-on-failure
+```
+
+Run only the C/C++ PMR parity test:
+
+```bash
+ctest --test-dir build -R llvmdsdl-uavcan-cpp-pmr-c-parity --output-on-failure
+```
+
+Run only the generated-Rust compile gate:
+
+```bash
+ctest --test-dir build -R llvmdsdl-uavcan-rust-cargo-check --output-on-failure
+```
+
 Run only strict `uavcan` integration validation:
 
 ```bash
@@ -120,6 +190,7 @@ CMake provides first-class generation targets per language/profile:
 - `generate-uavcan-cpp-both`
 - `generate-uavcan-rust-std`
 - `generate-uavcan-all` (aggregate)
+- `generate-demo-2026-02-16` (demo bundle with logs + `DEMO.md`)
 
 Run after configure/build:
 
@@ -129,6 +200,7 @@ cmake --build --preset build-dev-homebrew --target generate-uavcan-cpp-std
 cmake --build --preset build-dev-homebrew --target generate-uavcan-cpp-pmr
 cmake --build --preset build-dev-homebrew --target generate-uavcan-rust-std
 cmake --build --preset build-dev-homebrew --target generate-uavcan-all
+cmake --build --preset build-dev-homebrew --target generate-demo-2026-02-16
 ```
 
 Generated output paths are under `<build-dir>/generated/uavcan`:
@@ -138,6 +210,7 @@ Generated output paths are under `<build-dir>/generated/uavcan`:
 - `<build-dir>/generated/uavcan/cpp-pmr`
 - `<build-dir>/generated/uavcan/cpp-both`
 - `<build-dir>/generated/uavcan/rust-std`
+- `<build-dir>/demo-2026-02-16` (demo artifact bundle)
 
 Notes:
 
@@ -243,6 +316,9 @@ Current behavior:
   "not implemented yet" error.
 - Generated Rust API uses `DsdlVec` aliasing in `dsdl_runtime` so we can switch
   allocation strategy in the planned embedded-focused backend.
+- Generated Rust types expose both:
+- `deserialize(&mut self, &[u8]) -> Result<usize, i8>` (ergonomic path), and
+- `deserialize_with_consumed(&mut self, &[u8]) -> (i8, usize)` (C-like parity path that reports consumed bytes on error too).
 
 ## Reproducible Full `uavcan` Generation Check
 

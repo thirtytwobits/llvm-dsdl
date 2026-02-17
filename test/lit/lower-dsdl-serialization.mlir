@@ -12,15 +12,19 @@ module {
 }
 
 // CHECK: dsdl.serialization_plan attributes {
-// CHECK: lowered
-// CHECK: lowered_align_count = 1 : i64
-// CHECK: lowered_field_count = 1 : i64
-// CHECK: lowered_max_bits = 16 : i64
-// CHECK: lowered_min_bits = 8 : i64
-// CHECK: lowered_padding_count = 1 : i64
-// CHECK: lowered_step_count = 2 : i64
-// CHECK: union_option_count = 1 : i64
-// CHECK: union_tag_bits = 8 : i64
+// CHECK-DAG: lowered
+// CHECK-DAG: lowered_align_count = 1 : i64
+// CHECK-DAG: lowered_capacity_check_helper = "__llvmdsdl_plan_capacity_check__test_Type_1_0"
+// CHECK-DAG: lowered_field_count = 1 : i64
+// CHECK-DAG: lowered_max_bits = 16 : i64
+// CHECK-DAG: lowered_min_bits = 8 : i64
+// CHECK-DAG: lowered_padding_count = 1 : i64
+// CHECK-DAG: lowered_deser_union_tag_helper = "__llvmdsdl_plan_union_tag__test_Type_1_0__deser"
+// CHECK-DAG: lowered_ser_union_tag_helper = "__llvmdsdl_plan_union_tag__test_Type_1_0__ser"
+// CHECK-DAG: lowered_union_tag_validate_helper = "__llvmdsdl_plan_validate_union_tag__test_Type_1_0"
+// CHECK-DAG: lowered_step_count = 2 : i64
+// CHECK-DAG: union_option_count = 1 : i64
+// CHECK-DAG: union_tag_bits = 8 : i64
 // CHECK: dsdl.align {bits = 8 : i32, step_index = 0 : i64}
 // CHECK: dsdl.io
 // CHECK-SAME: lowered_bits = 8 : i64
@@ -31,14 +35,8 @@ module {
 // CHECK-NOT: dsdl.align {bits = 1 : i32
 // CHECK-NOT: kind = "padding"
 // CHECK: func.func @__llvmdsdl_plan_capacity_check__test_Type_1_0(%[[CAP:[^:]+]]: i64) -> i8 attributes {llvmdsdl.plan_capacity_check
-// CHECK: %[[C0:[^ ]+]] = arith.constant 0 : i64
-// CHECK: %[[C7:[^ ]+]] = arith.constant 7 : i64
-// CHECK: %[[C8:[^ ]+]] = arith.constant 8 : i64
-// CHECK: %[[A0:[^ ]+]] = arith.addi %[[C0]], %[[C7]] : i64
-// CHECK: %[[D0:[^ ]+]] = arith.divui %[[A0]], %[[C8]] : i64
-// CHECK: %[[M0:[^ ]+]] = arith.muli %[[D0]], %[[C8]] : i64
-// CHECK: %[[ADD:[^ ]+]] = arith.addi %[[M0]], %[[C8B:[^ ]+]] : i64
-// CHECK: %[[CMP:[^ ]+]] = arith.cmpi ugt, %[[ADD]], %[[CAP]] : i64
+// CHECK: %[[REQ:[^ ]+]] = arith.constant 16 : i64
+// CHECK: %[[CMP:[^ ]+]] = arith.cmpi ugt, %[[REQ]], %[[CAP]] : i64
 // CHECK: %[[SEL:[^ ]+]] = scf.if %[[CMP]] -> (i8)
 // CHECK: return %[[SEL]] : i8
 // CHECK: func.func @__llvmdsdl_plan_validate_union_tag__test_Type_1_0(%[[TAG:[^:]+]]: i64) -> i8 attributes {llvmdsdl.plan_origin = "lower-dsdl-serialization", llvmdsdl.schema_sym = "test_Type_1_0", llvmdsdl.union_tag_validate
@@ -54,3 +52,11 @@ module {
 // CHECK: func.func @__llvmdsdl_plan_scalar_unsigned__test_Type_1_0__1__deser(%[[DVAL:[^:]+]]: i64) -> i64 attributes {llvmdsdl.scalar_unsigned_helper
 // CHECK: %[[DM:[^ ]+]] = arith.andi %[[DVAL]], %[[DMASK:[^ ]+]] : i64
 // CHECK: return %[[DM]] : i64
+// CHECK: func.func @__llvmdsdl_plan_union_tag__test_Type_1_0__ser(%[[TV:[^:]+]]: i64) -> i64 attributes {
+// CHECK-SAME: llvmdsdl.union_tag_helper
+// CHECK: %[[TM:[^ ]+]] = arith.andi %[[TV]], %[[TMSK:[^ ]+]] : i64
+// CHECK: return %[[TM]] : i64
+// CHECK: func.func @__llvmdsdl_plan_union_tag__test_Type_1_0__deser(%[[TDV:[^:]+]]: i64) -> i64 attributes {
+// CHECK-SAME: llvmdsdl.union_tag_helper
+// CHECK: %[[TDM:[^ ]+]] = arith.andi %[[TDV]], %[[TDMSK:[^ ]+]] : i64
+// CHECK: return %[[TDM]] : i64

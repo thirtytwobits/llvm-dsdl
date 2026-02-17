@@ -1,0 +1,129 @@
+#include "DifferentialParityABI.h"
+
+#include "@OURS_HEARTBEAT_HEADER@"
+#include "@OURS_EXECUTECOMMAND_HEADER@"
+#include "@OURS_VALUE_HEADER@"
+#include "@OURS_FRAME_HEADER@"
+#include "@OURS_REAL32_HEADER@"
+
+static int8_t oursHeartbeatSerialize(const void *const obj, uint8_t *const buffer,
+                                     size_t *const inoutSize) {
+  return uavcan__node__Heartbeat__serialize_((const uavcan__node__Heartbeat *)obj,
+                                             buffer, inoutSize);
+}
+static int8_t oursHeartbeatDeserialize(void *const outObj,
+                                       const uint8_t *const buffer,
+                                       size_t *const inoutSize) {
+  return uavcan__node__Heartbeat__deserialize_((uavcan__node__Heartbeat *)outObj,
+                                               buffer, inoutSize);
+}
+
+static int8_t oursExecuteCommandRequestSerialize(const void *const obj,
+                                                 uint8_t *const buffer,
+                                                 size_t *const inoutSize) {
+  return uavcan__node__ExecuteCommand__Request__serialize_(
+      (const uavcan__node__ExecuteCommand__Request *)obj, buffer, inoutSize);
+}
+static int8_t oursExecuteCommandRequestDeserialize(void *const outObj,
+                                                   const uint8_t *const buffer,
+                                                   size_t *const inoutSize) {
+  return uavcan__node__ExecuteCommand__Request__deserialize_(
+      (uavcan__node__ExecuteCommand__Request *)outObj, buffer, inoutSize);
+}
+
+static int8_t oursExecuteCommandResponseSerialize(const void *const obj,
+                                                  uint8_t *const buffer,
+                                                  size_t *const inoutSize) {
+  return uavcan__node__ExecuteCommand__Response__serialize_(
+      (const uavcan__node__ExecuteCommand__Response *)obj, buffer, inoutSize);
+}
+static int8_t oursExecuteCommandResponseDeserialize(void *const outObj,
+                                                    const uint8_t *const buffer,
+                                                    size_t *const inoutSize) {
+  return uavcan__node__ExecuteCommand__Response__deserialize_(
+      (uavcan__node__ExecuteCommand__Response *)outObj, buffer, inoutSize);
+}
+
+static int8_t oursRegisterValueSerialize(const void *const obj,
+                                         uint8_t *const buffer,
+                                         size_t *const inoutSize) {
+  return uavcan__register___Value__serialize_(
+      (const uavcan__register___Value *)obj, buffer, inoutSize);
+}
+static int8_t oursRegisterValueDeserialize(void *const outObj,
+                                           const uint8_t *const buffer,
+                                           size_t *const inoutSize) {
+  return uavcan__register___Value__deserialize_(
+      (uavcan__register___Value *)outObj, buffer, inoutSize);
+}
+
+static int8_t oursCanFrameSerialize(const void *const obj, uint8_t *const buffer,
+                                    size_t *const inoutSize) {
+  return uavcan__metatransport__can__Frame__serialize_(
+      (const uavcan__metatransport__can__Frame *)obj, buffer, inoutSize);
+}
+static int8_t oursCanFrameDeserialize(void *const outObj,
+                                      const uint8_t *const buffer,
+                                      size_t *const inoutSize) {
+  return uavcan__metatransport__can__Frame__deserialize_(
+      (uavcan__metatransport__can__Frame *)outObj, buffer, inoutSize);
+}
+
+static int8_t oursReal32ArraySerialize(const void *const obj,
+                                       uint8_t *const buffer,
+                                       size_t *const inoutSize) {
+  return uavcan__primitive__array__Real32__serialize_(
+      (const uavcan__primitive__array__Real32 *)obj, buffer, inoutSize);
+}
+static int8_t oursReal32ArrayDeserialize(void *const outObj,
+                                         const uint8_t *const buffer,
+                                         size_t *const inoutSize) {
+  return uavcan__primitive__array__Real32__deserialize_(
+      (uavcan__primitive__array__Real32 *)outObj, buffer, inoutSize);
+}
+
+const DifferentialCaseInfo g_ours_case_heartbeat = {
+    .object_size = sizeof(uavcan__node__Heartbeat),
+    .max_serialized_size = (size_t)uavcan__node__Heartbeat_SERIALIZATION_BUFFER_SIZE_BYTES_,
+    .serialize = &oursHeartbeatSerialize,
+    .deserialize = &oursHeartbeatDeserialize,
+};
+
+const DifferentialCaseInfo g_ours_case_execute_command_request = {
+    .object_size = sizeof(uavcan__node__ExecuteCommand__Request),
+    .max_serialized_size =
+        (size_t)uavcan__node__ExecuteCommand__Request_SERIALIZATION_BUFFER_SIZE_BYTES_,
+    .serialize = &oursExecuteCommandRequestSerialize,
+    .deserialize = &oursExecuteCommandRequestDeserialize,
+};
+
+const DifferentialCaseInfo g_ours_case_execute_command_response = {
+    .object_size = sizeof(uavcan__node__ExecuteCommand__Response),
+    .max_serialized_size =
+        (size_t)uavcan__node__ExecuteCommand__Response_SERIALIZATION_BUFFER_SIZE_BYTES_,
+    .serialize = &oursExecuteCommandResponseSerialize,
+    .deserialize = &oursExecuteCommandResponseDeserialize,
+};
+
+const DifferentialCaseInfo g_ours_case_register_value = {
+    .object_size = sizeof(uavcan__register___Value),
+    .max_serialized_size = (size_t)uavcan__register___Value_SERIALIZATION_BUFFER_SIZE_BYTES_,
+    .serialize = &oursRegisterValueSerialize,
+    .deserialize = &oursRegisterValueDeserialize,
+};
+
+const DifferentialCaseInfo g_ours_case_can_frame = {
+    .object_size = sizeof(uavcan__metatransport__can__Frame),
+    .max_serialized_size =
+        (size_t)uavcan__metatransport__can__Frame_SERIALIZATION_BUFFER_SIZE_BYTES_,
+    .serialize = &oursCanFrameSerialize,
+    .deserialize = &oursCanFrameDeserialize,
+};
+
+const DifferentialCaseInfo g_ours_case_real32_array = {
+    .object_size = sizeof(uavcan__primitive__array__Real32),
+    .max_serialized_size =
+        (size_t)uavcan__primitive__array__Real32_SERIALIZATION_BUFFER_SIZE_BYTES_,
+    .serialize = &oursReal32ArraySerialize,
+    .deserialize = &oursReal32ArrayDeserialize,
+};

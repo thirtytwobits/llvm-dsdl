@@ -1,0 +1,4 @@
+@union
+uint8 first
+uint16 second
+@sealed

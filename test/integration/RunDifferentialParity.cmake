@@ -1,0 +1,283 @@
+cmake_minimum_required(VERSION 3.24)
+
+foreach(var DSDLC UAVCAN_ROOT OUT_DIR C_COMPILER PYTHON_EXECUTABLE SOURCE_ROOT NUNAVUT_REPO PYDSDL_REPO)
+  if(NOT DEFINED ${var} OR "${${var}}" STREQUAL "")
+    message(FATAL_ERROR "Missing required variable: ${var}")
+  endif()
+endforeach()
+
+set(strict_float_mode_input "")
+if(DEFINED STRICT_FLOAT_BYTE_PARITY)
+  set(strict_float_mode_input "${STRICT_FLOAT_BYTE_PARITY}")
+endif()
+
+set(STRICT_FLOAT_BYTE_PARITY OFF)
+if(NOT strict_float_mode_input STREQUAL "")
+  string(TOUPPER "${strict_float_mode_input}" strict_float_mode)
+  if(strict_float_mode STREQUAL "ON" OR strict_float_mode STREQUAL "1" OR
+     strict_float_mode STREQUAL "TRUE")
+    set(STRICT_FLOAT_BYTE_PARITY ON)
+  else()
+    set(STRICT_FLOAT_BYTE_PARITY OFF)
+  endif()
+endif()
+
+if(NOT EXISTS "${DSDLC}")
+  message(FATAL_ERROR "dsdlc executable not found: ${DSDLC}")
+endif()
+
+if(NOT EXISTS "${UAVCAN_ROOT}")
+  message(FATAL_ERROR "uavcan root not found: ${UAVCAN_ROOT}")
+endif()
+
+if(NOT EXISTS "${C_COMPILER}")
+  message(FATAL_ERROR "C compiler not found: ${C_COMPILER}")
+endif()
+
+if(NOT EXISTS "${PYTHON_EXECUTABLE}")
+  message(FATAL_ERROR "Python executable not found: ${PYTHON_EXECUTABLE}")
+endif()
+
+if(NOT EXISTS "${NUNAVUT_REPO}/src/nunavut")
+  message(FATAL_ERROR "nunavut source tree not found: ${NUNAVUT_REPO}")
+endif()
+
+if(NOT EXISTS "${PYDSDL_REPO}/pydsdl")
+  message(FATAL_ERROR "pydsdl source tree not found: ${PYDSDL_REPO}")
+endif()
+
+set(main_template "${SOURCE_ROOT}/test/integration/DifferentialParityMain.c.in")
+set(ours_template "${SOURCE_ROOT}/test/integration/DifferentialParityOurs.c.in")
+set(nv_template "${SOURCE_ROOT}/test/integration/DifferentialParityNunavut.c.in")
+set(abi_header "${SOURCE_ROOT}/test/integration/DifferentialParityABI.h")
+foreach(path "${main_template}" "${ours_template}" "${nv_template}" "${abi_header}")
+  if(NOT EXISTS "${path}")
+    message(FATAL_ERROR "Differential harness input missing: ${path}")
+  endif()
+endforeach()
+
+file(REMOVE_RECURSE "${OUT_DIR}")
+file(MAKE_DIRECTORY "${OUT_DIR}")
+
+set(ours_out "${OUT_DIR}/ours")
+set(nunavut_out "${OUT_DIR}/nunavut")
+set(build_out "${OUT_DIR}/build")
+file(MAKE_DIRECTORY "${ours_out}")
+file(MAKE_DIRECTORY "${nunavut_out}")
+file(MAKE_DIRECTORY "${build_out}")
+
+execute_process(
+  COMMAND
+    "${DSDLC}" c
+      --root-namespace-dir "${UAVCAN_ROOT}"
+      --strict
+      --out-dir "${ours_out}"
+  RESULT_VARIABLE ours_result
+  OUTPUT_VARIABLE ours_stdout
+  ERROR_VARIABLE ours_stderr
+)
+if(NOT ours_result EQUAL 0)
+  message(STATUS "dsdlc stdout:\n${ours_stdout}")
+  message(STATUS "dsdlc stderr:\n${ours_stderr}")
+  message(FATAL_ERROR "failed to generate llvm-dsdl C output")
+endif()
+
+set(pythonpath "${PYDSDL_REPO}:${NUNAVUT_REPO}/src")
+execute_process(
+  COMMAND
+    "${CMAKE_COMMAND}" -E env "PYTHONPATH=${pythonpath}"
+      "${PYTHON_EXECUTABLE}" -m nunavut
+      --jobs 1
+      --target-language c
+      --outdir "${nunavut_out}"
+      --lookup-dir "${UAVCAN_ROOT}"
+      "${UAVCAN_ROOT}:node/7509.Heartbeat.1.0.dsdl"
+      "${UAVCAN_ROOT}:node/435.ExecuteCommand.1.3.dsdl"
+      "${UAVCAN_ROOT}:register/Value.1.0.dsdl"
+      "${UAVCAN_ROOT}:metatransport/can/Frame.0.2.dsdl"
+      "${UAVCAN_ROOT}:primitive/array/Real32.1.0.dsdl"
+  RESULT_VARIABLE nunavut_result
+  OUTPUT_VARIABLE nunavut_stdout
+  ERROR_VARIABLE nunavut_stderr
+)
+if(NOT nunavut_result EQUAL 0)
+  message(STATUS "nunavut stdout:\n${nunavut_stdout}")
+  message(STATUS "nunavut stderr:\n${nunavut_stderr}")
+  message(FATAL_ERROR "failed to generate nunavut reference C output")
+endif()
+
+set(OURS_HEARTBEAT_HEADER "${ours_out}/uavcan/node/Heartbeat_1_0.h")
+set(OURS_EXECUTECOMMAND_HEADER "${ours_out}/uavcan/node/ExecuteCommand_1_3.h")
+set(OURS_VALUE_HEADER "${ours_out}/uavcan/register/Value_1_0.h")
+set(OURS_FRAME_HEADER "${ours_out}/uavcan/metatransport/can/Frame_0_2.h")
+set(OURS_REAL32_HEADER "${ours_out}/uavcan/primitive/array/Real32_1_0.h")
+
+set(NV_HEARTBEAT_HEADER "${nunavut_out}/uavcan/node/Heartbeat_1_0.h")
+set(NV_EXECUTECOMMAND_HEADER "${nunavut_out}/uavcan/node/ExecuteCommand_1_3.h")
+set(NV_VALUE_HEADER "${nunavut_out}/uavcan/_register/Value_1_0.h")
+set(NV_FRAME_HEADER "${nunavut_out}/uavcan/metatransport/can/Frame_0_2.h")
+set(NV_REAL32_HEADER "${nunavut_out}/uavcan/primitive/array/Real32_1_0.h")
+
+foreach(header
+    "${OURS_HEARTBEAT_HEADER}"
+    "${OURS_EXECUTECOMMAND_HEADER}"
+    "${OURS_VALUE_HEADER}"
+    "${OURS_FRAME_HEADER}"
+    "${OURS_REAL32_HEADER}"
+    "${NV_HEARTBEAT_HEADER}"
+    "${NV_EXECUTECOMMAND_HEADER}"
+    "${NV_VALUE_HEADER}"
+    "${NV_FRAME_HEADER}"
+    "${NV_REAL32_HEADER}")
+  if(NOT EXISTS "${header}")
+    message(FATAL_ERROR "expected generated header missing: ${header}")
+  endif()
+endforeach()
+
+set(main_c "${build_out}/differential_parity_main.c")
+set(ours_case_c "${build_out}/differential_parity_ours.c")
+set(nv_case_c "${build_out}/differential_parity_nunavut.c")
+configure_file("${main_template}" "${main_c}" @ONLY)
+configure_file("${ours_template}" "${ours_case_c}" @ONLY)
+configure_file("${nv_template}" "${nv_case_c}" @ONLY)
+
+file(GLOB_RECURSE ours_c_sources "${ours_out}/*.c")
+list(LENGTH ours_c_sources ours_c_count)
+if(ours_c_count EQUAL 0)
+  message(FATAL_ERROR "no generated llvm-dsdl C implementation files under ${ours_out}")
+endif()
+
+set(main_obj "${build_out}/differential_parity_main.o")
+set(ours_case_obj "${build_out}/differential_parity_ours.o")
+set(nv_case_obj "${build_out}/differential_parity_nunavut.o")
+set(generated_obj_dir "${build_out}/generated-obj")
+file(MAKE_DIRECTORY "${generated_obj_dir}")
+
+execute_process(
+  COMMAND
+    "${C_COMPILER}"
+      -std=c11
+      -Wall
+      -Wextra
+      -Werror
+      -I "${SOURCE_ROOT}/test/integration"
+      -c "${main_c}"
+      -o "${main_obj}"
+  RESULT_VARIABLE cc_result
+  OUTPUT_VARIABLE cc_stdout
+  ERROR_VARIABLE cc_stderr
+)
+if(NOT cc_result EQUAL 0)
+  message(STATUS "compiler stdout:\n${cc_stdout}")
+  message(STATUS "compiler stderr:\n${cc_stderr}")
+  message(FATAL_ERROR "failed to compile differential parity main unit")
+endif()
+
+execute_process(
+  COMMAND
+    "${C_COMPILER}"
+      -std=c11
+      -Wall
+      -Wextra
+      -Werror
+      -I "${SOURCE_ROOT}/test/integration"
+      -I "${ours_out}"
+      -c "${ours_case_c}"
+      -o "${ours_case_obj}"
+  RESULT_VARIABLE cc_result
+  OUTPUT_VARIABLE cc_stdout
+  ERROR_VARIABLE cc_stderr
+)
+if(NOT cc_result EQUAL 0)
+  message(STATUS "compiler stdout:\n${cc_stdout}")
+  message(STATUS "compiler stderr:\n${cc_stderr}")
+  message(FATAL_ERROR "failed to compile differential parity llvm-dsdl unit")
+endif()
+
+execute_process(
+  COMMAND
+    "${C_COMPILER}"
+      -std=c11
+      -Wall
+      -Wextra
+      -Werror
+      -I "${SOURCE_ROOT}/test/integration"
+      -I "${nunavut_out}"
+      -c "${nv_case_c}"
+      -o "${nv_case_obj}"
+  RESULT_VARIABLE cc_result
+  OUTPUT_VARIABLE cc_stdout
+  ERROR_VARIABLE cc_stderr
+)
+if(NOT cc_result EQUAL 0)
+  message(STATUS "compiler stdout:\n${cc_stdout}")
+  message(STATUS "compiler stderr:\n${cc_stderr}")
+  message(FATAL_ERROR "failed to compile differential parity nunavut unit")
+endif()
+
+set(generated_objs "")
+set(index 0)
+foreach(src IN LISTS ours_c_sources)
+  math(EXPR index "${index} + 1")
+  set(obj "${generated_obj_dir}/generated_${index}.o")
+  execute_process(
+    COMMAND
+      "${C_COMPILER}"
+        -std=c11
+        -Wall
+        -Wextra
+        -Werror
+        -I "${ours_out}"
+        -c "${src}"
+        -o "${obj}"
+    RESULT_VARIABLE cc_result
+    OUTPUT_VARIABLE cc_stdout
+    ERROR_VARIABLE cc_stderr
+  )
+  if(NOT cc_result EQUAL 0)
+    message(STATUS "failed source: ${src}")
+    message(STATUS "compiler stdout:\n${cc_stdout}")
+    message(STATUS "compiler stderr:\n${cc_stderr}")
+    message(FATAL_ERROR "failed to compile generated llvm-dsdl C implementation")
+  endif()
+  list(APPEND generated_objs "${obj}")
+endforeach()
+
+set(harness_exe "${build_out}/differential_parity_runner")
+execute_process(
+  COMMAND
+    "${C_COMPILER}"
+      "${main_obj}"
+      "${ours_case_obj}"
+      "${nv_case_obj}"
+      ${generated_objs}
+      -o "${harness_exe}"
+  RESULT_VARIABLE link_result
+  OUTPUT_VARIABLE link_stdout
+  ERROR_VARIABLE link_stderr
+)
+if(NOT link_result EQUAL 0)
+  message(STATUS "link stdout:\n${link_stdout}")
+  message(STATUS "link stderr:\n${link_stderr}")
+  message(FATAL_ERROR "failed to link differential parity runner")
+endif()
+
+set(harness_cmd "${harness_exe}" 128)
+if(STRICT_FLOAT_BYTE_PARITY)
+  list(APPEND harness_cmd --strict-float-byte-parity)
+endif()
+
+execute_process(
+  COMMAND ${harness_cmd}
+  RESULT_VARIABLE run_result
+  OUTPUT_VARIABLE run_stdout
+  ERROR_VARIABLE run_stderr
+)
+if(NOT run_result EQUAL 0)
+  message(STATUS "harness stdout:\n${run_stdout}")
+  message(STATUS "harness stderr:\n${run_stderr}")
+  message(FATAL_ERROR "differential parity harness reported mismatches")
+endif()
+
+file(WRITE "${OUT_DIR}/differential-summary.txt" "${run_stdout}\n")
+message(STATUS "Differential parity summary:\n${run_stdout}")

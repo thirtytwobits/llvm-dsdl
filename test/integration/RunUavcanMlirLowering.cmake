@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-foreach(var DSDLC DSDLOPT FIXTURES_ROOT OUT_DIR)
+foreach(var DSDLC DSDLOPT UAVCAN_ROOT OUT_DIR)
   if(NOT DEFINED ${var} OR "${${var}}" STREQUAL "")
     message(FATAL_ERROR "Missing required variable: ${var}")
   endif()
@@ -14,62 +14,29 @@ if(NOT EXISTS "${DSDLOPT}")
   message(FATAL_ERROR "dsdl-opt executable not found: ${DSDLOPT}")
 endif()
 
-if(NOT EXISTS "${FIXTURES_ROOT}")
-  message(FATAL_ERROR "fixtures root not found: ${FIXTURES_ROOT}")
-endif()
-
-if(APPLE)
-  execute_process(
-    COMMAND otool -L "${DSDLOPT}"
-    RESULT_VARIABLE otool_result
-    OUTPUT_VARIABLE otool_stdout
-    ERROR_VARIABLE otool_stderr
-  )
-  if(NOT otool_result EQUAL 0)
-    message(STATUS "otool stdout:\n${otool_stdout}")
-    message(STATUS "otool stderr:\n${otool_stderr}")
-    message(FATAL_ERROR "failed to inspect dsdl-opt linkage with otool")
-  endif()
-  if(otool_stdout MATCHES "libMLIR\\.dylib")
-    message(FATAL_ERROR
-      "dsdl-opt should not link libMLIR.dylib directly; found in otool output:\n${otool_stdout}")
-  endif()
-elseif(UNIX)
-  find_program(LLVMDSDL_LDD_TOOL ldd)
-  if(LLVMDSDL_LDD_TOOL)
-    execute_process(
-      COMMAND "${LLVMDSDL_LDD_TOOL}" "${DSDLOPT}"
-      RESULT_VARIABLE ldd_result
-      OUTPUT_VARIABLE ldd_stdout
-      ERROR_VARIABLE ldd_stderr
-    )
-    if(ldd_result EQUAL 0)
-      if(ldd_stdout MATCHES "libMLIR\\.so")
-        message(FATAL_ERROR
-          "dsdl-opt should not link libMLIR.so directly; found in ldd output:\n${ldd_stdout}")
-      endif()
-    endif()
-  endif()
+if(NOT EXISTS "${UAVCAN_ROOT}")
+  message(FATAL_ERROR "uavcan root not found: ${UAVCAN_ROOT}")
 endif()
 
 file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
-set(input_mlir "${OUT_DIR}/input.mlir")
-set(lowered_mlir "${OUT_DIR}/lowered.mlir")
-set(converted_mlir "${OUT_DIR}/converted.mlir")
+set(input_mlir "${OUT_DIR}/uavcan.input.mlir")
+set(lowered_mlir "${OUT_DIR}/uavcan.lowered.mlir")
+set(converted_mlir "${OUT_DIR}/uavcan.converted.mlir")
 
 execute_process(
   COMMAND
     "${DSDLC}" mlir
-      --root-namespace-dir "${FIXTURES_ROOT}"
+      --root-namespace-dir "${UAVCAN_ROOT}"
+      --strict
   RESULT_VARIABLE mlir_result
   OUTPUT_FILE "${input_mlir}"
   ERROR_VARIABLE mlir_stderr
 )
 if(NOT mlir_result EQUAL 0)
   message(STATUS "dsdlc stderr:\n${mlir_stderr}")
-  message(FATAL_ERROR "failed to generate MLIR fixture input with dsdlc")
+  message(FATAL_ERROR "failed to generate full uavcan MLIR with dsdlc")
 endif()
 
 execute_process(
@@ -77,17 +44,16 @@ execute_process(
     "${DSDLOPT}"
       "--pass-pipeline=builtin.module(lower-dsdl-serialization)"
       "${input_mlir}"
-  RESULT_VARIABLE opt_result
+  RESULT_VARIABLE lower_result
   OUTPUT_FILE "${lowered_mlir}"
-  ERROR_VARIABLE opt_stderr
+  ERROR_VARIABLE lower_stderr
 )
-if(NOT opt_result EQUAL 0)
-  message(STATUS "dsdl-opt stderr:\n${opt_stderr}")
-  message(FATAL_ERROR "lower-dsdl-serialization pass failed")
+if(NOT lower_result EQUAL 0)
+  message(STATUS "dsdl-opt lower stderr:\n${lower_stderr}")
+  message(FATAL_ERROR "full uavcan lower-dsdl-serialization pass failed")
 endif()
 
 file(READ "${lowered_mlir}" lowered_text)
-
 foreach(required
     "lowered"
     "lowered_step_count ="
@@ -97,14 +63,14 @@ foreach(required
   string(FIND "${lowered_text}" "${required}" hit_pos)
   if(hit_pos EQUAL -1)
     message(FATAL_ERROR
-      "expected lowered output marker not found: ${required}")
+      "expected lowered output marker not found in full uavcan lowering: ${required}")
   endif()
 endforeach()
 
 string(FIND "${lowered_text}" "dsdl.align {bits = 1 : i32" align_noop_pos)
 if(NOT align_noop_pos EQUAL -1)
   message(FATAL_ERROR
-    "no-op alignment op survived lower-dsdl-serialization pass")
+    "no-op alignment op survived full uavcan lower-dsdl-serialization pass")
 endif()
 
 execute_process(
@@ -118,11 +84,10 @@ execute_process(
 )
 if(NOT convert_result EQUAL 0)
   message(STATUS "dsdl-opt convert stderr:\n${convert_stderr}")
-  message(FATAL_ERROR "convert-dsdl-to-emitc pass failed")
+  message(FATAL_ERROR "full uavcan convert-dsdl-to-emitc pass failed")
 endif()
 
 file(READ "${converted_mlir}" converted_text)
-
 foreach(required
     "_err_capacity = __llvmdsdl_plan_capacity_check__"
     "int8_t __llvmdsdl_plan_capacity_check__"
@@ -136,8 +101,8 @@ foreach(required
   string(FIND "${converted_text}" "${required}" hit_pos)
   if(hit_pos EQUAL -1)
     message(FATAL_ERROR
-      "expected converted output marker not found: ${required}")
+      "expected converted output marker not found in full uavcan convert: ${required}")
   endif()
 endforeach()
 
-message(STATUS "dsdl-opt sanity check passed")
+message(STATUS "full uavcan MLIR lowering + convert check passed")

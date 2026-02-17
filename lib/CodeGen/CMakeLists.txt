@@ -2,6 +2,7 @@ add_library(llvmdsdlCodeGen
   CEmitter.cpp
   CppEmitter.cpp
   RustEmitter.cpp
+  SerDesHelperDescriptors.cpp
 )
 
 target_link_libraries(llvmdsdlCodeGen

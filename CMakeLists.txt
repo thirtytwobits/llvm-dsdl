@@ -112,6 +112,25 @@ if(LLVMDSDL_UAVCAN_ROOT)
                    generate-uavcan-cpp-std
                    generate-uavcan-cpp-pmr
                    generate-uavcan-rust-std)
+
+  add_custom_target(generate-demo-2026-02-16
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DDSDLOPT=$<TARGET_FILE:dsdl-opt>
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${LLVMDSDL_BINARY_DIR}/demo-2026-02-16
+        -DBINARY_DIR=${LLVMDSDL_BINARY_DIR}
+        -DCTEST_COMMAND=${CMAKE_CTEST_COMMAND}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCOMPILE_C_SCRIPT=${LLVMDSDL_SOURCE_DIR}/cmake/CompileGeneratedCSources.cmake
+        -DSOURCE_DIR=${LLVMDSDL_SOURCE_DIR}
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/GenerateDemoArtifacts.cmake
+    DEPENDS dsdlc dsdl-opt
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "Generating demo artifact bundle for 2026-02-16"
+  )
 else()
   message(WARNING
     "uavcan DSDL root not found. Expected either "

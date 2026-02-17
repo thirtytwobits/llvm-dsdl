@@ -55,6 +55,23 @@ set_tests_properties(
 )
 
 add_test(
+  NAME llvmdsdl-uavcan-mlir-lowering
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DDSDLOPT=$<TARGET_FILE:dsdl-opt>
+      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-mlir-lowering-out
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanMlirLowering.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-uavcan-mlir-lowering
+  PROPERTIES
+    LABELS "integration;uavcan;mlir;slow"
+)
+
+add_test(
   NAME llvmdsdl-uavcan-rust-generation
   COMMAND
     ${CMAKE_COMMAND}
@@ -69,6 +86,27 @@ set_tests_properties(
   PROPERTIES
     LABELS "integration;uavcan;rust"
 )
+
+find_program(CARGO_EXECUTABLE cargo QUIET)
+find_program(RUSTC_EXECUTABLE rustc QUIET)
+if(CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
+  add_test(
+    NAME llvmdsdl-uavcan-rust-cargo-check
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-rust-cargo-check-out
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanRustCargoCheck.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-uavcan-rust-cargo-check
+    PROPERTIES
+      LABELS "integration;uavcan;rust;slow"
+  )
+endif()
 
 add_test(
   NAME llvmdsdl-uavcan-cpp-generation
@@ -86,3 +124,98 @@ set_tests_properties(
   PROPERTIES
     LABELS "integration;uavcan;cpp;slow"
 )
+
+add_test(
+  NAME llvmdsdl-uavcan-cpp-c-parity
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-cpp-c-parity-out
+      -DC_COMPILER=${CMAKE_C_COMPILER}
+      -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+      -DCPP_PROFILE=std
+      -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunCppCParity.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-uavcan-cpp-c-parity
+  PROPERTIES
+    LABELS "integration;uavcan;cpp;differential;slow"
+)
+
+add_test(
+  NAME llvmdsdl-uavcan-cpp-pmr-c-parity
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-cpp-pmr-c-parity-out
+      -DC_COMPILER=${CMAKE_C_COMPILER}
+      -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+      -DCPP_PROFILE=pmr
+      -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunCppCParity.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-uavcan-cpp-pmr-c-parity
+  PROPERTIES
+    LABELS "integration;uavcan;cpp;differential;slow"
+)
+
+if(CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
+  add_test(
+    NAME llvmdsdl-uavcan-c-rust-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-c-rust-parity-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DAR_EXECUTABLE=${CMAKE_AR}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunCRustParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-uavcan-c-rust-parity
+    PROPERTIES
+      LABELS "integration;uavcan;rust;differential;slow"
+  )
+else()
+  message(STATUS "Skipping C/Rust parity test: cargo/rustc executable not found")
+endif()
+
+find_package(Python3 COMPONENTS Interpreter QUIET)
+set(LLVMDSDL_NUNAVUT_REPO "${LLVMDSDL_SOURCE_DIR}/../nunavut")
+set(LLVMDSDL_PYDSDL_REPO "${LLVMDSDL_SOURCE_DIR}/../pydsdl")
+if(Python3_Interpreter_FOUND AND
+   EXISTS "${LLVMDSDL_NUNAVUT_REPO}/src/nunavut" AND
+   EXISTS "${LLVMDSDL_PYDSDL_REPO}/pydsdl")
+  add_test(
+    NAME llvmdsdl-differential-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/differential-parity-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DPYTHON_EXECUTABLE=${Python3_EXECUTABLE}
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DNUNAVUT_REPO=${LLVMDSDL_NUNAVUT_REPO}
+        -DPYDSDL_REPO=${LLVMDSDL_PYDSDL_REPO}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunDifferentialParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-differential-parity
+    PROPERTIES
+      LABELS "integration;uavcan;differential;slow"
+  )
+else()
+  message(STATUS
+    "Skipping differential parity test: requires Python3 interpreter and sibling nunavut/pydsdl repos.")
+endif()

@@ -286,6 +286,7 @@ lowerToMLIR(const SemanticModule &module, mlir::MLIRContext &context,
       planRegion.push_back(new mlir::Block());
 
       builder.setInsertionPointToStart(&planRegion.front());
+      bool emittedPlanStep = false;
       for (const auto &field : section.fields) {
         mlir::OperationState alignState(loc, "dsdl.align");
         alignState.addAttribute(
@@ -293,6 +294,7 @@ lowerToMLIR(const SemanticModule &module, mlir::MLIRContext &context,
             builder.getI32IntegerAttr(
                 static_cast<std::int32_t>(field.resolvedType.alignmentBits)));
         (void)builder.create(alignState);
+        emittedPlanStep = true;
 
         mlir::OperationState ioState(loc, "dsdl.io");
         ioState.addAttribute("kind", builder.getStringAttr(fieldKind(field)));
@@ -337,6 +339,11 @@ lowerToMLIR(const SemanticModule &module, mlir::MLIRContext &context,
                                builder.getStringAttr(ref.fullName));
           ioState.addAttribute("composite_c_type_name",
                                builder.getStringAttr(cTypeNameFromRef(ref)));
+          ioState.addAttribute("composite_sealed",
+                               builder.getBoolAttr(field.resolvedType.compositeSealed));
+          ioState.addAttribute("composite_extent_bits",
+                               builder.getI64IntegerAttr(
+                                   field.resolvedType.compositeExtentBits));
         }
         ioState.addAttribute("min_bits",
                              builder.getI64IntegerAttr(
@@ -345,6 +352,16 @@ lowerToMLIR(const SemanticModule &module, mlir::MLIRContext &context,
                              builder.getI64IntegerAttr(
                                  field.resolvedType.bitLengthSet.max()));
         (void)builder.create(ioState);
+        emittedPlanStep = true;
+      }
+
+      if (!emittedPlanStep) {
+        // Keep the plan region structurally non-empty for valid empty
+        // request/response sections. This no-op alignment is removed by
+        // lower-dsdl-serialization.
+        mlir::OperationState alignState(loc, "dsdl.align");
+        alignState.addAttribute("bits", builder.getI32IntegerAttr(1));
+        (void)builder.create(alignState);
       }
 
       builder.setInsertionPointAfter(plan);

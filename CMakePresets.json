@@ -93,6 +93,22 @@
       "name": "build-ci",
       "displayName": "Build (ci)",
       "configurePreset": "ci"
+    },
+    {
+      "name": "build-demo",
+      "displayName": "Build (demo bundle)",
+      "configurePreset": "dev",
+      "targets": [
+        "generate-demo-2026-02-16"
+      ]
+    },
+    {
+      "name": "build-demo-homebrew",
+      "displayName": "Build (demo bundle, Homebrew LLVM)",
+      "configurePreset": "dev-homebrew",
+      "targets": [
+        "generate-demo-2026-02-16"
+      ]
     }
   ],
   "testPresets": [
@@ -370,6 +386,36 @@
         {
           "type": "test",
           "name": "test-ci"
+        }
+      ]
+    },
+    {
+      "name": "demo",
+      "displayName": "Workflow (demo artifact)",
+      "description": "Configure + build demo artifact bundle with generation outputs and selected verification logs.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev"
+        },
+        {
+          "type": "build",
+          "name": "build-demo"
+        }
+      ]
+    },
+    {
+      "name": "demo-homebrew",
+      "displayName": "Workflow (demo artifact, Homebrew LLVM)",
+      "description": "Configure + build demo artifact bundle with Homebrew LLVM/MLIR paths.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev-homebrew"
+        },
+        {
+          "type": "build",
+          "name": "build-demo-homebrew"
         }
       ]
     }

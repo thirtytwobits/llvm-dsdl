@@ -50,11 +50,11 @@ pub fn copy_bits(
             break;
         }
 
-        let bit = ((src[src_bit_index / 8] >> (src_bit_index % 8)) & 1U8) != 0;
+        let bit = ((src[src_bit_index / 8] >> (src_bit_index % 8)) & 1u8) != 0;
         if bit {
-            dst[dst_bit_index / 8] |= 1U8 << (dst_bit_index % 8);
+            dst[dst_bit_index / 8] |= 1u8 << (dst_bit_index % 8);
         } else {
-            dst[dst_bit_index / 8] &= !(1U8 << (dst_bit_index % 8));
+            dst[dst_bit_index / 8] &= !(1u8 << (dst_bit_index % 8));
         }
     }
 }
@@ -74,7 +74,7 @@ pub fn set_bit(buf: &mut [u8], off_bits: usize, value: bool) -> i8 {
     if buf.len().saturating_mul(8) <= off_bits {
         return -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;
     }
-    let val = if value { 1U8 } else { 0U8 };
+    let val = if value { 1u8 } else { 0u8 };
     copy_bits(buf, off_bits, 1, &[val], 0);
     DSDL_RUNTIME_SUCCESS
 }
@@ -103,7 +103,7 @@ pub fn get_bit(buf: &[u8], off_bits: usize) -> bool {
 #[inline]
 pub fn get_u8(buf: &[u8], off_bits: usize, len_bits: u8) -> u8 {
     let bits = saturate_fragment_bits(buf.len(), off_bits, choose_min(len_bits as usize, 8));
-    let mut out = [0U8; 1];
+    let mut out = [0u8; 1];
     copy_bits(&mut out, 0, bits, buf, off_bits);
     out[0]
 }
@@ -111,7 +111,7 @@ pub fn get_u8(buf: &[u8], off_bits: usize, len_bits: u8) -> u8 {
 #[inline]
 pub fn get_u16(buf: &[u8], off_bits: usize, len_bits: u8) -> u16 {
     let bits = saturate_fragment_bits(buf.len(), off_bits, choose_min(len_bits as usize, 16));
-    let mut out = [0U8; 2];
+    let mut out = [0u8; 2];
     copy_bits(&mut out, 0, bits, buf, off_bits);
     u16::from_le_bytes(out)
 }
@@ -119,7 +119,7 @@ pub fn get_u16(buf: &[u8], off_bits: usize, len_bits: u8) -> u16 {
 #[inline]
 pub fn get_u32(buf: &[u8], off_bits: usize, len_bits: u8) -> u32 {
     let bits = saturate_fragment_bits(buf.len(), off_bits, choose_min(len_bits as usize, 32));
-    let mut out = [0U8; 4];
+    let mut out = [0u8; 4];
     copy_bits(&mut out, 0, bits, buf, off_bits);
     u32::from_le_bytes(out)
 }
@@ -127,7 +127,7 @@ pub fn get_u32(buf: &[u8], off_bits: usize, len_bits: u8) -> u32 {
 #[inline]
 pub fn get_u64(buf: &[u8], off_bits: usize, len_bits: u8) -> u64 {
     let bits = saturate_fragment_bits(buf.len(), off_bits, choose_min(len_bits as usize, 64));
-    let mut out = [0U8; 8];
+    let mut out = [0u8; 8];
     copy_bits(&mut out, 0, bits, buf, off_bits);
     u64::from_le_bytes(out)
 }
@@ -137,11 +137,11 @@ fn sign_extend_u64(value: u64, sat: u8) -> u64 {
     if sat == 0 || sat >= 64 {
         return value;
     }
-    let sign_bit = 1U64 << (sat - 1);
+    let sign_bit = 1u64 << (sat - 1);
     if (value & sign_bit) == 0 {
         return value;
     }
-    value | (!0U64 << sat)
+    value | (!0u64 << sat)
 }
 
 #[inline]
@@ -174,12 +174,12 @@ pub fn get_i64(buf: &[u8], off_bits: usize, len_bits: u8) -> i64 {
 
 pub fn float16_pack(value: f32) -> u16 {
     let round_mask: u32 = !0x0FFF;
-    let f32inf: u32 = 255U32 << 23;
-    let f16inf: u32 = 31U32 << 23;
-    let magic: u32 = 15U32 << 23;
+    let f32inf: u32 = 255u32 << 23;
+    let f16inf: u32 = 31u32 << 23;
+    let magic: u32 = 15u32 << 23;
 
     let mut in_bits = value.to_bits();
-    let sign = in_bits & (1U32 << 31);
+    let sign = in_bits & (1u32 << 31);
     in_bits ^= sign;
     let out: u16;
 
@@ -206,13 +206,13 @@ pub fn float16_pack(value: f32) -> u16 {
 }
 
 pub fn float16_unpack(value: u16) -> f32 {
-    let magic = 0xEFU32 << 23;
-    let inf_nan = 0x8FU32 << 23;
+    let magic = 0xEFu32 << 23;
+    let inf_nan = 0x8Fu32 << 23;
     let mut out_bits = ((value & 0x7FFF) as u32) << 13;
     let scaled = f32::from_bits(out_bits) * f32::from_bits(magic);
     out_bits = scaled.to_bits();
     if scaled >= f32::from_bits(inf_nan) {
-        out_bits |= 0xFFU32 << 23;
+        out_bits |= 0xFFu32 << 23;
     }
     out_bits |= ((value & 0x8000) as u32) << 16;
     f32::from_bits(out_bits)
