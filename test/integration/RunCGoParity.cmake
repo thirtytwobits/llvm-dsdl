@@ -42,6 +42,11 @@ if(expected_case_count EQUAL 0)
   message(FATAL_ERROR "failed to discover DEFINE_ROUNDTRIP wrappers in ${c_harness_template}")
 endif()
 
+set(dsdlc_extra_args "")
+if(DEFINED DSDLC_EXTRA_ARGS AND NOT "${DSDLC_EXTRA_ARGS}" STREQUAL "")
+  separate_arguments(dsdlc_extra_args NATIVE_COMMAND "${DSDLC_EXTRA_ARGS}")
+endif()
+
 file(MAKE_DIRECTORY "${OUT_DIR}")
 foreach(legacy_dir c go build harness .gocache .gomodcache)
   if(EXISTS "${OUT_DIR}/${legacy_dir}")
@@ -67,6 +72,7 @@ execute_process(
     "${DSDLC}" c
       --root-namespace-dir "${UAVCAN_ROOT}"
       --strict
+      ${dsdlc_extra_args}
       --out-dir "${c_out}"
   RESULT_VARIABLE c_result
   OUTPUT_VARIABLE c_stdout
@@ -83,6 +89,7 @@ execute_process(
     "${DSDLC}" go
       --root-namespace-dir "${UAVCAN_ROOT}"
       --strict
+      ${dsdlc_extra_args}
       --out-dir "${go_out}"
       --go-module "uavcan_dsdl_generated"
   RESULT_VARIABLE go_result

@@ -1,8 +1,11 @@
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_sign_loss)]
 
-// std-first runtime surface. Future no_std + alloc mode should redefine this alias.
+#[cfg(feature = "std")]
 pub type DsdlVec<T> = std::vec::Vec<T>;
+
+#[cfg(not(feature = "std"))]
+pub type DsdlVec<T> = alloc::vec::Vec<T>;
 
 pub const DSDL_RUNTIME_SUCCESS: i8 = 0;
 pub const DSDL_RUNTIME_ERROR_INVALID_ARGUMENT: i8 = 2;
@@ -32,7 +35,7 @@ pub fn saturate_fragment_bits(
 }
 
 #[inline]
-pub fn copy_bits(
+fn copy_bits_portable(
     dst: &mut [u8],
     dst_offset_bits: usize,
     length_bits: usize,
@@ -56,6 +59,56 @@ pub fn copy_bits(
         } else {
             dst[dst_bit_index / 8] &= !(1u8 << (dst_bit_index % 8));
         }
+    }
+}
+
+#[inline]
+#[cfg(feature = "runtime-fast")]
+fn copy_bits_runtime_fast(
+    dst: &mut [u8],
+    dst_offset_bits: usize,
+    length_bits: usize,
+    src: &[u8],
+    src_offset_bits: usize,
+) {
+    if length_bits == 0 {
+        return;
+    }
+    if (dst_offset_bits | src_offset_bits | length_bits) & 7 == 0 {
+        let dst_start = dst_offset_bits / 8;
+        let src_start = src_offset_bits / 8;
+        if dst_start <= dst.len() && src_start <= src.len() {
+            let dst_available = dst.len().saturating_sub(dst_start);
+            let src_available = src.len().saturating_sub(src_start);
+            let requested_bytes = length_bits / 8;
+            let copy_bytes = choose_min(requested_bytes, choose_min(dst_available, src_available));
+            if copy_bytes > 0 {
+                dst[dst_start..dst_start + copy_bytes]
+                    .copy_from_slice(&src[src_start..src_start + copy_bytes]);
+            }
+            return;
+        }
+    }
+    copy_bits_portable(dst, dst_offset_bits, length_bits, src, src_offset_bits);
+}
+
+#[inline]
+pub fn copy_bits(
+    dst: &mut [u8],
+    dst_offset_bits: usize,
+    length_bits: usize,
+    src: &[u8],
+    src_offset_bits: usize,
+) {
+    #[cfg(feature = "runtime-fast")]
+    {
+        copy_bits_runtime_fast(dst, dst_offset_bits, length_bits, src, src_offset_bits);
+        return;
+    }
+
+    #[cfg(not(feature = "runtime-fast"))]
+    {
+        copy_bits_portable(dst, dst_offset_bits, length_bits, src, src_offset_bits);
     }
 }
 

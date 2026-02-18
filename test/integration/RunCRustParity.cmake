@@ -6,6 +6,23 @@ foreach(var DSDLC UAVCAN_ROOT OUT_DIR C_COMPILER AR_EXECUTABLE CARGO_EXECUTABLE 
   endif()
 endforeach()
 
+if(NOT DEFINED RUST_PROFILE OR "${RUST_PROFILE}" STREQUAL "")
+  set(RUST_PROFILE "std")
+endif()
+if(NOT "${RUST_PROFILE}" STREQUAL "std" AND
+   NOT "${RUST_PROFILE}" STREQUAL "no-std-alloc")
+  message(FATAL_ERROR "Invalid RUST_PROFILE value: ${RUST_PROFILE}")
+endif()
+if(NOT DEFINED RUST_RUNTIME_SPECIALIZATION OR
+   "${RUST_RUNTIME_SPECIALIZATION}" STREQUAL "")
+  set(RUST_RUNTIME_SPECIALIZATION "portable")
+endif()
+if(NOT "${RUST_RUNTIME_SPECIALIZATION}" STREQUAL "portable" AND
+   NOT "${RUST_RUNTIME_SPECIALIZATION}" STREQUAL "fast")
+  message(FATAL_ERROR
+    "Invalid RUST_RUNTIME_SPECIALIZATION value: ${RUST_RUNTIME_SPECIALIZATION}")
+endif()
+
 if(NOT EXISTS "${DSDLC}")
   message(FATAL_ERROR "dsdlc executable not found: ${DSDLC}")
 endif()
@@ -35,6 +52,11 @@ foreach(path "${cargo_toml_template}" "${main_rs_template}" "${c_harness_templat
   endif()
 endforeach()
 
+set(dsdlc_extra_args "")
+if(DEFINED DSDLC_EXTRA_ARGS AND NOT "${DSDLC_EXTRA_ARGS}" STREQUAL "")
+  separate_arguments(dsdlc_extra_args NATIVE_COMMAND "${DSDLC_EXTRA_ARGS}")
+endif()
+
 file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
@@ -53,6 +75,7 @@ execute_process(
     "${DSDLC}" c
       --root-namespace-dir "${UAVCAN_ROOT}"
       --strict
+      ${dsdlc_extra_args}
       --out-dir "${c_out}"
   RESULT_VARIABLE c_result
   OUTPUT_VARIABLE c_stdout
@@ -69,7 +92,9 @@ execute_process(
     "${DSDLC}" rust
       --root-namespace-dir "${UAVCAN_ROOT}"
       --strict
-      --rust-profile std
+      ${dsdlc_extra_args}
+      --rust-profile "${RUST_PROFILE}"
+      --rust-runtime-specialization "${RUST_RUNTIME_SPECIALIZATION}"
       --rust-crate-name uavcan_dsdl_generated
       --out-dir "${rust_out}"
   RESULT_VARIABLE rust_result
@@ -83,6 +108,13 @@ if(NOT rust_result EQUAL 0)
 endif()
 
 set(RUST_OUT "${rust_out}")
+set(RUST_DEP_FEATURES "")
+if("${RUST_PROFILE}" STREQUAL "no-std-alloc")
+  set(RUST_DEP_FEATURES ", default-features = false")
+  if("${RUST_RUNTIME_SPECIALIZATION}" STREQUAL "fast")
+    string(APPEND RUST_DEP_FEATURES ", features = [\"runtime-fast\"]")
+  endif()
+endif()
 configure_file("${cargo_toml_template}" "${harness_out}/Cargo.toml" @ONLY)
 configure_file("${main_rs_template}" "${harness_out}/src/main.rs" COPYONLY)
 configure_file("${c_harness_template}" "${harness_out}/src/c_harness.c" COPYONLY)

@@ -15,6 +15,7 @@ namespace llvmdsdl {
 struct CEmitOptions final {
   std::string outDir;
   bool declareVariablesAtTop{true};
+  bool optimizeLoweredSerDes{false};
 };
 
 llvm::Error emitC(const SemanticModule &semantic, mlir::ModuleOp module,

@@ -2,7 +2,7 @@
 #include "llvmdsdl/CodeGen/ArrayWirePlan.h"
 #include "llvmdsdl/CodeGen/HelperBindingRender.h"
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
-#include "llvmdsdl/CodeGen/LoweredBodyPlan.h"
+#include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
@@ -328,12 +328,12 @@ public:
     emitLine(out, 1,
              "pub fn serialize(&self, buffer: &mut [u8]) -> core::result::Result<usize, i8> {");
     emitLine(out, 2, "let mut offset_bits: usize = 0;");
-    const auto loweredPlan = buildLoweredBodyPlan(
+    const auto renderIR = buildLoweredBodyRenderIR(
         section, sectionFacts, HelperBindingDirection::Serialize);
-    emitSerializeMlirHelperBindings(out, loweredPlan.helperBindings, 2);
-    if (loweredPlan.helperBindings.capacityCheck) {
+    emitSerializeMlirHelperBindings(out, renderIR.helperBindings, 2);
+    if (renderIR.helperBindings.capacityCheck) {
       const auto capacityHelper =
-          helperBindingName(loweredPlan.helperBindings.capacityCheck->symbol);
+          helperBindingName(renderIR.helperBindings.capacityCheck->symbol);
       emitLine(out, 2,
                "let _err_capacity = " + capacityHelper +
                    "(buffer.len().saturating_mul(8) as i64);");
@@ -349,20 +349,33 @@ public:
       emitLine(out, 2, "}");
     }
 
-    if (section.isUnion) {
-      emitSerializeUnion(out, section, loweredPlan.statements.unionBranches, 2,
-                         sectionFacts, loweredPlan.helperBindings);
-    } else {
-      for (const auto &step : loweredPlan.statements.orderedFields) {
-        const auto &field = *step.field;
-        emitAlignSerialize(out, field.resolvedType.alignmentBits, 2);
-        if (field.isPadding) {
-          emitSerializePadding(out, field.resolvedType, 2);
-        } else {
-          const auto fieldRef = "self." + sanitizeRustIdent(field.name);
-          emitSerializeAny(out, field.resolvedType, fieldRef, 2,
-                           step.arrayLengthPrefixBits, step.fieldFacts);
+    for (const auto &step : renderIR.steps) {
+      switch (step.kind) {
+      case LoweredRenderStepKind::UnionDispatch:
+        emitSerializeUnion(out, section, step.unionBranches, 2, sectionFacts,
+                           renderIR.helperBindings);
+        break;
+      case LoweredRenderStepKind::Field: {
+        const auto *const field = step.fieldStep.field;
+        if (field == nullptr) {
+          continue;
         }
+        emitAlignSerialize(out, field->resolvedType.alignmentBits, 2);
+        const auto fieldRef = "self." + sanitizeRustIdent(field->name);
+        emitSerializeAny(out, field->resolvedType, fieldRef, 2,
+                         step.fieldStep.arrayLengthPrefixBits,
+                         step.fieldStep.fieldFacts);
+        break;
+      }
+      case LoweredRenderStepKind::Padding: {
+        const auto *const field = step.fieldStep.field;
+        if (field == nullptr) {
+          continue;
+        }
+        emitAlignSerialize(out, field->resolvedType.alignmentBits, 2);
+        emitSerializePadding(out, field->resolvedType, 2);
+        break;
+      }
       }
     }
 
@@ -380,24 +393,37 @@ public:
     emitLine(out, 2, "let capacity_bytes = buffer.len();");
     emitLine(out, 2, "let capacity_bits = capacity_bytes.saturating_mul(8);\n");
     emitLine(out, 2, "let mut offset_bits: usize = 0;");
-    const auto loweredPlan = buildLoweredBodyPlan(
+    const auto renderIR = buildLoweredBodyRenderIR(
         section, sectionFacts, HelperBindingDirection::Deserialize);
-    emitDeserializeMlirHelperBindings(out, loweredPlan.helperBindings, 2);
+    emitDeserializeMlirHelperBindings(out, renderIR.helperBindings, 2);
 
-    if (section.isUnion) {
-      emitDeserializeUnion(out, section, loweredPlan.statements.unionBranches, 2,
-                           sectionFacts, loweredPlan.helperBindings);
-    } else {
-      for (const auto &step : loweredPlan.statements.orderedFields) {
-        const auto &field = *step.field;
-        emitAlignDeserialize(out, field.resolvedType.alignmentBits, 2);
-        if (field.isPadding) {
-          emitDeserializePadding(out, field.resolvedType, 2);
-        } else {
-          const auto fieldRef = "self." + sanitizeRustIdent(field.name);
-          emitDeserializeAny(out, field.resolvedType, fieldRef, 2,
-                             step.arrayLengthPrefixBits, step.fieldFacts);
+    for (const auto &step : renderIR.steps) {
+      switch (step.kind) {
+      case LoweredRenderStepKind::UnionDispatch:
+        emitDeserializeUnion(out, section, step.unionBranches, 2, sectionFacts,
+                             renderIR.helperBindings);
+        break;
+      case LoweredRenderStepKind::Field: {
+        const auto *const field = step.fieldStep.field;
+        if (field == nullptr) {
+          continue;
         }
+        emitAlignDeserialize(out, field->resolvedType.alignmentBits, 2);
+        const auto fieldRef = "self." + sanitizeRustIdent(field->name);
+        emitDeserializeAny(out, field->resolvedType, fieldRef, 2,
+                           step.fieldStep.arrayLengthPrefixBits,
+                           step.fieldStep.fieldFacts);
+        break;
+      }
+      case LoweredRenderStepKind::Padding: {
+        const auto *const field = step.fieldStep.field;
+        if (field == nullptr) {
+          continue;
+        }
+        emitAlignDeserialize(out, field->resolvedType.alignmentBits, 2);
+        emitDeserializePadding(out, field->resolvedType, 2);
+        break;
+      }
       }
     }
 
@@ -1341,9 +1367,23 @@ std::string renderCargoToml(const RustEmitOptions &options) {
   out << "path = \"src/lib.rs\"\n\n";
 
   out << "[features]\n";
-  out << "default = [\"std\"]\n";
+  std::vector<std::string> defaultFeatures;
+  if (options.profile == RustProfile::Std) {
+    defaultFeatures.emplace_back("std");
+  }
+  if (options.runtimeSpecialization == RustRuntimeSpecialization::Fast) {
+    defaultFeatures.emplace_back("runtime-fast");
+  }
+  out << "default = [";
+  for (std::size_t i = 0; i < defaultFeatures.size(); ++i) {
+    if (i != 0) {
+      out << ", ";
+    }
+    out << "\"" << defaultFeatures[i] << "\"";
+  }
+  out << "]\n";
   out << "std = []\n";
-  out << "future-no-std-alloc = []\n";
+  out << "runtime-fast = []\n";
   return out.str();
 }
 
@@ -1358,17 +1398,12 @@ llvm::Error emitRust(const SemanticModule &semantic, mlir::ModuleOp module,
   }
   LoweredFactsMap loweredFacts;
   if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "Rust",
-                                   &loweredFacts)) {
+                                   &loweredFacts,
+                                   options.optimizeLoweredSerDes)) {
     return llvm::createStringError(
         llvm::inconvertibleErrorCode(),
         "MLIR schema coverage validation failed for Rust emission");
   }
-  if (options.profile != RustProfile::Std) {
-    return llvm::createStringError(
-        llvm::inconvertibleErrorCode(),
-        "Rust no_std+alloc backend is not implemented yet; use --rust-profile std");
-  }
-
   std::filesystem::path outRoot(options.outDir);
   std::filesystem::path srcRoot = outRoot / "src";
   std::filesystem::create_directories(srcRoot);
@@ -1426,13 +1461,12 @@ llvm::Error emitRust(const SemanticModule &semantic, mlir::ModuleOp module,
   }
 
   std::ostringstream lib;
+  emitLine(lib, 0, "#![cfg_attr(not(feature = \"std\"), no_std)]");
   emitLine(lib, 0, "#![allow(non_camel_case_types)]");
   emitLine(lib, 0, "#![allow(non_snake_case)]");
   emitLine(lib, 0, "#![allow(non_upper_case_globals)]");
-  emitLine(lib, 0, "\n// std-first backend. Future no_std + allocator mode is reserved via feature/profile seams.");
-  emitLine(lib, 0, "#[cfg(feature = \"future-no-std-alloc\")]");
-  emitLine(lib, 0,
-           "compile_error!(\"feature 'future-no-std-alloc' is reserved but not implemented yet; generate with --rust-profile std\");");
+  emitLine(lib, 0, "#[cfg(not(feature = \"std\"))]");
+  emitLine(lib, 0, "extern crate alloc;");
   emitLine(lib, 0, "pub mod dsdl_runtime;");
 
   if (dirToSubdirs.contains("")) {

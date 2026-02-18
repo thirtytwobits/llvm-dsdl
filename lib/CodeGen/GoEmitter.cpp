@@ -3,7 +3,7 @@
 #include "llvmdsdl/CodeGen/ArrayWirePlan.h"
 #include "llvmdsdl/CodeGen/HelperBindingRender.h"
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
-#include "llvmdsdl/CodeGen/LoweredBodyPlan.h"
+#include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/CodeGen/WireLayoutFacts.h"
@@ -425,13 +425,13 @@ public:
     emitLine(out, 2, "return -dsdlruntime.DSDL_RUNTIME_ERROR_INVALID_ARGUMENT, 0");
     emitLine(out, 1, "}");
     emitLine(out, 1, "offsetBits := 0");
-    const auto loweredPlan = buildLoweredBodyPlan(
+    const auto renderIR = buildLoweredBodyRenderIR(
         section, sectionFacts, HelperBindingDirection::Serialize);
-    emitSerializeMlirHelperBindings(out, loweredPlan.helperBindings, 1);
+    emitSerializeMlirHelperBindings(out, renderIR.helperBindings, 1);
 
-    if (loweredPlan.helperBindings.capacityCheck) {
+    if (renderIR.helperBindings.capacityCheck) {
       const auto capacityHelper =
-          helperBindingName(loweredPlan.helperBindings.capacityCheck->symbol);
+          helperBindingName(renderIR.helperBindings.capacityCheck->symbol);
       emitLine(out, 1,
                "if rc := " + capacityHelper + "(int64(len(buffer) * 8)); rc != "
                "dsdlruntime.DSDL_RUNTIME_SUCCESS {");
@@ -447,20 +447,33 @@ public:
       emitLine(out, 1, "}");
     }
 
-    if (section.isUnion) {
-      emitSerializeUnion(out, section, loweredPlan.statements.unionBranches, 1,
-                         sectionFacts, loweredPlan.helperBindings);
-    } else {
-      for (const auto &step : loweredPlan.statements.orderedFields) {
-        const auto &field = *step.field;
-        emitAlignSerialize(out, field.resolvedType.alignmentBits, 1);
-        if (field.isPadding) {
-          emitSerializePadding(out, field.resolvedType, 1);
-        } else {
-          emitSerializeAny(out, field.resolvedType,
-                           "obj."+toExportedIdent(field.name), 1,
-                           step.arrayLengthPrefixBits, step.fieldFacts);
+    for (const auto &step : renderIR.steps) {
+      switch (step.kind) {
+      case LoweredRenderStepKind::UnionDispatch:
+        emitSerializeUnion(out, section, step.unionBranches, 1, sectionFacts,
+                           renderIR.helperBindings);
+        break;
+      case LoweredRenderStepKind::Field: {
+        const auto *const field = step.fieldStep.field;
+        if (field == nullptr) {
+          continue;
         }
+        emitAlignSerialize(out, field->resolvedType.alignmentBits, 1);
+        emitSerializeAny(out, field->resolvedType,
+                         "obj." + toExportedIdent(field->name), 1,
+                         step.fieldStep.arrayLengthPrefixBits,
+                         step.fieldStep.fieldFacts);
+        break;
+      }
+      case LoweredRenderStepKind::Padding: {
+        const auto *const field = step.fieldStep.field;
+        if (field == nullptr) {
+          continue;
+        }
+        emitAlignSerialize(out, field->resolvedType.alignmentBits, 1);
+        emitSerializePadding(out, field->resolvedType, 1);
+        break;
+      }
       }
     }
 
@@ -481,24 +494,37 @@ public:
     emitLine(out, 1, "capacityBytes := len(buffer)");
     emitLine(out, 1, "capacityBits := capacityBytes * 8");
     emitLine(out, 1, "offsetBits := 0");
-    const auto loweredPlan = buildLoweredBodyPlan(
+    const auto renderIR = buildLoweredBodyRenderIR(
         section, sectionFacts, HelperBindingDirection::Deserialize);
-    emitDeserializeMlirHelperBindings(out, loweredPlan.helperBindings, 1);
+    emitDeserializeMlirHelperBindings(out, renderIR.helperBindings, 1);
 
-    if (section.isUnion) {
-      emitDeserializeUnion(out, section, loweredPlan.statements.unionBranches, 1,
-                           sectionFacts, loweredPlan.helperBindings);
-    } else {
-      for (const auto &step : loweredPlan.statements.orderedFields) {
-        const auto &field = *step.field;
-        emitAlignDeserialize(out, field.resolvedType.alignmentBits, 1);
-        if (field.isPadding) {
-          emitDeserializePadding(out, field.resolvedType, 1);
-        } else {
-          emitDeserializeAny(out, field.resolvedType,
-                             "obj."+toExportedIdent(field.name), 1,
-                             step.arrayLengthPrefixBits, step.fieldFacts);
+    for (const auto &step : renderIR.steps) {
+      switch (step.kind) {
+      case LoweredRenderStepKind::UnionDispatch:
+        emitDeserializeUnion(out, section, step.unionBranches, 1, sectionFacts,
+                             renderIR.helperBindings);
+        break;
+      case LoweredRenderStepKind::Field: {
+        const auto *const field = step.fieldStep.field;
+        if (field == nullptr) {
+          continue;
         }
+        emitAlignDeserialize(out, field->resolvedType.alignmentBits, 1);
+        emitDeserializeAny(out, field->resolvedType,
+                           "obj." + toExportedIdent(field->name), 1,
+                           step.fieldStep.arrayLengthPrefixBits,
+                           step.fieldStep.fieldFacts);
+        break;
+      }
+      case LoweredRenderStepKind::Padding: {
+        const auto *const field = step.fieldStep.field;
+        if (field == nullptr) {
+          continue;
+        }
+        emitAlignDeserialize(out, field->resolvedType.alignmentBits, 1);
+        emitDeserializePadding(out, field->resolvedType, 1);
+        break;
+      }
       }
     }
 
@@ -1290,7 +1316,8 @@ llvm::Error emitGo(const SemanticModule &semantic, mlir::ModuleOp module,
   }
   LoweredFactsMap loweredFacts;
   if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "Go",
-                                   &loweredFacts)) {
+                                   &loweredFacts,
+                                   options.optimizeLoweredSerDes)) {
     return llvm::createStringError(
         llvm::inconvertibleErrorCode(),
         "MLIR schema coverage validation failed for Go emission");

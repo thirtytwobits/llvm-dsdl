@@ -8,6 +8,7 @@ target_link_libraries(llvmdsdlTransforms
   llvmdsdlIR
   MLIRIR
   MLIRPass
+  MLIRTransforms
   MLIREmitCDialect
   MLIRFuncDialect
   MLIRArithDialect

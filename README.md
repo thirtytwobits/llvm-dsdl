@@ -20,14 +20,19 @@ It currently provides:
   - A generated crate layout (`Cargo.toml`, `src/lib.rs`, `src/**`).
   - Per-type Rust data types and inline SerDes methods.
   - A local Rust runtime module (`src/dsdl_runtime.rs`) with bit-level primitives.
-  - `std` profile enabled now, with an explicit reserved seam for future
-    `no_std + alloc`.
+  - `std` and `no-std-alloc` profiles plus runtime specialization
+    (`portable|fast`).
   - MLIR schema/plan metadata validation before emission (matching C++ structural checks).
 - Go code generation (`dsdlc go`) with:
   - A generated module layout (`go.mod`, `uavcan/**`, `dsdlruntime/**`).
   - Per-type Go data types and inline SerDes methods.
   - A local Go runtime module (`dsdlruntime/dsdl_runtime.go`) with bit-level primitives.
   - Deterministic output and strict-mode full-`uavcan` generation/build gates.
+- TypeScript code generation (`dsdlc ts`) with:
+  - A generated package/module layout (`package.json`, `index.ts`, namespace `*.ts` files).
+  - Per-type TypeScript interface/type declarations, DSDL metadata constants, and generated runtime SerDes entrypoints.
+  - A generated TypeScript runtime helper module (`dsdl_runtime.ts`) for bit-level read/write primitives.
+  - MLIR schema/plan metadata validation before emission (experimental non-C-like target).
 - Strict-mode-first semantics (`--strict` is default).
 
 ## Ambitions
@@ -51,7 +56,7 @@ Tools
 
 - `include/llvmdsdl`: public C++ headers.
 - `lib`: frontend, semantics, IR, lowering, transforms, codegen.
-- `tools/dsdlc`: CLI driver (`ast`, `mlir`, `c`, `cpp`, `rust`, `go`).
+- `tools/dsdlc`: CLI driver (`ast`, `mlir`, `c`, `cpp`, `rust`, `go`, `ts`).
 - `tools/dsdl-opt`: MLIR pass driver for the DSDL dialect.
 - `runtime/dsdl_runtime.h`: generated C runtime support header.
 - `test/unit`: unit tests.
@@ -116,6 +121,20 @@ The full test set now also includes `llvmdsdl-uavcan-mlir-lowering`, which
 validates full-`uavcan` MLIR lowering and `convert-dsdl-to-emitc` pass
 execution under `dsdl-opt`.
 
+Optimization-enabled verification workflow (runs tests labeled `optimized`,
+including signed-narrow parity, full `uavcan` parity, and differential parity
+with `--optimize-lowered-serdes`):
+
+```bash
+cmake --workflow --preset optimized
+```
+
+On macOS with Homebrew LLVM:
+
+```bash
+cmake --workflow --preset optimized-homebrew
+```
+
 It also includes `llvmdsdl-uavcan-cpp-c-parity`, a cross-backend integration
 gate that compares generated C and generated C++ (`std` profile) SerDes
 behavior over randomized inputs for representative types.
@@ -132,6 +151,39 @@ When Rust tooling is available (`cargo` + `rustc`), `ctest` also enables
 `llvmdsdl-uavcan-c-rust-parity`, which links generated C implementation units
 into a Rust harness and checks deserialize/serialize return codes, consumed and
 produced sizes, and output bytes for representative `uavcan` types.
+
+Rust no-std profile workflow (runs tests labeled `rust-no-std`):
+
+```bash
+cmake --workflow --preset rust-no-std
+```
+
+Rust runtime-specialization workflow (runs tests labeled
+`rust-runtime-specialization`):
+
+```bash
+cmake --workflow --preset rust-runtime-specialization
+```
+
+This lane now includes runtime-fast generation/cargo checks, runtime
+specialization semantic-diff checks, and C/Rust parity checks (including
+`no-std-alloc + runtime-fast`).
+
+TypeScript non-C-like target workflow (runs tests labeled `ts`):
+
+```bash
+cmake --workflow --preset ts
+```
+
+This lane runs `llvmdsdl-uavcan-ts-generation`,
+`llvmdsdl-uavcan-ts-determinism`, and, when `tsc` is available in `PATH`, also
+runs `llvmdsdl-uavcan-ts-typecheck` (`tsc --noEmit` on generated output) and
+`llvmdsdl-uavcan-ts-consumer-smoke` (consumer import/typecheck smoke module).
+It also runs `llvmdsdl-uavcan-ts-index-contract` to validate root `index.ts`
+alias inventory/uniqueness contract shape, plus
+`llvmdsdl-fixtures-c-ts-runtime-parity` when `tsc`, `node`, and a C compiler are
+available, and `llvmdsdl-ts-runtime-fixed-array-smoke` when `tsc` + `node` are
+available.
 
 Demo artifact workflow (creates `build/<preset>/demo-2026-02-16/` with
 generated outputs, full-`uavcan` MLIR + lowered MLIR snapshots, selected test
@@ -162,10 +214,28 @@ Run only the differential parity test:
 ctest --test-dir build -R llvmdsdl-differential-parity --output-on-failure
 ```
 
+Run only optimization-enabled verification gates:
+
+```bash
+ctest --test-dir build -L optimized --output-on-failure
+```
+
 Run only the C/Rust parity test (when `cargo` and `rustc` are available):
 
 ```bash
 ctest --test-dir build -R llvmdsdl-uavcan-c-rust-parity --output-on-failure
+```
+
+Run only Rust no-std profile gates:
+
+```bash
+ctest --test-dir build -L rust-no-std --output-on-failure
+```
+
+Run only Rust runtime-specialization gates:
+
+```bash
+ctest --test-dir build -L rust-runtime-specialization --output-on-failure
 ```
 
 Run only the C/C++ PMR parity test:
@@ -184,6 +254,48 @@ Run only Go runtime unit tests:
 
 ```bash
 ctest --test-dir build -R llvmdsdl-go-runtime-unit-tests --output-on-failure
+```
+
+Run only TypeScript generation integration gate:
+
+```bash
+ctest --test-dir build -R llvmdsdl-uavcan-ts-generation --output-on-failure
+```
+
+Run only TypeScript determinism integration gate:
+
+```bash
+ctest --test-dir build -R llvmdsdl-uavcan-ts-determinism --output-on-failure
+```
+
+Run only TypeScript type-check integration gate (requires `tsc`):
+
+```bash
+ctest --test-dir build -R llvmdsdl-uavcan-ts-typecheck --output-on-failure
+```
+
+Run only TypeScript consumer-smoke integration gate (requires `tsc`):
+
+```bash
+ctest --test-dir build -R llvmdsdl-uavcan-ts-consumer-smoke --output-on-failure
+```
+
+Run only TypeScript index-contract integration gate:
+
+```bash
+ctest --test-dir build -R llvmdsdl-uavcan-ts-index-contract --output-on-failure
+```
+
+Run only fixture C<->TypeScript runtime parity smoke:
+
+```bash
+ctest --test-dir build -R llvmdsdl-fixtures-c-ts-runtime-parity --output-on-failure
+```
+
+Run only TypeScript fixed-array runtime smoke:
+
+```bash
+ctest --test-dir build -R llvmdsdl-ts-runtime-fixed-array-smoke --output-on-failure
 ```
 
 Run the full Go differential ring workflow:
@@ -316,6 +428,10 @@ CMake provides first-class generation targets per language/profile:
 - `generate-uavcan-cpp-pmr`
 - `generate-uavcan-cpp-both`
 - `generate-uavcan-rust-std`
+- `generate-uavcan-rust-no-std-alloc`
+- `generate-uavcan-rust-runtime-fast`
+- `generate-uavcan-rust-no-std-runtime-fast`
+- `generate-uavcan-ts`
 - `generate-uavcan-all` (aggregate)
 - `generate-demo-2026-02-16` (demo bundle with logs + `DEMO.md`)
 
@@ -326,6 +442,10 @@ cmake --build --preset build-dev-homebrew --target generate-uavcan-c
 cmake --build --preset build-dev-homebrew --target generate-uavcan-cpp-std
 cmake --build --preset build-dev-homebrew --target generate-uavcan-cpp-pmr
 cmake --build --preset build-dev-homebrew --target generate-uavcan-rust-std
+cmake --build --preset build-dev-homebrew --target generate-uavcan-rust-no-std-alloc
+cmake --build --preset build-dev-homebrew --target generate-uavcan-rust-runtime-fast
+cmake --build --preset build-dev-homebrew --target generate-uavcan-rust-no-std-runtime-fast
+cmake --build --preset build-dev-homebrew --target generate-uavcan-ts
 cmake --build --preset build-dev-homebrew --target generate-uavcan-all
 cmake --build --preset build-dev-homebrew --target generate-demo-2026-02-16
 ```
@@ -337,6 +457,10 @@ Generated output paths are under `<build-dir>/generated/uavcan`:
 - `<build-dir>/generated/uavcan/cpp-pmr`
 - `<build-dir>/generated/uavcan/cpp-both`
 - `<build-dir>/generated/uavcan/rust-std`
+- `<build-dir>/generated/uavcan/rust-no-std-alloc`
+- `<build-dir>/generated/uavcan/rust-runtime-fast`
+- `<build-dir>/generated/uavcan/rust-no-std-runtime-fast`
+- `<build-dir>/generated/uavcan/ts`
 - `<build-dir>/demo-2026-02-16` (demo artifact bundle)
 
 Notes:
@@ -374,6 +498,8 @@ Notes:
 Optional:
 
 - `--compat-mode`: relax strictness for compatibility behavior.
+- `--optimize-lowered-serdes`: enable optional semantics-preserving MLIR
+  optimization on lowered SerDes IR before backend emission.
 - No additional C mode flags are required: `dsdlc c` always emits headers and
   per-definition implementation translation units.
 
@@ -425,7 +551,7 @@ Naming style:
   suffixes are added to keep names unique (e.g. `uavcan::file::Path_1_0`,
   `uavcan::file::Path_2_0`).
 
-### Rust crate generation (`std` profile)
+### Rust crate generation (`std`/`no-std-alloc` + runtime specialization)
 
 ```bash
 ./build/tools/dsdlc/dsdlc rust \
@@ -436,16 +562,85 @@ Naming style:
   --rust-profile std
 ```
 
+No-std+alloc profile:
+
+```bash
+./build/tools/dsdlc/dsdlc rust \
+  --root-namespace-dir public_regulated_data_types/uavcan \
+  --strict \
+  --out-dir build/uavcan-rust-no-std-out \
+  --rust-crate-name uavcan_dsdl_generated_no_std \
+  --rust-profile no-std-alloc
+```
+
+Runtime-specialized std profile:
+
+```bash
+./build/tools/dsdlc/dsdlc rust \
+  --root-namespace-dir public_regulated_data_types/uavcan \
+  --strict \
+  --out-dir build/uavcan-rust-fast-out \
+  --rust-crate-name uavcan_dsdl_generated_fast \
+  --rust-profile std \
+  --rust-runtime-specialization fast
+```
+
 Current behavior:
 
 - `--rust-profile std` is the default and recommended first path.
-- `--rust-profile no-std-alloc` is reserved and currently returns a clear
-  "not implemented yet" error.
-- Generated Rust API uses `DsdlVec` aliasing in `dsdl_runtime` so we can switch
-  allocation strategy in the planned embedded-focused backend.
+- `--rust-profile no-std-alloc` emits a crate configured for `no_std` with
+  `alloc` (Cargo default features are empty; `std` remains an opt-in feature).
+- `--rust-runtime-specialization portable` is the default profile behavior.
+- `--rust-runtime-specialization fast` enables a runtime-optimized bit-copy path
+  via Cargo feature `runtime-fast` while keeping generated semantic type files
+  unchanged.
+- Runtime-specialization integration gates include C/Rust parity verification for
+  both `std + fast` and `no-std-alloc + fast` profile combinations.
+- Generated Rust API uses `DsdlVec` aliasing in `dsdl_runtime` so profile
+  changes do not alter lowered wire semantics.
 - Generated Rust types expose both:
 - `deserialize(&mut self, &[u8]) -> Result<usize, i8>` (ergonomic path), and
 - `deserialize_with_consumed(&mut self, &[u8]) -> (i8, usize)` (C-like parity path that reports consumed bytes on error too).
+
+### TypeScript module generation (experimental non-C-like target)
+
+```bash
+./build/tools/dsdlc/dsdlc ts \
+  --root-namespace-dir public_regulated_data_types/uavcan \
+  --strict \
+  --out-dir build/uavcan-ts-out \
+  --ts-module uavcan_dsdl_generated_ts
+```
+
+Current behavior:
+
+- Emits `package.json`, `index.ts`, and one namespace-mirrored `*.ts` type file
+  per DSDL definition.
+- `index.ts` exports each generated definition module under a collision-safe
+  namespace alias.
+- Generates interface/type declarations and DSDL metadata constants
+  (`DSDL_FULL_NAME`, version major/minor).
+- Emits generated runtime support module `dsdl_runtime.ts` and per-type
+  `serialize*` / `deserialize*` helpers for currently supported lowered section
+  families.
+- Validates lowered MLIR schema coverage before emission, aligned with the
+  existing backends.
+- Integration coverage includes generated TypeScript compile validation via
+  `tsc --noEmit` when `tsc` is available.
+- Integration coverage includes deterministic-output validation across repeated
+  `dsdlc ts` runs.
+- Integration coverage includes a consumer smoke compile that imports generated
+  namespace aliases from `index.ts`.
+- Integration coverage includes a root `index.ts` export-contract check
+  (alias uniqueness and one-to-one module inventory coverage).
+- Integration coverage includes fixture-level C<->TypeScript runtime SerDes
+  parity smoke (`llvmdsdl-fixtures-c-ts-runtime-parity`) for a representative
+  fixed-size scalar type path.
+- Integration coverage includes a synthetic TypeScript runtime fixed-array smoke
+  (`llvmdsdl-ts-runtime-fixed-array-smoke`) that validates runtime-backed
+  serialize/deserialize for a representative fixed-length scalar array type.
+- Runtime SerDes support is intentionally incremental; unsupported section
+  families emit explicit TypeScript runtime stubs that throw.
 
 ## Reproducible Full `uavcan` Generation Check
 
@@ -472,4 +667,7 @@ Current milestone supports generating all types under:
 
 with strict mode enabled and no `dsdl_runtime_stub_*` references in generated
 headers, strict C++23 generation (`std` + `pmr` profiles), plus strict Rust
-crate generation in `std` mode.
+crate generation in `std`, `no-std-alloc`, and runtime-specialized (`fast`)
+modes, plus experimental TypeScript generation with compile (`tsc --noEmit`),
+determinism, consumer-smoke, index-contract, and fixture C<->TypeScript runtime
+parity-smoke validation gates, plus a TypeScript runtime fixed-array smoke gate.

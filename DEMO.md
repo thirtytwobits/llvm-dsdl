@@ -82,11 +82,25 @@ mkdir -p "$OUT"
   --rust-crate-name demo_vendor_generated \
   --out-dir "$OUT/rust"
 
+"$DSDLC" rust \
+  --root-namespace-dir "$ROOT_NS" \
+  --strict \
+  --rust-profile std \
+  --rust-runtime-specialization fast \
+  --rust-crate-name demo_vendor_generated_fast \
+  --out-dir "$OUT/rust-fast"
+
 "$DSDLC" go \
   --root-namespace-dir "$ROOT_NS" \
   --strict \
   --go-module demo/vendor/generated \
   --out-dir "$OUT/go"
+
+"$DSDLC" ts \
+  --root-namespace-dir "$ROOT_NS" \
+  --strict \
+  --ts-module demo_vendor_generated_ts \
+  --out-dir "$OUT/ts"
 ```
 
 ## 3) Show “Proof” in 60 Seconds
@@ -107,15 +121,88 @@ find "$OUT/c"   -maxdepth 3 -type f | sort
 find "$OUT/cpp" -maxdepth 4 -type f | sort
 find "$OUT/rust/src/vendor" -maxdepth 1 -type f | sort
 find "$OUT/go/vendor" -maxdepth 1 -type f | sort
+find "$OUT/ts/vendor" -maxdepth 1 -type f | sort
 ```
 
-### 2.3 One type, four languages
+Optional quick TypeScript compile proof (if `tsc` is installed):
+
+```bash
+cat > "$OUT/ts/tsconfig.json" <<'JSON'
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "Node",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["./**/*.ts"]
+}
+JSON
+
+tsc -p "$OUT/ts/tsconfig.json" --pretty false
+```
+
+Optional quick TypeScript determinism proof:
+
+```bash
+OUT_TS_DET="$OUT/ts-determinism"
+rm -rf "$OUT_TS_DET"
+mkdir -p "$OUT_TS_DET"
+
+"$DSDLC" ts --root-namespace-dir "$ROOT_NS" --strict --ts-module demo_vendor_generated_ts --out-dir "$OUT_TS_DET/run-a"
+"$DSDLC" ts --root-namespace-dir "$ROOT_NS" --strict --ts-module demo_vendor_generated_ts --out-dir "$OUT_TS_DET/run-b"
+
+diff -ru "$OUT_TS_DET/run-a" "$OUT_TS_DET/run-b"
+```
+
+Optional quick TypeScript consumer-smoke proof (imports from generated `index.ts`):
+
+```bash
+cat > "$OUT/ts/consumer_smoke.ts" <<'TS'
+import { uavcan_node_heartbeat_1_0, uavcan_primitive_empty_1_0 } from "./index";
+const heartbeatName: string = uavcan_node_heartbeat_1_0.DSDL_FULL_NAME;
+const emptyName: string = uavcan_primitive_empty_1_0.DSDL_FULL_NAME;
+export const smokeSummary = `${heartbeatName}:${emptyName}`;
+TS
+
+tsc -p "$OUT/ts/tsconfig.json" --pretty false
+```
+
+Optional quick TypeScript `index.ts` alias-contract proof:
+
+```bash
+INDEX_ALIAS_COUNT="$(rg -n '^export \* as [A-Za-z_][A-Za-z0-9_]* from "\\./.+";$' "$OUT/ts/index.ts" | wc -l | tr -d ' ')"
+TYPE_FILE_COUNT="$(find "$OUT/ts" -name '*.ts' ! -name 'index.ts' | wc -l | tr -d ' ')"
+echo "index aliases=$INDEX_ALIAS_COUNT type files=$TYPE_FILE_COUNT"
+test "$INDEX_ALIAS_COUNT" = "$TYPE_FILE_COUNT"
+```
+
+Optional quick TypeScript runtime parity smoke proof (fixture-backed):
+
+```bash
+ctest --test-dir build/dev-homebrew \
+  -R llvmdsdl-fixtures-c-ts-runtime-parity \
+  --output-on-failure
+```
+
+Optional quick TypeScript fixed-array runtime smoke proof:
+
+```bash
+ctest --test-dir build/dev-homebrew \
+  -R llvmdsdl-ts-runtime-fixed-array-smoke \
+  --output-on-failure
+```
+
+### 2.3 One type, five languages
 
 ```bash
 sed -n '1,60p'  "$OUT/c/vendor/Type_1_0.h"
 sed -n '1,80p'  "$OUT/cpp/std/vendor/Type_1_0.hpp"
 sed -n '1,80p'  "$OUT/rust/src/vendor/type__1_0.rs"
 sed -n '1,80p'  "$OUT/go/vendor/type__1_0.go"
+sed -n '1,80p'  "$OUT/ts/vendor/type__1_0.ts"
 ```
 
 ## 4) Five-Minute Talk Track
@@ -125,7 +212,7 @@ Use this pacing:
 1. **0:00-0:30**: "We start with a platform-agnostic IDL corpus (`.dsdl`)."
 2. **0:30-1:30**: "Frontend + semantics produce structured IR (`ast`, `module.mlir`)."
 3. **1:30-2:15**: "MLIR passes lower serialization plans and can convert toward EmitC-compatible representation."
-4. **2:15-3:45**: "From the same semantic source, we emit C, C++ (`std`/`pmr`), Rust, and Go."
+4. **2:15-3:45**: "From the same semantic source, we emit C, C++ (`std`/`pmr`), Rust, Go, and an experimental TypeScript target."
 5. **3:45-5:00**: "The value is compiler architecture: shared analysis, explicit contracts, target-specific emitters, and repeatable transformations."
 
 ## 5) Kitchen Tour (90 seconds)
@@ -158,6 +245,7 @@ ls lib/CodeGen
 5. Runtime layers
 ```bash
 ls runtime runtime/cpp runtime/rust runtime/go
+ls "$OUT/ts/dsdl_runtime.ts"
 ```
 
 6. Validation corpus and tests
@@ -184,6 +272,7 @@ mkdir -p "$OUT_FULL"
 "$DSDLC" cpp  --root-namespace-dir "$ROOT_NS_FULL" --strict --cpp-profile both --out-dir "$OUT_FULL/cpp"
 "$DSDLC" rust --root-namespace-dir "$ROOT_NS_FULL" --strict --rust-profile std --rust-crate-name uavcan_dsdl_generated --out-dir "$OUT_FULL/rust"
 "$DSDLC" go   --root-namespace-dir "$ROOT_NS_FULL" --strict --go-module demo/uavcan/generated --out-dir "$OUT_FULL/go"
+"$DSDLC" ts   --root-namespace-dir "$ROOT_NS_FULL" --strict --ts-module demo_uavcan_generated_ts --out-dir "$OUT_FULL/ts"
 ```
 
 Quick count checks:
@@ -201,22 +290,22 @@ Use this close:
 
 ## 8) Caveat: Remaining Project Work
 
-As of **February 18, 2026**, this demo shows real end-to-end value, but the plan is not yet fully finished.
+As of **February 18, 2026**, Phases 0-5 in `MLIR_MAX_LOWERING_PLAN.md` are complete for the current backend scope (C/C++/Rust/Go), including optimization-enabled parity gates.
 
-Remaining work (from `MLIR_MAX_LOWERING_PLAN.md`) is primarily:
+Remaining work is now the **optional stretch**:
 
-1. Finish tightening the lowered contract so every SerDes-relevant decision is unambiguous and fully validated (Phase 0/1 closeout).
-2. Complete full convergence so C++/Rust/Go body shaping is entirely driven by the shared lowered body plan, with no backend-specific semantic branching (Phase 2 finish).
-3. Eliminate any remaining semantic fallback patterns and keep hard-fail behavior when required lowered facts are missing (Phase 3 finish).
-4. Keep parity gates fully normalized across all language pairs and fixtures (including directed vectors and inventory/pass-line invariants) as coverage expands (Phase 4 finish).
-5. Add optimization-pass readiness and prove parity is unchanged with optimization-enabled lowering pipelines (Phase 5).
-6. Update architecture documentation (`DESIGN.md`) to reflect final intentional backend-specific behavior only.
+1. Continue maturing the new language-agnostic render-IR layer (`LoweredRenderIR`) so more backend code paths become pure rendering adapters.
+2. Continue profile-knob expansion (embedded allocator/runtime specialization) without changing lowered wire semantics. (`--rust-profile no-std-alloc` and `--rust-runtime-specialization fast` are implemented with generation/cargo-check/parity and semantic-diff validation lanes.)
+3. Continue maturing the first non-C-like target (TypeScript) from the current runtime-scaffold + fixture parity smoke stage into broad runtime parity coverage.
 
-When all work in `MLIR_MAX_LOWERING_PLAN.md` is complete, we should have:
+What we have now (already true):
 
-1. A versioned, backend-agnostic lowered SerDes contract as the single source of truth.
-2. C, C++ (`std`/`pmr`), Rust, and Go emitters acting as thin rendering/adaptation layers over one shared lowered program.
-3. No backend semantic fallback drift for core SerDes families (scalar, alignment, arrays, union tags, delimiters, service sections).
-4. Strong cross-language equivalence guarantees enforced by parity suites with consistent summary/inventory/count invariants.
-5. Optional optimization passes that improve lowered code shape without changing wire semantics.
-6. A stable foundation to add new runtime profiles and future language targets without re-implementing semantics per backend.
+1. A versioned, backend-agnostic lowered SerDes contract as the semantic source of truth.
+2. C, C++ (`std`/`pmr`), Rust, and Go emitters converged on shared lowering products with strong parity/differential validation; TypeScript now has declaration generation, generated runtime helpers (`dsdl_runtime.ts`), compile/determinism/consumer/index-contract gates, fixture C<->TS runtime parity smoke, and a fixed-array runtime smoke gate.
+3. Optional optimization passes with parity-preserving validation under optimization-enabled workflows.
+
+What we should have when optional stretch work is done:
+
+1. Even thinner backends built on shared render IR with backend code focused on syntax/runtime binding.
+2. Profile flexibility (`std`/`pmr`/`no_std`/runtime-specialized embedded variants) without semantic drift.
+3. A non-C-like target path where TypeScript runtime SerDes is parity-validated beyond fixture smoke (full semantic-family coverage and larger-corpus parity gates), lowering risk for additional language targets.

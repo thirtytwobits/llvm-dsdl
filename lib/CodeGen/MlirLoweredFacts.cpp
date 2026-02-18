@@ -61,13 +61,17 @@ bool collectLoweredFactsFromMlir(const SemanticModule &semantic,
                                  mlir::ModuleOp module,
                                  DiagnosticEngine &diagnostics,
                                  const std::string &backendLabel,
-                                 LoweredFactsMap *const outFacts) {
+                                 LoweredFactsMap *const outFacts,
+                                 const bool optimizeLoweredSerDes) {
   std::unordered_map<std::string, std::set<std::string>> keyToSections;
   LoweredFactsMap loweredFacts;
   auto loweredModule = mlir::OwningOpRef<mlir::ModuleOp>(
       mlir::cast<mlir::ModuleOp>(module->clone()));
   mlir::PassManager pm(module.getContext());
   pm.addPass(createLowerDSDLSerializationPass());
+  if (optimizeLoweredSerDes) {
+    addOptimizeLoweredSerDesPipeline(pm);
+  }
   if (mlir::failed(pm.run(*loweredModule))) {
     diagnostics.error({"<mlir>", 1, 1},
                       "failed to run lower-dsdl-serialization for " +

@@ -14,7 +14,7 @@ Backend emitters should become syntax/type adapters over a shared lowered progra
 
 ## Execution Status (February 18, 2026)
 
-1. Phase 0 (Contract Freeze): in progress, core contract versioning implemented. Phases 2 and 3 started.
+1. Phases 0-5: convergence and optimization-readiness gates are complete for current backend scope, including optimization-enabled parity coverage and full-suite revalidation.
 2. Added canonical lowered-contract markers on module and `dsdl.serialization_plan`.
 3. Added consumer-side contract checks in lowered-fact collection and `convert-dsdl-to-emitc`.
 4. Added positive/negative tests for contract presence and pass preconditions.
@@ -82,6 +82,245 @@ Backend emitters should become syntax/type adapters over a shared lowered progra
 34. Revalidated signed-narrow directed-marker hardening:
     - targeted signed-narrow parity gate `ctest --test-dir build/dev-homebrew --output-on-failure -R "signed-narrow-c-go-parity|signed-narrow-c-rust-parity|signed-narrow-cpp-(c|pmr-c)-parity"` passed (4/4)
     - full suite `ctest --test-dir build/dev-homebrew --output-on-failure` passed (20/20)
+35. Started Phase 5 optimization-pass readiness with a dedicated optional MLIR pipeline:
+    - added `optimize-dsdl-lowered-serdes` pipeline registration in `registerDSDLPasses()`
+    - added shared helper API `addOptimizeLoweredSerDesPipeline(pm)` for emitter and lowering consumers
+    - constrained optimization scope to nested `func.func` ops to preserve lowered `dsdl.serialization_plan` contracts
+36. Added codegen workflow toggle for optimization-enabled runs:
+    - introduced `--optimize-lowered-serdes` in `dsdlc --help`
+    - threaded optimization option through C/C++/Rust/Go emit options and shared lowered-fact collection
+    - C backend now runs the optional optimization pipeline between `lower-dsdl-serialization` and `convert-dsdl-to-emitc` when enabled
+37. Expanded optimization readiness coverage:
+    - added lit coverage `test/lit/optimize-dsdl-lowered-serdes-pipeline.mlir`
+    - expanded `test/integration/RunDsdlOptSanity.cmake` to validate baseline + optimized lowering/convert pipelines and deterministic repeat runs
+38. Revalidated Phase 5 slice:
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -R llvmdsdl-dsdl-opt-sanity` passed (1/1)
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -R llvmdsdl-lit` passed (1/1)
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -R "llvmdsdl-unit-tests|llvmdsdl-signed-narrow-cpp-c-parity-optimized"` passed (2/2)
+    - `ctest --test-dir build/dev-homebrew -N` now reports `Total Tests: 24`
+    - manual optimization-flag smoke checks passed:
+      `build/dev-homebrew/tools/dsdlc/dsdlc c --root-namespace-dir test/lit/fixtures --strict --optimize-lowered-serdes --out-dir build/dev-homebrew/tmp-opt-c-1`
+      `build/dev-homebrew/tools/dsdlc/dsdlc cpp --root-namespace-dir test/lit/fixtures --strict --optimize-lowered-serdes --cpp-profile std --out-dir build/dev-homebrew/tmp-opt-cpp-1`
+39. Extended optimization-enabled signed-narrow parity coverage to all language pairs:
+    - generalized `RunSignedNarrowCRustParity.cmake` and `RunSignedNarrowCGoParity.cmake` with optional `DSDLC_EXTRA_ARGS`
+    - registered `llvmdsdl-signed-narrow-c-rust-parity-optimized` and `llvmdsdl-signed-narrow-c-go-parity-optimized` in integration CTest
+40. Revalidated optimization-enabled signed-narrow parity family:
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -R "llvmdsdl-signed-narrow-c-rust-parity-optimized|llvmdsdl-signed-narrow-c-go-parity-optimized"` passed (2/2)
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -L optimized` passed (3/3) including C/C++, C/Rust, and C/Go optimized parity gates
+41. Extended optimization-enabled parity coverage to full `uavcan` cross-language suites:
+    - generalized `RunCppCParity.cmake`, `RunCRustParity.cmake`, and `RunCGoParity.cmake` with optional `DSDLC_EXTRA_ARGS`
+    - registered optimized `uavcan` parity tests:
+      `llvmdsdl-uavcan-c-go-parity-optimized`,
+      `llvmdsdl-uavcan-cpp-c-parity-optimized`,
+      `llvmdsdl-uavcan-cpp-pmr-c-parity-optimized`,
+      `llvmdsdl-uavcan-c-rust-parity-optimized`
+42. Revalidated optimization-enabled `uavcan` parity invariants:
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -R "llvmdsdl-uavcan-c-go-parity-optimized|llvmdsdl-uavcan-cpp-c-parity-optimized|llvmdsdl-uavcan-cpp-pmr-c-parity-optimized|llvmdsdl-uavcan-c-rust-parity-optimized"` passed (4/4)
+    - `ctest --test-dir build/dev-homebrew -N` now reports `Total Tests: 28`
+43. Revalidated aggregate optimization-enabled parity family gate:
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -L optimized` passed (7/7) spanning signed-narrow and full `uavcan` optimized parity suites
+44. Revalidated full suite after optimization-enabled parity expansion:
+    - `ctest --test-dir build/dev-homebrew --output-on-failure` passed (28/28)
+45. Extended full-`uavcan` MLIR lowering integration to include optimized pipeline invariants:
+    - `RunUavcanMlirLowering.cmake` now validates baseline + optimized lowering/convert pipelines and optimized-convert determinism checks
+46. Extended differential parity integration with optimization-enabled execution:
+    - `RunDifferentialParity.cmake` now accepts optional `DSDLC_EXTRA_ARGS`
+    - added `llvmdsdl-differential-parity-optimized` in integration CTest registration
+47. Revalidated optimized integration expansion:
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -R llvmdsdl-uavcan-mlir-lowering` passed (1/1)
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -R llvmdsdl-differential-parity-optimized` passed (1/1)
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -L optimized` passed (8/8)
+48. Revalidated full suite after optimized MLIR/differential integration expansion:
+    - `ctest --test-dir build/dev-homebrew --output-on-failure` passed (29/29)
+    - `ctest --test-dir build/dev-homebrew -N` now reports `Total Tests: 29`
+49. Updated architecture documentation for current lowered-contract + optimization state:
+    - refreshed `DESIGN.md` "Current State vs Target State" with lowered-contract enforcement, optional optimization pipeline/CLI flag, and optimization-enabled parity coverage status
+    - added explicit "Intentional Backend-Specific Behavior" section to separate rendering/runtime concerns from lowered wire-semantics ownership
+50. Added optimization-focused preset/workflow automation:
+    - introduced test presets `test-optimized`, `test-optimized-homebrew`, and `test-optimized-llvm-env` in `CMakePresets.json`
+    - introduced workflow presets `optimized`, `optimized-homebrew`, and `optimized-llvm-env` in `CMakePresets.json`
+    - documented optimized workflow and label-gate invocation in `README.md`
+51. Revalidated optimized workflow automation:
+    - `cmake --list-presets=all` confirms optimized presets/workflows are registered
+    - `cmake --workflow --preset optimized-homebrew` passed end-to-end (8 optimized tests)
+52. Revalidated optimized integration hardening after script/preset updates:
+    - `ctest --test-dir build/dev-homebrew --output-on-failure` passed (29/29)
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -L optimized` passed (8/8)
+53. Started Optional Stretch item 1 with a shared language-agnostic render-IR layer:
+    - added `LoweredRenderIR` (`buildLoweredBodyRenderIR`) to represent backend-agnostic body steps (`field`, `padding`, `union-dispatch`) and helper binding plans from lowered facts
+    - rewired C++, Rust, and Go body emitters to consume render-IR steps instead of backend-local section/union traversal branches
+    - added unit coverage in `test/unit/LoweredRenderIRTests.cpp` and registered it in the unit test binary
+54. Revalidated render-IR convergence slice:
+    - `cmake --build build/dev-homebrew -j8` passed
+    - `ctest --test-dir build/dev-homebrew --output-on-failure` passed (29/29)
+55. Started Optional Stretch item 2 (profile knobs) with Rust `no_std` + `alloc` support:
+    - implemented `--rust-profile no-std-alloc` generation path (removed placeholder "not implemented" failure)
+    - Rust crate emission now configures Cargo defaults by profile (`std` default for `std`, empty default-feature set for `no-std-alloc`)
+    - generated `lib.rs` now uses `#![cfg_attr(not(feature = "std"), no_std)]` with `extern crate alloc` under non-std builds
+    - Rust runtime vector alias now switches between `std::vec::Vec` and `alloc::vec::Vec` via feature gating
+    - generalized Rust integration scripts to accept `RUST_PROFILE`
+    - added `uavcan` no-std integration coverage:
+      `llvmdsdl-uavcan-rust-generation-no-std-alloc`,
+      `llvmdsdl-uavcan-rust-cargo-check-no-std-alloc`
+56. Revalidated Rust profile-knob expansion end-to-end:
+    - targeted Rust profile gate:
+      `ctest --test-dir build/dev-homebrew --output-on-failure -R "llvmdsdl-uavcan-rust-generation-no-std-alloc|llvmdsdl-uavcan-rust-cargo-check-no-std-alloc|llvmdsdl-uavcan-rust-generation|llvmdsdl-uavcan-rust-cargo-check"` passed (4/4)
+    - full suite `ctest --test-dir build/dev-homebrew --output-on-failure` passed (31/31)
+    - `ctest --test-dir build/dev-homebrew -N` now reports `Total Tests: 31`
+57. Extended Rust `no_std` profile validation to parity-equivalence gates:
+    - generalized C/Rust parity harness scripts with explicit `RUST_PROFILE` support and dependency feature pinning (`default-features = false` for no-std lane):
+      `RunCRustParity.cmake`, `RunSignedNarrowCRustParity.cmake`,
+      `CRustParityCargo.toml.in`, `SignedNarrowCRustParityCargo.toml.in`
+    - added no-std parity tests:
+      `llvmdsdl-signed-narrow-c-rust-parity-no-std-alloc`,
+      `llvmdsdl-uavcan-c-rust-parity-no-std-alloc`
+    - added dedicated `rust-no-std` test label lane and automation:
+      test presets `test-rust-no-std`, `test-rust-no-std-homebrew`, `test-rust-no-std-llvm-env`
+      workflow presets `rust-no-std`, `rust-no-std-homebrew`, `rust-no-std-llvm-env`
+58. Revalidated no-std parity automation and full-suite stability:
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -L rust-no-std` passed (4/4)
+    - full suite `ctest --test-dir build/dev-homebrew --output-on-failure` passed (33/33)
+    - `ctest --test-dir build/dev-homebrew -N` now reports `Total Tests: 33`
+    - `cmake --list-presets=all` confirms rust-no-std presets/workflows are registered
+59. Continued Optional Stretch item 2 with Rust runtime specialization knobs:
+    - added CLI/runtime profile plumbing for `--rust-runtime-specialization <portable|fast>`
+    - Rust Cargo emission now declares `runtime-fast` feature and includes it in defaults when `fast` is selected
+    - Rust runtime now includes feature-gated fast aligned-copy path (`runtime-fast`) while preserving portable fallback semantics
+    - added integration runtime-specialization coverage:
+      `llvmdsdl-uavcan-rust-generation-runtime-fast`,
+      `llvmdsdl-uavcan-rust-cargo-check-runtime-fast`,
+      `llvmdsdl-uavcan-rust-runtime-specialization-diff`
+60. Added dedicated runtime-specialization lane automation:
+    - added `rust-runtime-specialization` test/workflow presets:
+      `test-rust-runtime-specialization`, `test-rust-runtime-specialization-homebrew`, `test-rust-runtime-specialization-llvm-env`
+      `rust-runtime-specialization`, `rust-runtime-specialization-homebrew`, `rust-runtime-specialization-llvm-env`
+    - added `generate-uavcan-rust-runtime-fast` generation target and included it under `generate-uavcan-all`
+61. Revalidated runtime-specialization expansion and full-suite stability:
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -L rust-runtime-specialization` passed (3/3)
+    - full suite `ctest --test-dir build/dev-homebrew --output-on-failure` passed (37/37)
+    - `ctest --test-dir build/dev-homebrew -N` now reports `Total Tests: 37`
+62. Extended runtime-specialization coverage to no-std combinations and parity-equivalence gates:
+    - generalized C/Rust parity harness scripts with explicit `RUST_RUNTIME_SPECIALIZATION` support and no-std fast dependency feature pinning:
+      `RunCRustParity.cmake`, `RunSignedNarrowCRustParity.cmake`
+    - added runtime-specialization parity tests:
+      `llvmdsdl-signed-narrow-c-rust-parity-runtime-fast`,
+      `llvmdsdl-uavcan-c-rust-parity-runtime-fast`,
+      `llvmdsdl-uavcan-c-rust-parity-no-std-runtime-fast`
+63. Expanded generation/cargo/runtime-specialization diff matrix for no-std + fast:
+    - added no-std + fast integration tests:
+      `llvmdsdl-uavcan-rust-generation-no-std-runtime-fast`,
+      `llvmdsdl-uavcan-rust-cargo-check-no-std-runtime-fast`,
+      `llvmdsdl-uavcan-rust-runtime-specialization-diff-no-std-alloc`
+64. Revalidated expanded runtime/no-std parity matrix and full-suite stability:
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -L rust-runtime-specialization` passed (9/9)
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -L rust-no-std` passed (9/9)
+    - full suite `ctest --test-dir build/dev-homebrew --output-on-failure` passed (43/43)
+    - `ctest --test-dir build/dev-homebrew -N` now reports `Total Tests: 43`
+65. Added generation-target automation parity for the new profile matrix:
+    - added `generate-uavcan-rust-no-std-runtime-fast`
+    - included it under aggregate `generate-uavcan-all`
+    - revalidated configure/build registration (`cmake --build build/dev-homebrew -j8`) and test inventory remains stable (`Total Tests: 43`)
+66. Started Optional Stretch item 3 with first non-C-like backend scaffolding:
+    - added TypeScript emitter (`emitTs`) and CLI command `dsdlc ts`
+    - TypeScript backend emits namespace-mirrored declaration files, root `index.ts`, and `package.json`
+    - TypeScript emission is gated by lowered-schema validation (`collectLoweredFactsFromMlir`) to preserve MLIR contract checks
+67. Added TypeScript integration and generation automation:
+    - added `llvmdsdl-uavcan-ts-generation` integration gate (`RunUavcanTsGeneration.cmake`)
+    - added generation target `generate-uavcan-ts` and included it under `generate-uavcan-all`
+68. Added dedicated TypeScript test/workflow automation:
+    - test presets: `test-ts`, `test-ts-homebrew`, `test-ts-llvm-env`
+    - workflow presets: `ts`, `ts-homebrew`, `ts-llvm-env`
+69. Revalidated non-C-like target bootstrap and full-suite stability:
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -R llvmdsdl-uavcan-ts-generation` passed (1/1)
+    - full suite `ctest --test-dir build/dev-homebrew --output-on-failure` passed (44/44)
+    - `ctest --test-dir build/dev-homebrew -N` now reports `Total Tests: 44`
+70. Added and validated dedicated TypeScript lane ergonomics:
+    - `cmake --list-presets=all` confirms `test-ts*` + `ts*` presets/workflows are registered
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -L ts` passed (1/1)
+    - `cmake --build build/dev-homebrew --target generate-uavcan-ts -j4` passed and generated `build/dev-homebrew/generated/uavcan/ts`
+71. Expanded TypeScript integration coverage with compile validation:
+    - added `RunUavcanTsTypecheck.cmake` and integration test `llvmdsdl-uavcan-ts-typecheck`
+    - `llvmdsdl-uavcan-ts-typecheck` runs `dsdlc ts` then `tsc --noEmit` against generated `uavcan` output
+    - gate is enabled conditionally when `tsc` is available in `PATH`
+72. Updated TypeScript lane/documentation ergonomics for generation + compile gates:
+    - refreshed `test-ts*`/`ts*` preset display metadata to describe generation+typecheck scope
+    - updated `README.md`, `DEMO.md`, and `DESIGN.md` with explicit TypeScript compile-gate invocation/coverage notes
+73. Revalidated TypeScript compile-gate expansion and full-suite stability:
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -R "llvmdsdl-uavcan-ts-generation|llvmdsdl-uavcan-ts-typecheck"` passed (2/2)
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -L ts` passed (2/2)
+    - full suite `ctest --test-dir build/dev-homebrew --output-on-failure` passed (45/45)
+    - `ctest --test-dir build/dev-homebrew -N` now reports `Total Tests: 45` in environments with `tsc` available
+74. Hardened TypeScript root-module emission for compile safety:
+    - fixed `index.ts` generation to avoid `export *` symbol collisions across large trees
+    - root module now emits collision-safe namespace exports (`export * as <alias> from "./path"`)
+    - strengthened `RunUavcanTsGeneration.cmake` to reject wildcard root re-exports and require namespace alias exports
+    - revalidated `llvmdsdl-uavcan-ts-typecheck`, `-L ts`, and full-suite gates after the fix (all passing)
+75. Added TypeScript determinism integration coverage:
+    - added `RunUavcanTsDeterminism.cmake` and integration test `llvmdsdl-uavcan-ts-determinism`
+    - determinism gate verifies identical generated file inventory and byte-for-byte output across two strict `dsdlc ts` runs
+76. Updated TypeScript lane ergonomics/documentation for determinism:
+    - refreshed `test-ts*`/`ts*` preset display metadata to describe generation+typecheck+determinism scope
+    - updated `README.md`, `DEMO.md`, and `DESIGN.md` to include TypeScript determinism gate usage/coverage
+77. Revalidated TypeScript determinism expansion and full-suite stability:
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -R "llvmdsdl-uavcan-ts-generation|llvmdsdl-uavcan-ts-determinism|llvmdsdl-uavcan-ts-typecheck"` passed (3/3)
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -L ts` passed (3/3)
+    - full suite `ctest --test-dir build/dev-homebrew --output-on-failure` passed (46/46)
+    - `ctest --test-dir build/dev-homebrew -N` now reports `Total Tests: 46`
+78. Added TypeScript consumer-smoke integration coverage:
+    - added `RunUavcanTsConsumerSmoke.cmake` and integration test `llvmdsdl-uavcan-ts-consumer-smoke`
+    - consumer-smoke gate generates `uavcan` TypeScript output, compiles a tiny consumer module that imports root `index.ts` aliases, and validates end-user import/type usage with `tsc --noEmit`
+79. Updated TypeScript lane ergonomics/documentation for consumer smoke:
+    - refreshed `test-ts*`/`ts*` preset display metadata to describe generation+typecheck+determinism+consumer-smoke scope
+    - updated `README.md`, `DEMO.md`, and `DESIGN.md` with explicit consumer-smoke gate usage/coverage notes
+80. Revalidated TypeScript consumer-smoke expansion and full-suite stability:
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -R "llvmdsdl-uavcan-ts-generation|llvmdsdl-uavcan-ts-determinism|llvmdsdl-uavcan-ts-typecheck|llvmdsdl-uavcan-ts-consumer-smoke"` passed (4/4)
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -L ts` passed (4/4)
+    - full suite `ctest --test-dir build/dev-homebrew --output-on-failure` passed (47/47)
+    - `ctest --test-dir build/dev-homebrew -N` now reports `Total Tests: 47`
+81. Added TypeScript root-index contract integration coverage:
+    - added `RunUavcanTsIndexContract.cmake` and integration test `llvmdsdl-uavcan-ts-index-contract`
+    - index-contract gate validates root `index.ts` export shape: no wildcard re-exports, alias uniqueness, module-target uniqueness, and one-to-one coverage of all generated type modules
+82. Updated TypeScript lane ergonomics/documentation for index contract:
+    - refreshed `test-ts*`/`ts*` preset display metadata to describe generation+typecheck+determinism+consumer-smoke+index-contract scope
+    - updated `README.md`, `DEMO.md`, and `DESIGN.md` with explicit index-contract usage/coverage notes
+83. Revalidated TypeScript index-contract expansion and full-suite stability:
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -R "llvmdsdl-uavcan-ts-generation|llvmdsdl-uavcan-ts-determinism|llvmdsdl-uavcan-ts-index-contract|llvmdsdl-uavcan-ts-typecheck|llvmdsdl-uavcan-ts-consumer-smoke"` passed (5/5)
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -L ts` passed (5/5)
+    - full suite `ctest --test-dir build/dev-homebrew --output-on-failure` passed (48/48)
+    - `ctest --test-dir build/dev-homebrew -N` now reports `Total Tests: 48`
+84. Added initial TypeScript runtime-backed SerDes emission scaffolding:
+    - TypeScript backend now emits generated runtime module `dsdl_runtime.ts`
+    - per-type `serialize*` / `deserialize*` helpers are emitted for currently supported lowered section families (fixed-size, non-union scalar paths)
+    - unsupported section families now emit explicit runtime stubs that throw at execution time instead of silent behavior divergence
+85. Expanded TypeScript integration gates for runtime-backed output shape:
+    - strengthened `llvmdsdl-uavcan-ts-generation` checks to require generated `dsdl_runtime.ts`
+    - generation gate now verifies at least one generated type module exports runtime `serialize*` / `deserialize*` helper signatures
+    - adjusted TypeScript index-contract inventory accounting to exclude generated runtime support module from alias/module-one-to-one checks
+86. Added fixture C<->TypeScript runtime parity smoke coverage:
+    - added `RunFixturesCTsRuntimeParity.cmake` and integration test `llvmdsdl-fixtures-c-ts-runtime-parity`
+    - gate generates C + TypeScript from shared fixture corpus, executes both runtimes for `vendor.Type.1.0`, and asserts serialized bytes plus decode values/consumed-size parity
+87. Revalidated TypeScript runtime-slice expansion and full-suite stability:
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -R "llvmdsdl-fixtures-c-ts-runtime-parity|llvmdsdl-uavcan-ts-generation|llvmdsdl-uavcan-ts-determinism|llvmdsdl-uavcan-ts-index-contract|llvmdsdl-uavcan-ts-typecheck|llvmdsdl-uavcan-ts-consumer-smoke"` passed (6/6)
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -L ts` passed (6/6)
+    - full suite `ctest --test-dir build/dev-homebrew --output-on-failure` passed (49/49)
+    - `ctest --test-dir build/dev-homebrew -N` now reports `Total Tests: 49`
+88. Updated architecture/demo/status documentation for the TypeScript runtime-slice milestone:
+    - refreshed `README.md`, `DEMO.md`, and `DESIGN.md` to reflect generated TypeScript runtime helpers and fixture parity smoke coverage
+    - clarified optional-stretch caveat wording: TypeScript runtime work is now scaffolded with fixture parity smoke, with broader semantic-family/runtime parity remaining
+89. Extended TypeScript runtime-backed SerDes support to fixed-length scalar arrays:
+    - runtime section planner now accepts fixed arrays for bool/unsigned/signed scalar element families
+    - generated TypeScript serialize/deserialize helpers now emit deterministic fixed-array loops with strict fixed-length checks
+    - variable arrays remain explicit runtime-stub paths pending dedicated lowered-array-prefix/validation parity rollout
+90. Added dedicated TypeScript fixed-array runtime smoke coverage:
+    - added `RunTsRuntimeFixedArraySmoke.cmake` and integration test `llvmdsdl-ts-runtime-fixed-array-smoke`
+    - gate synthesizes a tiny fixed-array DSDL namespace, generates TypeScript, runs runtime-backed serialize/deserialize under Node, and validates byte + decoded-value output
+91. Revalidated TypeScript fixed-array runtime expansion and full-suite stability:
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -R "llvmdsdl-ts-runtime-fixed-array-smoke|llvmdsdl-fixtures-c-ts-runtime-parity|llvmdsdl-uavcan-ts-generation|llvmdsdl-uavcan-ts-determinism|llvmdsdl-uavcan-ts-index-contract|llvmdsdl-uavcan-ts-typecheck|llvmdsdl-uavcan-ts-consumer-smoke"` passed (7/7)
+    - `ctest --test-dir build/dev-homebrew --output-on-failure -L ts` passed (7/7)
+    - full suite `ctest --test-dir build/dev-homebrew --output-on-failure` passed (50/50)
+    - `ctest --test-dir build/dev-homebrew -N` now reports `Total Tests: 50`
+92. Refreshed TypeScript runtime-slice documentation for fixed-array coverage:
+    - updated `README.md`, `DEMO.md`, and `DESIGN.md` to include `llvmdsdl-ts-runtime-fixed-array-smoke` and current runtime-support boundaries
 
 ## Definition Of "Maximally Lowered"
 
@@ -99,7 +338,7 @@ A target is "maximally lowered" when:
 2. C++/Rust/Go already consume shared MLIR-derived facts/helpers through shared CodeGen modules.
 3. Shared planning modules exist (`MlirLoweredFacts`, statement plans, helper symbol resolution, helper-binding plans, array wire plans, descriptor contracts).
 4. Strong parity gates exist for C<->C++, C<->Rust, C<->Go (including signed-narrow fixtures and directed vectors).
-5. Remaining gap: non-C backends still own portions of control-flow/body shaping that should be represented by a tighter lowered contract.
+5. Optional stretch has begun with shared render-IR convergence plus profile-knob expansion (`no_std` and runtime-specialization Rust generation/cargo/parity/diff lanes), and first non-C-like target progression (TypeScript declarations + generated runtime scaffolding + compile/determinism/consumer-smoke/index-contract + fixture runtime parity smoke + fixed-array runtime smoke gates), while preserving parity invariants.
 
 ## End-State Requirements
 
@@ -203,7 +442,7 @@ Gate:
 
 1. Unit tests for each shared lowered-plan module.
 2. Lit tests for lowering metadata completeness and verifier constraints.
-3. Integration generation checks for C/C++/Rust/Go.
+3. Integration generation checks for C/C++/Rust/Go/TypeScript.
 4. Parity tests include `llvmdsdl-uavcan-cpp-c-parity`, `llvmdsdl-uavcan-cpp-pmr-c-parity`, `llvmdsdl-uavcan-c-rust-parity`, `llvmdsdl-uavcan-c-go-parity`, and signed-narrow variants for all supported cross-language pairs.
 5. Full-suite workflow gate is `cmake --workflow --preset full`.
 
@@ -220,3 +459,9 @@ Gate:
 1. Add a language-agnostic intermediate "render IR" generated from lowered MLIR for even thinner backends.
 2. Introduce profile knobs (`no_std`, embedded allocators, runtime specialization) without changing lowered semantics.
 3. Add first non-C-like target once lowered contract stability is proven.
+
+Current progress:
+
+1. Item 1 has started and is now integrated into C++/Rust/Go body emission for shared step traversal.
+2. Item 2 has started with Rust `no_std` + `alloc` profile support plus runtime specialization (`portable|fast`), with dedicated generation/cargo/parity/semantic-diff lanes (`rust-no-std` + `rust-runtime-specialization` labels/workflows), including no-std+fast validation.
+3. Item 3 has started with an experimental TypeScript backend (`dsdlc ts`) that now includes declaration generation, generated runtime scaffolding, dedicated `uavcan` generation + deterministic-output + `tsc --noEmit` typecheck + consumer-smoke + root-index-contract gating, fixture C<->TS runtime parity smoke plus fixed-array runtime smoke coverage, and standalone `ts` test/workflow lanes.

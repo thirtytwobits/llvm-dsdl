@@ -1,5 +1,5 @@
-#ifndef LLVMDSDL_CODEGEN_GOEMITTER_H
-#define LLVMDSDL_CODEGEN_GOEMITTER_H
+#ifndef LLVMDSDL_CODEGEN_TSEMITTER_H
+#define LLVMDSDL_CODEGEN_TSEMITTER_H
 
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/Diagnostics.h"
@@ -12,17 +12,17 @@
 
 namespace llvmdsdl {
 
-struct GoEmitOptions final {
+struct TsEmitOptions final {
   std::string outDir;
   std::string moduleName{"llvmdsdl_generated"};
-  bool emitGoMod{true};
+  bool emitPackageJson{true};
   bool optimizeLoweredSerDes{false};
 };
 
-llvm::Error emitGo(const SemanticModule &semantic, mlir::ModuleOp module,
-                   const GoEmitOptions &options,
+llvm::Error emitTs(const SemanticModule &semantic, mlir::ModuleOp module,
+                   const TsEmitOptions &options,
                    DiagnosticEngine &diagnostics);
 
 } // namespace llvmdsdl
 
-#endif // LLVMDSDL_CODEGEN_GOEMITTER_H
+#endif // LLVMDSDL_CODEGEN_TSEMITTER_H

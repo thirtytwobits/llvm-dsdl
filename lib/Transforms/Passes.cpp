@@ -8,6 +8,8 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Pass/PassRegistry.h"
+#include "mlir/Transforms/Passes.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -1326,6 +1328,12 @@ std::unique_ptr<mlir::Pass> createLowerDSDLSerializationPass() {
   return std::make_unique<LowerDSDLSerializationPass>();
 }
 
+void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager &pm) {
+  auto &funcPM = pm.nest<mlir::func::FuncOp>();
+  funcPM.addPass(mlir::createCanonicalizerPass());
+  funcPM.addPass(mlir::createCSEPass());
+}
+
 void registerDSDLPasses() {
   static bool once = false;
   if (once) {
@@ -1333,6 +1341,10 @@ void registerDSDLPasses() {
   }
   once = true;
   static mlir::PassRegistration<LowerDSDLSerializationPass> reg;
+  static mlir::PassPipelineRegistration<> optimizeLoweredSerDesPipeline(
+      "optimize-dsdl-lowered-serdes",
+      "Apply semantics-preserving canonicalization and CSE to lowered DSDL SerDes IR",
+      [](mlir::OpPassManager &pm) { addOptimizeLoweredSerDesPipeline(pm); });
   registerDSDLConvertPasses();
 }
 

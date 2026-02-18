@@ -2,6 +2,7 @@
 #include "llvmdsdl/CodeGen/CppEmitter.h"
 #include "llvmdsdl/CodeGen/GoEmitter.h"
 #include "llvmdsdl/CodeGen/RustEmitter.h"
+#include "llvmdsdl/CodeGen/TsEmitter.h"
 #include "llvmdsdl/Frontend/ASTPrinter.h"
 #include "llvmdsdl/Frontend/Parser.h"
 #include "llvmdsdl/IR/DSDLDialect.h"
@@ -29,14 +30,15 @@ namespace {
 
 bool isKnownCommand(llvm::StringRef command) {
   return command == "ast" || command == "mlir" || command == "c" ||
-         command == "cpp" || command == "rust" || command == "go";
+         command == "cpp" || command == "rust" || command == "go" ||
+         command == "ts";
 }
 
 bool isHelpToken(llvm::StringRef arg) { return arg == "--help" || arg == "-h"; }
 
 void printUsage() {
   llvm::errs()
-      << "Usage: dsdlc <ast|mlir|c|cpp|rust|go> --root-namespace-dir <dir> [options]\n"
+      << "Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts> --root-namespace-dir <dir> [options]\n"
       << "Try: dsdlc --help\n";
 }
 
@@ -50,7 +52,7 @@ void printHelp(const std::string &selectedCommand = "") {
       << "  dsdlc <command> --help\n\n"
       << "DESCRIPTION\n"
       << "  dsdlc discovers and parses .dsdl definitions, performs semantic analysis, lowers into\n"
-      << "  a DSDL MLIR dialect, and can emit output for C, C++, Rust, and Go. Root namespaces are\n"
+      << "  a DSDL MLIR dialect, and can emit output for C, C++, Rust, Go, and TypeScript. Root namespaces are\n"
       << "  repeatable for multi-root projects. Lookup directories are optional dependency roots.\n\n"
       << "COMMANDS\n"
       << "  ast   Print parsed AST for all discovered definitions.\n"
@@ -58,7 +60,8 @@ void printHelp(const std::string &selectedCommand = "") {
       << "  c     Generate C headers + per-definition C implementation units.\n"
       << "  cpp   Generate C++23 headers (std, pmr, or both profiles).\n"
       << "  rust  Generate Rust crate layout and SerDes/runtime integration.\n"
-      << "  go    Generate Go module/package layout and SerDes/runtime integration.\n\n"
+      << "  go    Generate Go module/package layout and SerDes/runtime integration.\n"
+      << "  ts    Generate TypeScript module layout and type declarations.\n\n"
       << "COMMON OPTIONS\n"
       << "  --root-namespace-dir <dir>\n"
       << "      Primary input root. Repeat to add more top-level namespace roots.\n"
@@ -73,6 +76,9 @@ void printHelp(const std::string &selectedCommand = "") {
       << "      Relax selected semantic checks to keep generation running on legacy/non-strict trees.\n"
       << "      Compatibility target: historical OpenCyphal-style definition workflows and existing trees\n"
       << "      that depend on permissive behavior.\n"
+      << "  --optimize-lowered-serdes\n"
+      << "      Enable optional semantics-preserving MLIR optimization on lowered SerDes IR\n"
+      << "      before backend code generation.\n"
       << "  --help, -h\n"
       << "      Print this help text. With a command, prints command-focused guidance.\n\n"
       << "STRICTNESS MODES\n"
@@ -91,7 +97,7 @@ void printHelp(const std::string &selectedCommand = "") {
       << "    - If both flags are present, the last one on the command line wins.\n"
       << "      Example: '--compat-mode --strict' ends in strict mode.\n"
       << "      Example: '--strict --compat-mode' ends in compat mode.\n\n"
-      << "CODEGEN OPTIONS (c/cpp/rust/go)\n"
+      << "CODEGEN OPTIONS (c/cpp/rust/go/ts)\n"
       << "  --out-dir <dir>\n"
       << "      Output directory root for generated files.\n\n"
       << "C++ OPTIONS (cpp)\n"
@@ -103,11 +109,17 @@ void printHelp(const std::string &selectedCommand = "") {
       << "  --rust-crate-name <name>\n"
       << "      Rust crate name to emit into Cargo.toml (default: llvmdsdl_generated).\n"
       << "  --rust-profile <std|no-std-alloc>\n"
-      << "      std is supported and default.\n"
-      << "      no-std-alloc is reserved and currently reports not implemented.\n\n"
+      << "      std          -> Cargo default features include std (default).\n"
+      << "      no-std-alloc -> emits a no_std + alloc-ready crate (Cargo default features empty).\n\n"
+      << "  --rust-runtime-specialization <portable|fast>\n"
+      << "      portable -> use conservative runtime defaults (default).\n"
+      << "      fast     -> enable runtime-fast Cargo default feature for optimized bit-copy fast paths.\n\n"
       << "GO OPTIONS (go)\n"
       << "  --go-module <name>\n"
       << "      Go module name written to go.mod (default: llvmdsdl_generated).\n\n"
+      << "TS OPTIONS (ts)\n"
+      << "  --ts-module <name>\n"
+      << "      TypeScript package name written to package.json (default: llvmdsdl_generated).\n\n"
       << "RUN SUMMARY\n"
       << "  On successful command execution, dsdlc prints a summary to stderr with:\n"
       << "    - files generated\n"
@@ -119,7 +131,10 @@ void printHelp(const std::string &selectedCommand = "") {
       << "  dsdlc c --root-namespace-dir public_regulated_data_types/uavcan --strict --out-dir build/uavcan-c\n"
       << "  dsdlc cpp --root-namespace-dir public_regulated_data_types/uavcan --cpp-profile both --out-dir build/uavcan-cpp\n"
       << "  dsdlc rust --root-namespace-dir public_regulated_data_types/uavcan --rust-profile std --rust-crate-name uavcan_dsdl_generated --out-dir build/uavcan-rust\n"
-      << "  dsdlc go --root-namespace-dir public_regulated_data_types/uavcan --go-module demo/uavcan/generated --out-dir build/uavcan-go\n\n"
+      << "  dsdlc rust --root-namespace-dir public_regulated_data_types/uavcan --rust-runtime-specialization fast --rust-profile std --rust-crate-name uavcan_dsdl_fast --out-dir build/uavcan-rust-fast\n"
+      << "  dsdlc rust --root-namespace-dir public_regulated_data_types/uavcan --rust-profile no-std-alloc --rust-crate-name uavcan_dsdl_embedded --out-dir build/uavcan-rust-no-std\n"
+      << "  dsdlc go --root-namespace-dir public_regulated_data_types/uavcan --go-module demo/uavcan/generated --out-dir build/uavcan-go\n"
+      << "  dsdlc ts --root-namespace-dir public_regulated_data_types/uavcan --ts-module demo_uavcan_generated --out-dir build/uavcan-ts\n\n"
       << "EXIT STATUS\n"
       << "  0 on success, non-zero on parse/semantic/lowering/codegen failure or invalid CLI usage.\n";
 
@@ -135,9 +150,11 @@ void printHelp(const std::string &selectedCommand = "") {
       llvm::errs() << "  Requires --out-dir. Honors --cpp-profile (std|pmr|both).\n";
     } else if (selectedCommand == "rust") {
       llvm::errs()
-          << "  Requires --out-dir. Honors --rust-crate-name and --rust-profile.\n";
+          << "  Requires --out-dir. Honors --rust-crate-name, --rust-profile, and --rust-runtime-specialization.\n";
     } else if (selectedCommand == "go") {
       llvm::errs() << "  Requires --out-dir. Honors --go-module.\n";
+    } else if (selectedCommand == "ts") {
+      llvm::errs() << "  Requires --out-dir. Honors --ts-module.\n";
     }
   }
 }
@@ -246,10 +263,14 @@ int main(int argc, char **argv) {
   bool helpRequested = false;
   bool strict = true;
   bool compatMode = false;
+  bool optimizeLoweredSerDes = false;
   llvmdsdl::CppProfile cppProfile = llvmdsdl::CppProfile::Both;
   std::string rustCrateName = "llvmdsdl_generated";
   llvmdsdl::RustProfile rustProfile = llvmdsdl::RustProfile::Std;
+  llvmdsdl::RustRuntimeSpecialization rustRuntimeSpecialization =
+      llvmdsdl::RustRuntimeSpecialization::Portable;
   std::string goModuleName = "llvmdsdl_generated";
+  std::string tsModuleName = "llvmdsdl_generated";
 
   for (int i = 2; i < argc; ++i) {
     const std::string arg = argv[i];
@@ -276,6 +297,8 @@ int main(int argc, char **argv) {
     } else if (arg == "--strict") {
       strict = true;
       compatMode = false;
+    } else if (arg == "--optimize-lowered-serdes") {
+      optimizeLoweredSerDes = true;
     } else if (arg == "--cpp-profile") {
       const auto value = requireValue(arg);
       if (value == "std") {
@@ -302,8 +325,23 @@ int main(int argc, char **argv) {
         printUsage();
         return 1;
       }
+    } else if (arg == "--rust-runtime-specialization") {
+      const auto value = requireValue(arg);
+      if (value == "portable") {
+        rustRuntimeSpecialization =
+            llvmdsdl::RustRuntimeSpecialization::Portable;
+      } else if (value == "fast") {
+        rustRuntimeSpecialization = llvmdsdl::RustRuntimeSpecialization::Fast;
+      } else {
+        llvm::errs() << "Invalid --rust-runtime-specialization value: " << value
+                     << "\n";
+        printUsage();
+        return 1;
+      }
     } else if (arg == "--go-module") {
       goModuleName = requireValue(arg);
+    } else if (arg == "--ts-module") {
+      tsModuleName = requireValue(arg);
     } else {
       llvm::errs() << "Unknown argument: " << arg << "\n";
       printUsage();
@@ -384,6 +422,7 @@ int main(int argc, char **argv) {
     }
     llvmdsdl::CEmitOptions options;
     options.outDir = outDir;
+    options.optimizeLoweredSerDes = optimizeLoweredSerDes;
 
     if (llvm::Error err = llvmdsdl::emitC(*semantic, *mlirModule, options,
                                           diagnostics)) {
@@ -403,6 +442,7 @@ int main(int argc, char **argv) {
     llvmdsdl::CppEmitOptions options;
     options.outDir = outDir;
     options.profile = cppProfile;
+    options.optimizeLoweredSerDes = optimizeLoweredSerDes;
 
     if (llvm::Error err = llvmdsdl::emitCpp(*semantic, *mlirModule, options,
                                             diagnostics)) {
@@ -423,6 +463,8 @@ int main(int argc, char **argv) {
     options.outDir = outDir;
     options.crateName = rustCrateName;
     options.profile = rustProfile;
+    options.runtimeSpecialization = rustRuntimeSpecialization;
+    options.optimizeLoweredSerDes = optimizeLoweredSerDes;
 
     if (llvm::Error err = llvmdsdl::emitRust(*semantic, *mlirModule, options,
                                              diagnostics)) {
@@ -442,9 +484,30 @@ int main(int argc, char **argv) {
     llvmdsdl::GoEmitOptions options;
     options.outDir = outDir;
     options.moduleName = goModuleName;
+    options.optimizeLoweredSerDes = optimizeLoweredSerDes;
 
     if (llvm::Error err =
             llvmdsdl::emitGo(*semantic, *mlirModule, options, diagnostics)) {
+      llvm::errs() << llvm::toString(std::move(err)) << "\n";
+      printDiagnostics(diagnostics);
+      return 1;
+    }
+
+    return finish(resolveOutputRoot(outDir), countRegularFiles(outDir));
+  }
+
+  if (command == "ts") {
+    if (outDir.empty()) {
+      llvm::errs() << "--out-dir is required for 'ts' command\n";
+      return 1;
+    }
+    llvmdsdl::TsEmitOptions options;
+    options.outDir = outDir;
+    options.moduleName = tsModuleName;
+    options.optimizeLoweredSerDes = optimizeLoweredSerDes;
+
+    if (llvm::Error err =
+            llvmdsdl::emitTs(*semantic, *mlirModule, options, diagnostics)) {
       llvm::errs() << llvm::toString(std::move(err)) << "\n";
       printDiagnostics(diagnostics);
       return 1;

@@ -189,6 +189,54 @@
       }
     },
     {
+      "name": "test-optimized",
+      "displayName": "Test (optimized gates, dev)",
+      "configurePreset": "dev",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "optimized"
+        }
+      }
+    },
+    {
+      "name": "test-optimized-homebrew",
+      "displayName": "Test (optimized gates, dev-homebrew)",
+      "configurePreset": "dev-homebrew",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "optimized"
+        }
+      }
+    },
+    {
+      "name": "test-optimized-llvm-env",
+      "displayName": "Test (optimized gates, dev-llvm-env)",
+      "configurePreset": "dev-llvm-env",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "optimized"
+        }
+      }
+    },
+    {
       "name": "test-uavcan",
       "displayName": "Test (uavcan integration only)",
       "configurePreset": "dev",
@@ -233,6 +281,150 @@
       "filter": {
         "include": {
           "label": "uavcan"
+        }
+      }
+    },
+    {
+      "name": "test-rust-no-std",
+      "displayName": "Test (Rust no-std profile gates, dev)",
+      "configurePreset": "dev",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "rust-no-std"
+        }
+      }
+    },
+    {
+      "name": "test-rust-no-std-homebrew",
+      "displayName": "Test (Rust no-std profile gates, dev-homebrew)",
+      "configurePreset": "dev-homebrew",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "rust-no-std"
+        }
+      }
+    },
+    {
+      "name": "test-rust-no-std-llvm-env",
+      "displayName": "Test (Rust no-std profile gates, dev-llvm-env)",
+      "configurePreset": "dev-llvm-env",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "rust-no-std"
+        }
+      }
+    },
+    {
+      "name": "test-rust-runtime-specialization",
+      "displayName": "Test (Rust runtime specialization gates, dev)",
+      "configurePreset": "dev",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "rust-runtime-specialization"
+        }
+      }
+    },
+    {
+      "name": "test-rust-runtime-specialization-homebrew",
+      "displayName": "Test (Rust runtime specialization gates, dev-homebrew)",
+      "configurePreset": "dev-homebrew",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "rust-runtime-specialization"
+        }
+      }
+    },
+    {
+      "name": "test-rust-runtime-specialization-llvm-env",
+      "displayName": "Test (Rust runtime specialization gates, dev-llvm-env)",
+      "configurePreset": "dev-llvm-env",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "rust-runtime-specialization"
+        }
+      }
+    },
+    {
+      "name": "test-ts",
+      "displayName": "Test (TypeScript generation/typecheck/determinism/consumer-smoke/index-contract gates, dev)",
+      "configurePreset": "dev",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "ts"
+        }
+      }
+    },
+    {
+      "name": "test-ts-homebrew",
+      "displayName": "Test (TypeScript generation/typecheck/determinism/consumer-smoke/index-contract gates, dev-homebrew)",
+      "configurePreset": "dev-homebrew",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "ts"
+        }
+      }
+    },
+    {
+      "name": "test-ts-llvm-env",
+      "displayName": "Test (TypeScript generation/typecheck/determinism/consumer-smoke/index-contract gates, dev-llvm-env)",
+      "configurePreset": "dev-llvm-env",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "ts"
         }
       }
     },
@@ -394,6 +586,63 @@
       ]
     },
     {
+      "name": "optimized",
+      "displayName": "Workflow (optimized verification)",
+      "description": "Configure + build + run optimization-enabled parity and differential gates.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev"
+        },
+        {
+          "type": "build",
+          "name": "build-dev"
+        },
+        {
+          "type": "test",
+          "name": "test-optimized"
+        }
+      ]
+    },
+    {
+      "name": "optimized-homebrew",
+      "displayName": "Workflow (optimized verification, Homebrew LLVM)",
+      "description": "Configure + build + run optimization-enabled parity and differential gates using Homebrew LLVM/MLIR.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev-homebrew"
+        },
+        {
+          "type": "build",
+          "name": "build-dev-homebrew"
+        },
+        {
+          "type": "test",
+          "name": "test-optimized-homebrew"
+        }
+      ]
+    },
+    {
+      "name": "optimized-llvm-env",
+      "displayName": "Workflow (optimized verification, LLVM env vars)",
+      "description": "Configure + build + run optimization-enabled parity and differential gates using LLVM_DIR/MLIR_DIR from environment.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev-llvm-env"
+        },
+        {
+          "type": "build",
+          "name": "build-dev-llvm-env"
+        },
+        {
+          "type": "test",
+          "name": "test-optimized-llvm-env"
+        }
+      ]
+    },
+    {
       "name": "uavcan",
       "displayName": "Workflow (uavcan integration)",
       "description": "Configure + build + run only strict uavcan integration validation.",
@@ -447,6 +696,177 @@
         {
           "type": "test",
           "name": "test-uavcan-llvm-env"
+        }
+      ]
+    },
+    {
+      "name": "rust-no-std",
+      "displayName": "Workflow (Rust no-std profile gates)",
+      "description": "Configure + build + run Rust no-std profile generation/cargo/parity gates.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev"
+        },
+        {
+          "type": "build",
+          "name": "build-dev"
+        },
+        {
+          "type": "test",
+          "name": "test-rust-no-std"
+        }
+      ]
+    },
+    {
+      "name": "rust-no-std-homebrew",
+      "displayName": "Workflow (Rust no-std profile gates, Homebrew LLVM)",
+      "description": "Configure + build + run Rust no-std profile generation/cargo/parity gates using Homebrew LLVM/MLIR.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev-homebrew"
+        },
+        {
+          "type": "build",
+          "name": "build-dev-homebrew"
+        },
+        {
+          "type": "test",
+          "name": "test-rust-no-std-homebrew"
+        }
+      ]
+    },
+    {
+      "name": "rust-no-std-llvm-env",
+      "displayName": "Workflow (Rust no-std profile gates, LLVM env vars)",
+      "description": "Configure + build + run Rust no-std profile generation/cargo/parity gates using LLVM_DIR/MLIR_DIR from environment.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev-llvm-env"
+        },
+        {
+          "type": "build",
+          "name": "build-dev-llvm-env"
+        },
+        {
+          "type": "test",
+          "name": "test-rust-no-std-llvm-env"
+        }
+      ]
+    },
+    {
+      "name": "rust-runtime-specialization",
+      "displayName": "Workflow (Rust runtime specialization gates)",
+      "description": "Configure + build + run Rust runtime-specialization generation/cargo/semantic-diff gates.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev"
+        },
+        {
+          "type": "build",
+          "name": "build-dev"
+        },
+        {
+          "type": "test",
+          "name": "test-rust-runtime-specialization"
+        }
+      ]
+    },
+    {
+      "name": "rust-runtime-specialization-homebrew",
+      "displayName": "Workflow (Rust runtime specialization gates, Homebrew LLVM)",
+      "description": "Configure + build + run Rust runtime-specialization generation/cargo/semantic-diff gates using Homebrew LLVM/MLIR.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev-homebrew"
+        },
+        {
+          "type": "build",
+          "name": "build-dev-homebrew"
+        },
+        {
+          "type": "test",
+          "name": "test-rust-runtime-specialization-homebrew"
+        }
+      ]
+    },
+    {
+      "name": "rust-runtime-specialization-llvm-env",
+      "displayName": "Workflow (Rust runtime specialization gates, LLVM env vars)",
+      "description": "Configure + build + run Rust runtime-specialization generation/cargo/semantic-diff gates using LLVM_DIR/MLIR_DIR from environment.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev-llvm-env"
+        },
+        {
+          "type": "build",
+          "name": "build-dev-llvm-env"
+        },
+        {
+          "type": "test",
+          "name": "test-rust-runtime-specialization-llvm-env"
+        }
+      ]
+    },
+    {
+      "name": "ts",
+      "displayName": "Workflow (TypeScript generation/typecheck/determinism/consumer-smoke/index-contract gates)",
+      "description": "Configure + build + run TypeScript generation, typecheck, determinism, consumer-smoke, and index-contract integration gates.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev"
+        },
+        {
+          "type": "build",
+          "name": "build-dev"
+        },
+        {
+          "type": "test",
+          "name": "test-ts"
+        }
+      ]
+    },
+    {
+      "name": "ts-homebrew",
+      "displayName": "Workflow (TypeScript generation/typecheck/determinism/consumer-smoke/index-contract gates, Homebrew LLVM)",
+      "description": "Configure + build + run TypeScript generation, typecheck, determinism, consumer-smoke, and index-contract integration gates using Homebrew LLVM/MLIR.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev-homebrew"
+        },
+        {
+          "type": "build",
+          "name": "build-dev-homebrew"
+        },
+        {
+          "type": "test",
+          "name": "test-ts-homebrew"
+        }
+      ]
+    },
+    {
+      "name": "ts-llvm-env",
+      "displayName": "Workflow (TypeScript generation/typecheck/determinism/consumer-smoke/index-contract gates, LLVM env vars)",
+      "description": "Configure + build + run TypeScript generation, typecheck, determinism, consumer-smoke, and index-contract integration gates using LLVM_DIR/MLIR_DIR from environment.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev-llvm-env"
+        },
+        {
+          "type": "build",
+          "name": "build-dev-llvm-env"
+        },
+        {
+          "type": "test",
+          "name": "test-ts-llvm-env"
         }
       ]
     },

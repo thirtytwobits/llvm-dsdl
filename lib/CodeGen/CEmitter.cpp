@@ -673,6 +673,9 @@ llvm::Error emitC(const SemanticModule &semantic, mlir::ModuleOp module,
 
     mlir::PassManager pm(perDefModule.getContext());
     pm.addPass(createLowerDSDLSerializationPass());
+    if (options.optimizeLoweredSerDes) {
+      addOptimizeLoweredSerDesPipeline(pm);
+    }
     pm.addPass(createConvertDSDLToEmitCPass());
     pm.addPass(mlir::createCanonicalizerPass());
     pm.addPass(mlir::createCSEPass());

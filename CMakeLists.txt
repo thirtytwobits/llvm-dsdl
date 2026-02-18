@@ -135,9 +135,24 @@ if(LLVMDSDL_UAVCAN_ROOT)
                                      rust-std
                                      rust --rust-profile std --rust-crate-name
                                      uavcan_dsdl_generated)
+  llvmdsdl_add_uavcan_codegen_target(generate-uavcan-rust-no-std-alloc
+                                     rust-no-std-alloc
+                                     rust --rust-profile no-std-alloc --rust-crate-name
+                                     uavcan_dsdl_generated_no_std)
+  llvmdsdl_add_uavcan_codegen_target(generate-uavcan-rust-runtime-fast
+                                     rust-runtime-fast
+                                     rust --rust-runtime-specialization fast --rust-profile std --rust-crate-name
+                                     uavcan_dsdl_generated_fast)
+  llvmdsdl_add_uavcan_codegen_target(generate-uavcan-rust-no-std-runtime-fast
+                                     rust-no-std-runtime-fast
+                                     rust --rust-profile no-std-alloc --rust-runtime-specialization fast --rust-crate-name
+                                     uavcan_dsdl_generated_no_std_fast)
   llvmdsdl_add_uavcan_codegen_target(generate-uavcan-go
                                      go
                                      go --go-module uavcan_dsdl_generated)
+  llvmdsdl_add_uavcan_codegen_target(generate-uavcan-ts
+                                     ts
+                                     ts --ts-module uavcan_dsdl_generated_ts)
 
   add_custom_target(generate-uavcan-all)
   add_dependencies(generate-uavcan-all
@@ -146,7 +161,11 @@ if(LLVMDSDL_UAVCAN_ROOT)
                    generate-uavcan-cpp-std
                    generate-uavcan-cpp-pmr
                    generate-uavcan-rust-std
-                   generate-uavcan-go)
+                   generate-uavcan-rust-no-std-alloc
+                   generate-uavcan-rust-runtime-fast
+                   generate-uavcan-rust-no-std-runtime-fast
+                   generate-uavcan-go
+                   generate-uavcan-ts)
 
   add_custom_target(generate-demo-2026-02-16
     COMMAND

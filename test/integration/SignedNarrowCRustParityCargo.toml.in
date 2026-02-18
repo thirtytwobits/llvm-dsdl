@@ -4,4 +4,4 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-signed_narrow_generated = { path = "@RUST_OUT@" }
+signed_narrow_generated = { path = "@RUST_OUT@"@RUST_DEP_FEATURES@ }

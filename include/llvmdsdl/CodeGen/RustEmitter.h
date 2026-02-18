@@ -17,11 +17,19 @@ enum class RustProfile {
   NoStdAlloc,
 };
 
+enum class RustRuntimeSpecialization {
+  Portable,
+  Fast,
+};
+
 struct RustEmitOptions final {
   std::string outDir;
   std::string crateName{"llvmdsdl_generated"};
   bool emitCargoToml{true};
   RustProfile profile{RustProfile::Std};
+  RustRuntimeSpecialization runtimeSpecialization{
+      RustRuntimeSpecialization::Portable};
+  bool optimizeLoweredSerDes{false};
 };
 
 llvm::Error emitRust(const SemanticModule &semantic, mlir::ModuleOp module,

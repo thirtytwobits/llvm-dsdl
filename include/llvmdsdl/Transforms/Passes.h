@@ -5,12 +5,14 @@
 
 namespace mlir {
 class Pass;
+class OpPassManager;
 }
 
 namespace llvmdsdl {
 
 std::unique_ptr<mlir::Pass> createLowerDSDLSerializationPass();
 std::unique_ptr<mlir::Pass> createConvertDSDLToEmitCPass();
+void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager &pm);
 void registerDSDLConvertPasses();
 void registerDSDLPasses();
 

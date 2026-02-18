@@ -6,6 +6,19 @@ foreach(var DSDLC UAVCAN_ROOT OUT_DIR)
   endif()
 endforeach()
 
+if(NOT DEFINED RUST_PROFILE OR "${RUST_PROFILE}" STREQUAL "")
+  set(RUST_PROFILE "std")
+endif()
+if(NOT DEFINED RUST_RUNTIME_SPECIALIZATION OR
+   "${RUST_RUNTIME_SPECIALIZATION}" STREQUAL "")
+  set(RUST_RUNTIME_SPECIALIZATION "portable")
+endif()
+if(NOT "${RUST_RUNTIME_SPECIALIZATION}" STREQUAL "portable" AND
+   NOT "${RUST_RUNTIME_SPECIALIZATION}" STREQUAL "fast")
+  message(FATAL_ERROR
+    "Invalid RUST_RUNTIME_SPECIALIZATION value: ${RUST_RUNTIME_SPECIALIZATION}")
+endif()
+
 if(NOT EXISTS "${DSDLC}")
   message(FATAL_ERROR "dsdlc executable not found: ${DSDLC}")
 endif()
@@ -24,7 +37,8 @@ execute_process(
       --strict
       --out-dir "${OUT_DIR}"
       --rust-crate-name "uavcan_dsdl_generated"
-      --rust-profile "std"
+      --rust-profile "${RUST_PROFILE}"
+      --rust-runtime-specialization "${RUST_RUNTIME_SPECIALIZATION}"
   RESULT_VARIABLE gen_result
   OUTPUT_VARIABLE gen_stdout
   ERROR_VARIABLE gen_stderr
@@ -43,6 +57,36 @@ foreach(required
     message(FATAL_ERROR "Missing required generated file: ${required}")
   endif()
 endforeach()
+
+file(READ "${OUT_DIR}/Cargo.toml" cargo_toml)
+if(NOT cargo_toml MATCHES "runtime-fast = \\[\\]")
+  message(FATAL_ERROR "Expected Cargo.toml to declare runtime-fast feature")
+endif()
+if("${RUST_PROFILE}" STREQUAL "no-std-alloc")
+  if("${RUST_RUNTIME_SPECIALIZATION}" STREQUAL "fast")
+    if(NOT cargo_toml MATCHES "default = \\[\"runtime-fast\"\\]")
+      message(FATAL_ERROR
+        "Expected no-std fast Cargo.toml default features to include runtime-fast")
+    endif()
+  else()
+    if(NOT cargo_toml MATCHES "default = \\[\\]")
+      message(FATAL_ERROR
+        "Expected no-std Cargo.toml default features to be empty")
+    endif()
+  endif()
+else()
+  if("${RUST_RUNTIME_SPECIALIZATION}" STREQUAL "fast")
+    if(NOT cargo_toml MATCHES "default = \\[\"std\", \"runtime-fast\"\\]")
+      message(FATAL_ERROR
+        "Expected std fast Cargo.toml default features to include std and runtime-fast")
+    endif()
+  else()
+    if(NOT cargo_toml MATCHES "default = \\[\"std\"\\]")
+      message(FATAL_ERROR
+        "Expected std Cargo.toml default features to include std")
+    endif()
+  endif()
+endif()
 
 file(GLOB_RECURSE dsdl_files "${UAVCAN_ROOT}/*.dsdl")
 list(LENGTH dsdl_files dsdl_count)
@@ -217,4 +261,4 @@ if(NOT dsdl_count EQUAL type_rs_count)
 endif()
 
 message(STATUS
-  "uavcan rust generation check passed: ${dsdl_count} DSDL -> ${type_rs_count} Rust type files")
+  "uavcan rust generation check passed (${RUST_PROFILE}, ${RUST_RUNTIME_SPECIALIZATION}): ${dsdl_count} DSDL -> ${type_rs_count} Rust type files")

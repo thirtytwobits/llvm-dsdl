@@ -47,7 +47,8 @@ bool collectLoweredFactsFromMlir(const SemanticModule &semantic,
                                  mlir::ModuleOp module,
                                  DiagnosticEngine &diagnostics,
                                  const std::string &backendLabel,
-                                 LoweredFactsMap *outFacts);
+                                 LoweredFactsMap *outFacts,
+                                 bool optimizeLoweredSerDes = false);
 
 const LoweredFieldFacts *
 findLoweredFieldFacts(const LoweredSectionFacts *sectionFacts,

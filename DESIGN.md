@@ -15,7 +15,7 @@ The project currently supports:
 
 - C (`dsdlc c`)
 - C++23 (`dsdlc cpp`, with `std` and `pmr` profiles)
-- Rust (`dsdlc rust`, currently `std` profile)
+- Rust (`dsdlc rust`, with `std` and `no-std-alloc` profiles)
 - Go (`dsdlc go`)
 
 for the `uavcan` namespace under regulated data types.
@@ -31,7 +31,8 @@ flowchart LR
   E --> F["MLIR DSDL lowering"]
   F --> G["MLIR module"]
   G --> H["C path: EmitC lowering + C output (per-definition impl TUs)"]
-  E --> I["C/C++/Rust/Go emitters"]
+  E --> K["Shared lowered body plan + render IR"]
+  K --> I["C/C++/Rust/Go emitters"]
   I --> J["Generated language artifacts"]
 ```
 
@@ -85,6 +86,13 @@ Current generators are in `lib/CodeGen`:
   - Emits crate/module layout and Rust SerDes/runtime integration.
 - `GoEmitter.cpp`
   - Emits module/package layout and Go SerDes/runtime integration.
+
+Shared generator-side convergence modules include:
+
+- `MlirLoweredFacts*`
+- `LoweredBodyPlan*`
+- `LoweredRenderIR*`
+- helper/statement/binding planners in `lib/CodeGen/*Plan*` and `*Resolver*`
 
 #### Runtime Layer
 
@@ -233,10 +241,56 @@ Current:
   (monolithic TU-only mode has been removed).
 - Go backend verification includes generation, determinism, module build, runtime
   unit tests, and C/Go differential parity workflows.
+- Lowered SerDes contract versioning/producer checks are enforced between
+  `lower-dsdl-serialization` and `convert-dsdl-to-emitc`.
+- Shared lowered-fact collection drives backend wire-semantics decisions for
+  C++ (`std`/`pmr`), Rust (`std`), and Go.
+- Shared language-agnostic render-IR (`LoweredRenderIR`) now drives core
+  per-section body step traversal (`field`, `padding`, `union-dispatch`) in
+  C++, Rust, and Go emitters.
+- `dsdlc` and `dsdl-opt` support optional optimization on lowered SerDes IR via:
+  - CLI flag `--optimize-lowered-serdes`
+  - MLIR pass pipeline `optimize-dsdl-lowered-serdes`
+- Optimization-enabled parity gates are now part of integration coverage across:
+  - signed-narrow C/C++, C/Rust, C/Go,
+  - full `uavcan` C/C++, C/Rust, C/Go,
+  - differential parity.
+- Rust `no-std-alloc` profile is now generation- and compile-checked, with
+  dedicated `rust-no-std` integration labels/workflows and C/Rust parity gates
+  validating that profile changes do not alter wire behavior.
+- Rust runtime specialization is now configurable (`--rust-runtime-specialization`
+  `portable|fast`), with dedicated `rust-runtime-specialization` integration
+  labels/workflows, C/Rust parity gates, and semantic-diff gates ensuring
+  generated type semantics do not drift.
+- TypeScript generation (`dsdlc ts`) has started as the first non-C-like target
+  track, with lowered-schema validation, generated runtime support
+  (`dsdl_runtime.ts`), and initial runtime-backed per-type SerDes entrypoints
+  for supported fixed-size scalar section families.
+- TypeScript integration coverage includes full-`uavcan` generation/determinism/
+  typecheck/consumer-smoke gates (`llvmdsdl-uavcan-ts-generation`,
+  `llvmdsdl-uavcan-ts-determinism`, `llvmdsdl-uavcan-ts-typecheck`,
+  `llvmdsdl-uavcan-ts-consumer-smoke` when `tsc` is available), root-module
+  export contract validation (`llvmdsdl-uavcan-ts-index-contract`), and fixture
+  C<->TypeScript runtime parity smoke (`llvmdsdl-fixtures-c-ts-runtime-parity`),
+  plus TypeScript fixed-array runtime smoke
+  (`llvmdsdl-ts-runtime-fixed-array-smoke`).
 
 Target trajectory:
 
-- Continue converging backend behavior onto MLIR-first lowering for deeper reuse
-  and optimization.
+- Continue using MLIR-first lowering plus render-IR convergence so backend logic
+  remains focused on syntax/runtime binding rather than semantic traversal.
 - Keep language/profile APIs stable while strengthening wire-level conformance and
   differential validation.
+
+### 4.1 Intentional Backend-Specific Behavior
+
+At this stage, backend-specific behavior is intentionally limited to:
+
+- Language surface rendering (syntax, naming, file/module layout).
+- Runtime API binding (C runtime calls, C++ profile container selection, Rust/Go
+  module wiring).
+- Target container/profile choices (`std` vs `pmr`, Rust crate/go module naming).
+
+Wire-semantics behavior (scalar normalization, array prefix/validation, union tag
+helpers, delimiter checks, capacity checks, section-plan ordering) is expected to
+be sourced from lowered MLIR contracts rather than backend-local fallback logic.

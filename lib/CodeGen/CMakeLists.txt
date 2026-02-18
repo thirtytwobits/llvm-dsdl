@@ -6,11 +6,13 @@ add_library(llvmdsdlCodeGen
   HelperBindingRender.cpp
   HelperSymbolResolver.cpp
   LoweredBodyPlan.cpp
+  LoweredRenderIR.cpp
   MlirLoweredFacts.cpp
   RustEmitter.cpp
   SectionHelperBindingPlan.cpp
   SerDesStatementPlan.cpp
   SerDesHelperDescriptors.cpp
+  TsEmitter.cpp
   TypeStorage.cpp
   WireLayoutFacts.cpp
 )

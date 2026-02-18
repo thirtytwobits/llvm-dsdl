@@ -41,6 +41,11 @@ if(NOT DEFINED ITERATIONS OR "${ITERATIONS}" STREQUAL "")
   set(ITERATIONS "256")
 endif()
 
+set(dsdlc_extra_args "")
+if(DEFINED DSDLC_EXTRA_ARGS AND NOT "${DSDLC_EXTRA_ARGS}" STREQUAL "")
+  separate_arguments(dsdlc_extra_args NATIVE_COMMAND "${DSDLC_EXTRA_ARGS}")
+endif()
+
 file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
@@ -56,6 +61,7 @@ execute_process(
     "${DSDLC}" c
       --root-namespace-dir "${FIXTURE_ROOT}"
       --strict
+      ${dsdlc_extra_args}
       --out-dir "${c_out}"
   RESULT_VARIABLE c_result
   OUTPUT_VARIABLE c_stdout
@@ -72,6 +78,7 @@ execute_process(
     "${DSDLC}" cpp
       --root-namespace-dir "${FIXTURE_ROOT}"
       --strict
+      ${dsdlc_extra_args}
       --cpp-profile "${CPP_PROFILE}"
       --out-dir "${cpp_out}"
   RESULT_VARIABLE cpp_result

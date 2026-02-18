@@ -59,6 +59,11 @@ endforeach()
 file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
+set(dsdlc_extra_args "")
+if(DEFINED DSDLC_EXTRA_ARGS AND NOT "${DSDLC_EXTRA_ARGS}" STREQUAL "")
+  separate_arguments(dsdlc_extra_args NATIVE_COMMAND "${DSDLC_EXTRA_ARGS}")
+endif()
+
 set(ours_out "${OUT_DIR}/ours")
 set(nunavut_out "${OUT_DIR}/nunavut")
 set(build_out "${OUT_DIR}/build")
@@ -71,6 +76,7 @@ execute_process(
     "${DSDLC}" c
       --root-namespace-dir "${UAVCAN_ROOT}"
       --strict
+      ${dsdlc_extra_args}
       --out-dir "${ours_out}"
   RESULT_VARIABLE ours_result
   OUTPUT_VARIABLE ours_stdout

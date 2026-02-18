@@ -29,6 +29,11 @@ if(NOT (CPP_PROFILE STREQUAL "std" OR CPP_PROFILE STREQUAL "pmr"))
   message(FATAL_ERROR "CPP_PROFILE must be one of: std, pmr")
 endif()
 
+set(dsdlc_extra_args "")
+if(DEFINED DSDLC_EXTRA_ARGS AND NOT "${DSDLC_EXTRA_ARGS}" STREQUAL "")
+  separate_arguments(dsdlc_extra_args NATIVE_COMMAND "${DSDLC_EXTRA_ARGS}")
+endif()
+
 set(parity_main "${SOURCE_ROOT}/test/integration/CppCParityMain.cpp")
 if(NOT EXISTS "${parity_main}")
   message(FATAL_ERROR "parity harness source missing: ${parity_main}")
@@ -49,6 +54,7 @@ execute_process(
     "${DSDLC}" c
       --root-namespace-dir "${UAVCAN_ROOT}"
       --strict
+      ${dsdlc_extra_args}
       --out-dir "${c_out}"
   RESULT_VARIABLE c_result
   OUTPUT_VARIABLE c_stdout
@@ -65,6 +71,7 @@ execute_process(
     "${DSDLC}" cpp
       --root-namespace-dir "${UAVCAN_ROOT}"
       --strict
+      ${dsdlc_extra_args}
       --cpp-profile "${CPP_PROFILE}"
       --out-dir "${cpp_out}"
   RESULT_VARIABLE cpp_result

@@ -21,6 +21,7 @@ enum class CppProfile {
 struct CppEmitOptions final {
   std::string outDir;
   CppProfile profile{CppProfile::Both};
+  bool optimizeLoweredSerDes{false};
 };
 
 llvm::Error emitCpp(const SemanticModule &semantic, mlir::ModuleOp module,

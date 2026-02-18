@@ -6,6 +6,19 @@ foreach(var DSDLC UAVCAN_ROOT OUT_DIR CARGO_EXECUTABLE)
   endif()
 endforeach()
 
+if(NOT DEFINED RUST_PROFILE OR "${RUST_PROFILE}" STREQUAL "")
+  set(RUST_PROFILE "std")
+endif()
+if(NOT DEFINED RUST_RUNTIME_SPECIALIZATION OR
+   "${RUST_RUNTIME_SPECIALIZATION}" STREQUAL "")
+  set(RUST_RUNTIME_SPECIALIZATION "portable")
+endif()
+if(NOT "${RUST_RUNTIME_SPECIALIZATION}" STREQUAL "portable" AND
+   NOT "${RUST_RUNTIME_SPECIALIZATION}" STREQUAL "fast")
+  message(FATAL_ERROR
+    "Invalid RUST_RUNTIME_SPECIALIZATION value: ${RUST_RUNTIME_SPECIALIZATION}")
+endif()
+
 if(NOT EXISTS "${DSDLC}")
   message(FATAL_ERROR "dsdlc executable not found: ${DSDLC}")
 endif()
@@ -28,7 +41,8 @@ execute_process(
       --strict
       --out-dir "${OUT_DIR}"
       --rust-crate-name "uavcan_dsdl_generated"
-      --rust-profile "std"
+      --rust-profile "${RUST_PROFILE}"
+      --rust-runtime-specialization "${RUST_RUNTIME_SPECIALIZATION}"
   RESULT_VARIABLE gen_result
   OUTPUT_VARIABLE gen_stdout
   ERROR_VARIABLE gen_stderr
@@ -49,11 +63,18 @@ foreach(required
 endforeach()
 
 set(target_dir "${OUT_DIR}/cargo-target")
+set(cargo_args check --quiet --manifest-path "${OUT_DIR}/Cargo.toml")
+if("${RUST_PROFILE}" STREQUAL "no-std-alloc")
+  list(APPEND cargo_args --no-default-features)
+  if("${RUST_RUNTIME_SPECIALIZATION}" STREQUAL "fast")
+    list(APPEND cargo_args --features runtime-fast)
+  endif()
+endif()
 execute_process(
   COMMAND
     "${CMAKE_COMMAND}" -E env
       "CARGO_TARGET_DIR=${target_dir}"
-      "${CARGO_EXECUTABLE}" check --quiet --manifest-path "${OUT_DIR}/Cargo.toml"
+      "${CARGO_EXECUTABLE}" ${cargo_args}
   RESULT_VARIABLE cargo_result
   OUTPUT_VARIABLE cargo_stdout
   ERROR_VARIABLE cargo_stderr
@@ -64,4 +85,5 @@ if(NOT cargo_result EQUAL 0)
   message(FATAL_ERROR "generated uavcan rust crate failed cargo check")
 endif()
 
-message(STATUS "uavcan rust cargo check passed")
+message(STATUS
+  "uavcan rust cargo check passed (${RUST_PROFILE}, ${RUST_RUNTIME_SPECIALIZATION})")
