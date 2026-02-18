@@ -10,4 +10,4 @@ module attributes {llvmdsdl.lowered_contract_producer = "lower-dsdl-serializatio
   }
 }
 
-// CHECK: error: missing lowered scalar-unsigned helper symbol: __llvmdsdl_missing_scalar_unsigned_ser
+// CHECK: error: 'dsdl.io' op missing lowered scalar-unsigned helper symbol: __llvmdsdl_missing_scalar_unsigned_ser

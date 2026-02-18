@@ -153,6 +153,7 @@ int runDirectedChecks() {
                    cppSize, cppBuffer[0]);
       return 1;
     }
+    std::printf("INFO signed-narrow-cpp-c directed marker int3sat_serialize_plus7_saturated\n");
   }
 
   {
@@ -176,6 +177,7 @@ int runDirectedChecks() {
                    cppSize, cppBuffer[0]);
       return 1;
     }
+    std::printf("INFO signed-narrow-cpp-c directed marker int3sat_serialize_minus9_saturated\n");
   }
 
   {
@@ -199,6 +201,7 @@ int runDirectedChecks() {
                    cppSize, cppBuffer[0]);
       return 1;
     }
+    std::printf("INFO signed-narrow-cpp-c directed marker int3trunc_serialize_plus5_truncated\n");
   }
 
   {
@@ -222,6 +225,7 @@ int runDirectedChecks() {
                    cppSize, cppBuffer[0]);
       return 1;
     }
+    std::printf("INFO signed-narrow-cpp-c directed marker int3trunc_serialize_minus5_truncated\n");
   }
 
   {
@@ -247,6 +251,43 @@ int runDirectedChecks() {
                      "Directed mismatch (Int3Sat deserialize expected=%d got=%d sample=%02X)\n",
                      static_cast<int>(expected), static_cast<int>(cObj.value), sample);
         return 1;
+      }
+      if (sample == 0x07U) {
+        std::printf("INFO signed-narrow-cpp-c directed marker int3sat_sign_extend_0x07\n");
+      } else {
+        std::printf("INFO signed-narrow-cpp-c directed marker int3sat_sign_extend_0x04\n");
+      }
+    }
+  }
+
+  {
+    // Truncated deserialize sign extension: 0b101 -> -3, 0b011 -> +3.
+    for (const auto sample : {std::uint8_t{0x05U}, std::uint8_t{0x03U}}) {
+      vendor__Int3Trunc cObj{};
+      vendor::Int3Trunc cppObj{};
+      std::size_t cConsumed = 1U;
+      std::size_t cppConsumed = 1U;
+      const std::int8_t cRc = cInt3TruncDeserialize(&cObj, &sample, &cConsumed);
+      const std::int8_t cppRc = cppInt3TruncDeserialize(&cppObj, &sample, &cppConsumed);
+      if ((cRc != 0) || (cppRc != 0) || (cConsumed != cppConsumed) ||
+          (cObj.value != cppObj.value)) {
+        std::fprintf(stderr,
+                     "Directed mismatch (Int3Trunc deserialize sign extension sample=%02X)\n",
+                     sample);
+        return 1;
+      }
+      const std::int8_t expected = (sample == 0x05U) ? static_cast<std::int8_t>(-3)
+                                                     : static_cast<std::int8_t>(3);
+      if (cObj.value != expected) {
+        std::fprintf(stderr,
+                     "Directed mismatch (Int3Trunc deserialize expected=%d got=%d sample=%02X)\n",
+                     static_cast<int>(expected), static_cast<int>(cObj.value), sample);
+        return 1;
+      }
+      if (sample == 0x05U) {
+        std::printf("INFO signed-narrow-cpp-c directed marker int3trunc_sign_extend_0x05\n");
+      } else {
+        std::printf("INFO signed-narrow-cpp-c directed marker int3trunc_sign_extend_0x03\n");
       }
     }
   }

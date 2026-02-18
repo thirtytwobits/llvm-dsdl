@@ -243,6 +243,7 @@ fn run_directed_checks() -> Result<(), String> {
         c_int3sat_directed_serialize,
         sat_rust,
     )?;
+    println!("INFO signed-narrow-c-rust directed marker int3sat_serialize_plus7_saturated");
     check_directed_serialize(
         "Int3Sat -9",
         -9,
@@ -250,6 +251,7 @@ fn run_directed_checks() -> Result<(), String> {
         c_int3sat_directed_serialize,
         sat_rust,
     )?;
+    println!("INFO signed-narrow-c-rust directed marker int3sat_serialize_minus9_saturated");
     check_directed_serialize(
         "Int3Trunc +5",
         5,
@@ -257,6 +259,7 @@ fn run_directed_checks() -> Result<(), String> {
         c_int3trunc_directed_serialize,
         trunc_rust,
     )?;
+    println!("INFO signed-narrow-c-rust directed marker int3trunc_serialize_plus5_truncated");
     check_directed_serialize(
         "Int3Trunc -5",
         -5,
@@ -264,6 +267,7 @@ fn run_directed_checks() -> Result<(), String> {
         c_int3trunc_directed_serialize,
         trunc_rust,
     )?;
+    println!("INFO signed-narrow-c-rust directed marker int3trunc_serialize_minus5_truncated");
 
     for (sample, expected) in [(0x07u8, -1i8), (0x04u8, -4i8)] {
         let mut c_value = 0i8;
@@ -285,6 +289,11 @@ fn run_directed_checks() -> Result<(), String> {
                 "Int3Sat sign-extension mismatch sample={sample:02X} C(value={}) Rust(rc={},consumed={},value={}) expected={expected}",
                 c_value, rust_rc, rust_consumed, rust_obj.value
             ));
+        }
+        if sample == 0x07u8 {
+            println!("INFO signed-narrow-c-rust directed marker int3sat_sign_extend_0x07");
+        } else {
+            println!("INFO signed-narrow-c-rust directed marker int3sat_sign_extend_0x04");
         }
     }
 
@@ -308,6 +317,11 @@ fn run_directed_checks() -> Result<(), String> {
                 "Int3Trunc sign-extension mismatch sample={sample:02X} C(value={}) Rust(rc={},consumed={},value={}) expected={expected}",
                 c_value, rust_rc, rust_consumed, rust_obj.value
             ));
+        }
+        if sample == 0x05u8 {
+            println!("INFO signed-narrow-c-rust directed marker int3trunc_sign_extend_0x05");
+        } else {
+            println!("INFO signed-narrow-c-rust directed marker int3trunc_sign_extend_0x03");
         }
     }
 

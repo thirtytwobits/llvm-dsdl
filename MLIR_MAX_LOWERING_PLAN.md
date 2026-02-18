@@ -76,6 +76,12 @@ Backend emitters should become syntax/type adapters over a shared lowered progra
 32. Revalidated directed-marker hardening:
     - targeted parity gate `ctest --test-dir build/dev-homebrew --output-on-failure -R "uavcan-(cpp-c|cpp-pmr-c|c-rust)-parity"` passed (3/3)
     - full suite `ctest --test-dir build/dev-homebrew --output-on-failure` passed (20/20)
+33. Extended signed-narrow parity directed-path hardening to C/C++ and C/Rust:
+    - added explicit per-scenario directed `INFO` markers to `SignedNarrowCppCParityMain.cpp` and `SignedNarrowCRustParityMain.rs` for saturating/truncating serialize and sign-extension coverage points
+    - expanded signed-narrow parity gates (`RunSignedNarrowCppCParity.cmake`, `RunSignedNarrowCRustParity.cmake`) with required-marker assertions so missing directed scenarios fail even when aggregate counts still match
+34. Revalidated signed-narrow directed-marker hardening:
+    - targeted signed-narrow parity gate `ctest --test-dir build/dev-homebrew --output-on-failure -R "signed-narrow-c-go-parity|signed-narrow-c-rust-parity|signed-narrow-cpp-(c|pmr-c)-parity"` passed (4/4)
+    - full suite `ctest --test-dir build/dev-homebrew --output-on-failure` passed (20/20)
 
 ## Definition Of "Maximally Lowered"
 

@@ -8,4 +8,4 @@ module {
   }
 }
 
-// CHECK: error: variable array field requires positive prefix width
+// CHECK: error: 'dsdl.io' op variable array field requires positive prefix width

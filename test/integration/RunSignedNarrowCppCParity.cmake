@@ -237,6 +237,27 @@ if(NOT observed_directed_pass_lines EQUAL observed_directed_cases)
     "summary directed=${observed_directed_cases}")
 endif()
 
+set(required_markers
+  "PASS vendor.Int3Sat.1.0 random ("
+  "PASS vendor.Int3Trunc.1.0 random ("
+  "PASS signed_narrow_directed_cpp_c directed"
+  "INFO signed-narrow-cpp-c directed marker int3sat_serialize_plus7_saturated"
+  "INFO signed-narrow-cpp-c directed marker int3sat_serialize_minus9_saturated"
+  "INFO signed-narrow-cpp-c directed marker int3trunc_serialize_plus5_truncated"
+  "INFO signed-narrow-cpp-c directed marker int3trunc_serialize_minus5_truncated"
+  "INFO signed-narrow-cpp-c directed marker int3sat_sign_extend_0x07"
+  "INFO signed-narrow-cpp-c directed marker int3sat_sign_extend_0x04"
+  "INFO signed-narrow-cpp-c directed marker int3trunc_sign_extend_0x05"
+  "INFO signed-narrow-cpp-c directed marker int3trunc_sign_extend_0x03"
+)
+foreach(marker IN LISTS required_markers)
+  string(FIND "${run_stdout}" "${marker}" marker_pos)
+  if(marker_pos EQUAL -1)
+    message(FATAL_ERROR
+      "required signed_narrow C/C++ parity marker missing: ${marker}")
+  endif()
+endforeach()
+
 set(summary_file "${OUT_DIR}/signed-narrow-cpp-c-parity-${CPP_PROFILE}-summary.txt")
 string(RANDOM LENGTH 8 ALPHABET 0123456789abcdef summary_nonce)
 set(summary_tmp "${summary_file}.tmp-${summary_nonce}")

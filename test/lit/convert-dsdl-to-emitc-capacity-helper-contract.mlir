@@ -8,4 +8,4 @@ module attributes {llvmdsdl.lowered_contract_producer = "lower-dsdl-serializatio
   }
 }
 
-// CHECK: error: missing lowered capacity-check helper symbol: __llvmdsdl_missing_capacity_helper
+// CHECK: error: 'dsdl.serialization_plan' op missing lowered capacity-check helper symbol: __llvmdsdl_missing_capacity_helper

@@ -86,8 +86,8 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-If `llvm-lit` or Python `lit` is not installed, CMake will skip lit tests and
-print a warning. Unit tests still run via `ctest`.
+If `llvm-lit`, `lit` (from PATH), or Python `lit` is not installed, CMake will
+skip lit tests and print a warning. Unit tests still run via `ctest`.
 
 ## Preset-Driven Automation
 

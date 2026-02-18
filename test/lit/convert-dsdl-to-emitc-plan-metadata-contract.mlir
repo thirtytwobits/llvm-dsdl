@@ -8,4 +8,4 @@ module attributes {llvmdsdl.lowered_contract_producer = "lower-dsdl-serializatio
   }
 }
 
-// CHECK: error: missing required lowered plan metadata
+// CHECK: error: 'dsdl.serialization_plan' op missing required lowered plan metadata

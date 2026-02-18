@@ -12,4 +12,4 @@ module attributes {llvmdsdl.lowered_contract_producer = "lower-dsdl-serializatio
   }
 }
 
-// CHECK: error: missing lowered array-length-prefix helper symbol: __llvmdsdl_missing_array_prefix_ser
+// CHECK: error: 'dsdl.io' op missing lowered array-length-prefix helper symbol: __llvmdsdl_missing_array_prefix_ser

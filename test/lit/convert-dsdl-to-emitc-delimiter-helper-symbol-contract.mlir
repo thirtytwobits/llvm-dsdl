@@ -10,4 +10,4 @@ module attributes {llvmdsdl.lowered_contract_producer = "lower-dsdl-serializatio
   }
 }
 
-// CHECK: error: missing lowered delimiter-validate helper symbol: __llvmdsdl_missing_delimiter_validate
+// CHECK: error: 'dsdl.io' op missing lowered delimiter-validate helper symbol: __llvmdsdl_missing_delimiter_validate

@@ -8,4 +8,4 @@ module {
   }
 }
 
-// CHECK: error: union plan missing union_tag_bits/union_option_count metadata
+// CHECK: error: 'dsdl.serialization_plan' op union plan missing union_tag_bits/union_option_count metadata

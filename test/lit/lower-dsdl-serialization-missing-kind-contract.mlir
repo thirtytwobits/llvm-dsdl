@@ -8,4 +8,4 @@ module {
   }
 }
 
-// CHECK: error: missing required 'kind' attribute
+// CHECK: error: 'dsdl.io' op requires attribute 'kind'
