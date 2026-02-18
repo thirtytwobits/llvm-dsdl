@@ -5,6 +5,7 @@ add_library(llvmdsdlCodeGen
   GoEmitter.cpp
   HelperBindingRender.cpp
   HelperSymbolResolver.cpp
+  LoweredBodyPlan.cpp
   MlirLoweredFacts.cpp
   RustEmitter.cpp
   SectionHelperBindingPlan.cpp

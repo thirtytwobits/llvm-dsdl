@@ -11,6 +11,8 @@ module {
   }
 }
 
+// CHECK-DAG: llvmdsdl.lowered_contract_producer = "lower-dsdl-serialization"
+// CHECK-DAG: llvmdsdl.lowered_contract_version = 1 : i64
 // CHECK-DAG: lowered_ser_signed_helper = "__llvmdsdl_plan_scalar_signed__test_Helpers_1_0__{{[0-9]+}}__ser"
 // CHECK-DAG: lowered_capacity_check_helper = "__llvmdsdl_plan_capacity_check__test_Helpers_1_0"
 // CHECK-DAG: lowered_deser_signed_helper = "__llvmdsdl_plan_scalar_signed__test_Helpers_1_0__{{[0-9]+}}__deser"

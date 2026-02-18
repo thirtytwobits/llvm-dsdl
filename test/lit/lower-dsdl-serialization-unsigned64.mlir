@@ -8,6 +8,8 @@ module {
   }
 }
 
+// CHECK-DAG: llvmdsdl.lowered_contract_producer = "lower-dsdl-serialization"
+// CHECK-DAG: llvmdsdl.lowered_contract_version = 1 : i64
 // CHECK-DAG: lowered_ser_unsigned_helper = "__llvmdsdl_plan_scalar_unsigned__test_U64_1_0__{{[0-9]+}}__ser"
 // CHECK-DAG: lowered_deser_unsigned_helper = "__llvmdsdl_plan_scalar_unsigned__test_U64_1_0__{{[0-9]+}}__deser"
 // CHECK-LABEL: func.func @__llvmdsdl_plan_scalar_unsigned__test_U64_1_0__{{[0-9]+}}__ser(

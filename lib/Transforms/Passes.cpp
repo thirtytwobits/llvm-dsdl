@@ -1,4 +1,5 @@
 #include "llvmdsdl/Transforms/Passes.h"
+#include "llvmdsdl/Transforms/LoweredSerDesContract.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -43,6 +44,35 @@ void setI32Attr(mlir::Operation *op, llvm::StringRef name,
   op->setAttr(name, builder.getI32IntegerAttr(static_cast<std::int32_t>(value)));
 }
 
+void stampLoweredContractAttributes(mlir::Operation *op, mlir::Builder &builder) {
+  op->setAttr(kLoweredSerDesContractVersionAttr,
+              builder.getI64IntegerAttr(kLoweredSerDesContractVersion));
+  op->setAttr(kLoweredSerDesContractProducerAttr,
+              builder.getStringAttr(kLoweredSerDesContractProducer));
+}
+
+bool isSupportedScalarCategory(llvm::StringRef category) {
+  return category == "bool" || category == "byte" || category == "utf8" ||
+         category == "unsigned" || category == "signed" ||
+         category == "float" || category == "void" ||
+         category == "composite";
+}
+
+bool isSupportedCastMode(llvm::StringRef castMode) {
+  return castMode == "saturated" || castMode == "truncated";
+}
+
+bool isSupportedArrayKind(llvm::StringRef arrayKind) {
+  return arrayKind == "none" || arrayKind == "fixed" ||
+         arrayKind == "variable_inclusive" ||
+         arrayKind == "variable_exclusive";
+}
+
+bool isVariableArrayKind(llvm::StringRef arrayKind) {
+  return arrayKind == "variable_inclusive" ||
+         arrayKind == "variable_exclusive";
+}
+
 std::string sectionSuffix(llvm::StringRef sectionName) {
   if (sectionName == "request") {
     return "__request";
@@ -64,14 +94,16 @@ mlir::LogicalResult canonicalizePlan(mlir::Operation *plan, mlir::Builder &build
   std::int64_t alignCount = 0;
   std::int64_t fieldCount = 0;
   std::int64_t paddingCount = 0;
-  std::int64_t inferredUnionTagBits = 0;
   std::set<std::int64_t> unionOptionIndexes;
 
   for (mlir::Operation &op : body) {
     const auto opName = op.getName().getStringRef();
     if (opName == "dsdl.align") {
-      const std::int64_t bits =
-          nonNegative(intAttrOrDefault(&op, "bits", /*fallback=*/1));
+      const auto bitsAttr = op.getAttrOfType<mlir::IntegerAttr>("bits");
+      if (!bitsAttr) {
+        return op.emitOpError("missing required 'bits' attribute");
+      }
+      const std::int64_t bits = nonNegative(bitsAttr.getInt());
       if (bits <= 1) {
         eraseOps.push_back(&op);
         continue;
@@ -84,20 +116,84 @@ mlir::LogicalResult canonicalizePlan(mlir::Operation *plan, mlir::Builder &build
 
     if (opName == "dsdl.io") {
       const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
-      const std::string kind = kindAttr ? kindAttr.getValue().str() : "field";
       if (!kindAttr) {
-        op.setAttr("kind", builder.getStringAttr(kind));
+        return op.emitOpError("missing required 'kind' attribute");
+      }
+      const auto kind = kindAttr.getValue();
+      if (kind != "field" && kind != "padding") {
+        return op.emitOpError("unsupported 'kind' value");
+      }
+      const bool isPadding = kind == "padding";
+
+      const auto scalarCategoryAttr =
+          op.getAttrOfType<mlir::StringAttr>("scalar_category");
+      if (!scalarCategoryAttr) {
+        return op.emitOpError("missing required 'scalar_category' attribute");
+      }
+      if (!isSupportedScalarCategory(scalarCategoryAttr.getValue())) {
+        return op.emitOpError("unsupported 'scalar_category' value");
       }
 
-      std::int64_t minBits =
-          nonNegative(intAttrOrDefault(&op, "min_bits", /*fallback=*/0));
-      std::int64_t maxBits = nonNegative(
-          intAttrOrDefault(&op, "max_bits", /*fallback=*/minBits));
+      const auto castModeAttr = op.getAttrOfType<mlir::StringAttr>("cast_mode");
+      if (!castModeAttr) {
+        return op.emitOpError("missing required 'cast_mode' attribute");
+      }
+      if (!isSupportedCastMode(castModeAttr.getValue())) {
+        return op.emitOpError("unsupported 'cast_mode' value");
+      }
+
+      const auto arrayKindAttr = op.getAttrOfType<mlir::StringAttr>("array_kind");
+      if (!arrayKindAttr) {
+        return op.emitOpError("missing required 'array_kind' attribute");
+      }
+      if (!isSupportedArrayKind(arrayKindAttr.getValue())) {
+        return op.emitOpError("unsupported 'array_kind' value");
+      }
+
+      const auto minBitsAttr = op.getAttrOfType<mlir::IntegerAttr>("min_bits");
+      const auto maxBitsAttr = op.getAttrOfType<mlir::IntegerAttr>("max_bits");
+      if (!minBitsAttr || !maxBitsAttr) {
+        return op.emitOpError("missing required min_bits/max_bits metadata");
+      }
+      const std::int64_t minBits = nonNegative(minBitsAttr.getInt());
+      const std::int64_t maxBits = nonNegative(maxBitsAttr.getInt());
       if (maxBits < minBits) {
-        maxBits = minBits;
+        return op.emitOpError("invalid min_bits/max_bits metadata");
       }
 
-      if (kind == "padding") {
+      const auto bitLengthAttr = op.getAttrOfType<mlir::IntegerAttr>("bit_length");
+      const auto arrayCapacityAttr =
+          op.getAttrOfType<mlir::IntegerAttr>("array_capacity");
+      const auto arrayPrefixBitsAttr =
+          op.getAttrOfType<mlir::IntegerAttr>("array_length_prefix_bits");
+      const auto alignmentBitsAttr =
+          op.getAttrOfType<mlir::IntegerAttr>("alignment_bits");
+      const auto unionOptionIndexAttr =
+          op.getAttrOfType<mlir::IntegerAttr>("union_option_index");
+      const auto unionTagBitsAttr =
+          op.getAttrOfType<mlir::IntegerAttr>("union_tag_bits");
+      if (!bitLengthAttr || !arrayCapacityAttr || !arrayPrefixBitsAttr ||
+          !alignmentBitsAttr || !unionOptionIndexAttr || !unionTagBitsAttr) {
+        return op.emitOpError("missing required dsdl.io metadata attributes");
+      }
+      const std::int64_t bitLength = nonNegative(bitLengthAttr.getInt());
+      const std::int64_t arrayCapacity = nonNegative(arrayCapacityAttr.getInt());
+      const std::int64_t arrayPrefixBits = nonNegative(arrayPrefixBitsAttr.getInt());
+      const std::int64_t alignmentBits =
+          std::max<std::int64_t>(nonNegative(alignmentBitsAttr.getInt()), 0);
+      const std::int64_t unionOptionIndex =
+          nonNegative(unionOptionIndexAttr.getInt());
+      const std::int64_t unionTagBits = nonNegative(unionTagBitsAttr.getInt());
+
+      if (alignmentBits <= 0) {
+        return op.emitOpError("invalid alignment_bits metadata");
+      }
+      if (!isPadding && isVariableArrayKind(arrayKindAttr.getValue()) &&
+          arrayPrefixBits <= 0) {
+        return op.emitOpError("variable array field requires positive prefix width");
+      }
+
+      if (isPadding) {
         ++paddingCount;
         if (maxBits == 0) {
           eraseOps.push_back(&op);
@@ -110,33 +206,18 @@ mlir::LogicalResult canonicalizePlan(mlir::Operation *plan, mlir::Builder &build
       setI64Attr(&op, "lowered_bits", maxBits, builder);
       setI64Attr(&op, "step_index", stepIndex++, builder);
 
-      setI64Attr(&op, "bit_length",
-                 nonNegative(intAttrOrDefault(&op, "bit_length", 0)), builder);
-      setI64Attr(&op, "array_capacity",
-                 nonNegative(intAttrOrDefault(&op, "array_capacity", 0)),
-                 builder);
-      setI64Attr(
-          &op, "array_length_prefix_bits",
-          nonNegative(intAttrOrDefault(&op, "array_length_prefix_bits", 0)),
-          builder);
-      setI64Attr(&op, "alignment_bits",
-                 std::max<std::int64_t>(
-                     nonNegative(intAttrOrDefault(&op, "alignment_bits", 1)), 1),
-                 builder);
-      setI64Attr(&op, "union_option_index",
-                 nonNegative(intAttrOrDefault(&op, "union_option_index", 0)),
-                 builder);
-      setI64Attr(&op, "union_tag_bits",
-                 nonNegative(intAttrOrDefault(&op, "union_tag_bits", 0)),
-                 builder);
+      setI64Attr(&op, "bit_length", bitLength, builder);
+      setI64Attr(&op, "array_capacity", arrayCapacity, builder);
+      setI64Attr(&op, "array_length_prefix_bits", arrayPrefixBits, builder);
+      setI64Attr(&op, "alignment_bits", alignmentBits, builder);
+      setI64Attr(&op, "union_option_index", unionOptionIndex, builder);
+      setI64Attr(&op, "union_tag_bits", unionTagBits, builder);
 
-      inferredUnionTagBits = std::max<std::int64_t>(
-          inferredUnionTagBits, intAttrOrDefault(&op, "union_tag_bits", 0));
-      if (kind != "padding") {
-        unionOptionIndexes.insert(intAttrOrDefault(&op, "union_option_index", 0));
+      if (!isPadding) {
+        unionOptionIndexes.insert(unionOptionIndex);
       }
 
-      if (kind != "padding") {
+      if (!isPadding) {
         ++fieldCount;
       }
       continue;
@@ -149,37 +230,50 @@ mlir::LogicalResult canonicalizePlan(mlir::Operation *plan, mlir::Builder &build
     op->erase();
   }
 
-  std::int64_t minBits = nonNegative(intAttrOrDefault(plan, "min_bits", 0));
-  std::int64_t maxBits =
-      nonNegative(intAttrOrDefault(plan, "max_bits", minBits));
+  const auto planMinBitsAttr = plan->getAttrOfType<mlir::IntegerAttr>("min_bits");
+  const auto planMaxBitsAttr = plan->getAttrOfType<mlir::IntegerAttr>("max_bits");
+  if (!planMinBitsAttr || !planMaxBitsAttr) {
+    return plan->emitOpError("missing required min_bits/max_bits plan metadata");
+  }
+  std::int64_t minBits = nonNegative(planMinBitsAttr.getInt());
+  std::int64_t maxBits = nonNegative(planMaxBitsAttr.getInt());
   if (maxBits < minBits) {
-    maxBits = minBits;
+    return plan->emitOpError("invalid min_bits/max_bits plan metadata");
   }
   setI64Attr(plan, "min_bits", minBits, builder);
   setI64Attr(plan, "max_bits", maxBits, builder);
-  setI64Attr(plan, "lowered_min_bits", minBits, builder);
-  setI64Attr(plan, "lowered_max_bits", maxBits, builder);
-  setI64Attr(plan, "lowered_step_count", stepIndex, builder);
-  setI64Attr(plan, "lowered_field_count", fieldCount, builder);
-  setI64Attr(plan, "lowered_padding_count", paddingCount, builder);
-  setI64Attr(plan, "lowered_align_count", alignCount, builder);
-  plan->setAttr("lowered", builder.getUnitAttr());
+  setI64Attr(plan, kLoweredMinBitsAttr, minBits, builder);
+  setI64Attr(plan, kLoweredMaxBitsAttr, maxBits, builder);
+  setI64Attr(plan, kLoweredStepCountAttr, stepIndex, builder);
+  setI64Attr(plan, kLoweredFieldCountAttr, fieldCount, builder);
+  setI64Attr(plan, kLoweredPaddingCountAttr, paddingCount, builder);
+  setI64Attr(plan, kLoweredAlignCountAttr, alignCount, builder);
+  plan->setAttr(kLoweredPlanMarkerAttr, builder.getUnitAttr());
+  stampLoweredContractAttributes(plan, builder);
 
   if (plan->hasAttr("is_union")) {
-    std::int64_t unionTagBits =
-        nonNegative(intAttrOrDefault(plan, "union_tag_bits", 0));
-    if (unionTagBits <= 0) {
-      unionTagBits = std::max<std::int64_t>(8, nonNegative(inferredUnionTagBits));
+    const auto unionTagBitsAttr =
+        plan->getAttrOfType<mlir::IntegerAttr>("union_tag_bits");
+    const auto unionOptionCountAttr =
+        plan->getAttrOfType<mlir::IntegerAttr>("union_option_count");
+    if (!unionTagBitsAttr || !unionOptionCountAttr) {
+      return plan->emitOpError(
+          "union plan missing union_tag_bits/union_option_count metadata");
+    }
+    const std::int64_t unionTagBits = nonNegative(unionTagBitsAttr.getInt());
+    if (unionTagBits <= 0 || unionTagBits > 64) {
+      return plan->emitOpError("union plan has invalid union_tag_bits");
+    }
+    if (unionOptionIndexes.empty()) {
+      return plan->emitOpError("union plan has no selectable options");
+    }
+    const std::int64_t unionOptionCount =
+        static_cast<std::int64_t>(unionOptionIndexes.size());
+    if (unionOptionCountAttr.getInt() <= 0) {
+      return plan->emitOpError("union plan has invalid union_option_count");
     }
     setI64Attr(plan, "union_tag_bits", unionTagBits, builder);
-
-    std::int64_t optionCount = nonNegative(
-        intAttrOrDefault(plan, "union_option_count", static_cast<std::int64_t>(
-                                                      unionOptionIndexes.size())));
-    if (!unionOptionIndexes.empty()) {
-      optionCount = static_cast<std::int64_t>(unionOptionIndexes.size());
-    }
-    setI64Attr(plan, "union_option_count", optionCount, builder);
+    setI64Attr(plan, "union_option_count", unionOptionCount, builder);
   }
 
   return mlir::success();
@@ -200,7 +294,7 @@ mlir::LogicalResult createPlanCapacityCheckFunction(mlir::ModuleOp module,
   const std::string section = sectionAttr ? sectionAttr.getValue().str() : "";
   const std::string funcName = "__llvmdsdl_plan_capacity_check__" +
                                schemaSym.getValue().str() + sectionSuffix(section);
-  plan->setAttr("lowered_capacity_check_helper", builder.getStringAttr(funcName));
+  plan->setAttr(kLoweredCapacityCheckHelperAttr, builder.getStringAttr(funcName));
   if (module.lookupSymbol<mlir::func::FuncOp>(funcName)) {
     return mlir::success();
   }
@@ -276,7 +370,7 @@ mlir::LogicalResult createUnionTagValidationFunction(mlir::ModuleOp module,
   const std::string section = sectionAttr ? sectionAttr.getValue().str() : "";
   const std::string funcName = "__llvmdsdl_plan_validate_union_tag__" +
                                schemaSym.getValue().str() + sectionSuffix(section);
-  plan->setAttr("lowered_union_tag_validate_helper",
+  plan->setAttr(kLoweredUnionTagValidateHelperAttr,
                 builder.getStringAttr(funcName));
   if (module.lookupSymbol<mlir::func::FuncOp>(funcName)) {
     return mlir::success();
@@ -379,7 +473,7 @@ mlir::LogicalResult createScalarUnsignedFieldHelpers(mlir::ModuleOp module,
     const auto scalarAttr = op.getAttrOfType<mlir::StringAttr>("scalar_category");
     const auto scalar =
         scalarAttr ? scalarAttr.getValue() : llvm::StringRef("unsigned");
-    if (scalar != "unsigned" && scalar != "byte") {
+    if (scalar != "unsigned" && scalar != "byte" && scalar != "utf8") {
       continue;
     }
     const std::int64_t bitLength =
@@ -972,8 +1066,8 @@ mlir::LogicalResult createUnionTagIoHelpers(mlir::ModuleOp module,
                                  sectionSuffix(section);
   const std::string serName = symbolStem + "__ser";
   const std::string deserName = symbolStem + "__deser";
-  plan->setAttr("lowered_ser_union_tag_helper", builder.getStringAttr(serName));
-  plan->setAttr("lowered_deser_union_tag_helper",
+  plan->setAttr(kLoweredSerUnionTagHelperAttr, builder.getStringAttr(serName));
+  plan->setAttr(kLoweredDeserUnionTagHelperAttr,
                 builder.getStringAttr(deserName));
 
   const bool fullWidth = (tagBits == 64);
@@ -1155,6 +1249,7 @@ struct LowerDSDLSerializationPass
     auto module = getOperation();
     mlir::OpBuilder builder(module.getContext());
     std::vector<mlir::Operation *> plans;
+    bool sawPlan = false;
 
     for (mlir::Operation &op : module.getBodyRegion().front()) {
       if (op.getName().getStringRef() != "dsdl.schema") {
@@ -1174,8 +1269,13 @@ struct LowerDSDLSerializationPass
           signalPassFailure();
           return;
         }
+        sawPlan = true;
         plans.push_back(&child);
       }
+    }
+
+    if (sawPlan) {
+      stampLoweredContractAttributes(module, builder);
     }
 
     for (mlir::Operation *plan : plans) {

@@ -1,4 +1,5 @@
 #include "llvmdsdl/Transforms/Passes.h"
+#include "llvmdsdl/Transforms/LoweredSerDesContract.h"
 
 #include "mlir/Dialect/EmitC/IR/EmitC.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -27,35 +28,6 @@ bool isVariableArrayKind(llvm::StringRef arrayKind) {
 bool isSupportedArrayKind(llvm::StringRef arrayKind) {
   return arrayKind == "none" || arrayKind == "fixed" ||
          isVariableArrayKind(arrayKind);
-}
-
-std::int64_t inferPlanBits(mlir::Operation *plan, llvm::StringRef attrName) {
-  const std::string loweredName = "lowered_" + attrName.str();
-  if (auto attr = plan->getAttrOfType<mlir::IntegerAttr>(loweredName)) {
-    return nonNegative(attr.getInt());
-  }
-  if (auto attr = plan->getAttrOfType<mlir::IntegerAttr>(attrName)) {
-    return nonNegative(attr.getInt());
-  }
-  std::int64_t sum = 0;
-  if (plan->getNumRegions() == 0 || plan->getRegion(0).empty()) {
-    return 0;
-  }
-  for (mlir::Operation &op : plan->getRegion(0).front()) {
-    if (op.getName().getStringRef() != "dsdl.io") {
-      continue;
-    }
-    if (attrName == "max_bits") {
-      if (auto bits = op.getAttrOfType<mlir::IntegerAttr>("lowered_bits")) {
-        sum += nonNegative(bits.getInt());
-        continue;
-      }
-    }
-    if (auto bits = op.getAttrOfType<mlir::IntegerAttr>(attrName)) {
-      sum += nonNegative(bits.getInt());
-    }
-  }
-  return sum;
 }
 
 std::int64_t ioStepBits(mlir::Operation *ioOp) {
@@ -108,6 +80,237 @@ struct PlanStep final {
   bool compositeSealed{true};
   std::int64_t compositeExtentBits{0};
 };
+
+mlir::LogicalResult verifyLoweredPlanContract(mlir::ModuleOp module,
+                                              mlir::Operation *plan) {
+  if (!plan->hasAttr(kLoweredPlanMarkerAttr)) {
+    return plan->emitOpError("missing lowered marker attribute '" +
+                             std::string(kLoweredPlanMarkerAttr) + "'");
+  }
+  const auto minBits = plan->getAttrOfType<mlir::IntegerAttr>(kLoweredMinBitsAttr);
+  const auto maxBits = plan->getAttrOfType<mlir::IntegerAttr>(kLoweredMaxBitsAttr);
+  const auto stepCount =
+      plan->getAttrOfType<mlir::IntegerAttr>(kLoweredStepCountAttr);
+  const auto fieldCount =
+      plan->getAttrOfType<mlir::IntegerAttr>(kLoweredFieldCountAttr);
+  const auto paddingCount =
+      plan->getAttrOfType<mlir::IntegerAttr>(kLoweredPaddingCountAttr);
+  const auto alignCount =
+      plan->getAttrOfType<mlir::IntegerAttr>(kLoweredAlignCountAttr);
+  if (!minBits || !maxBits || !stepCount || !fieldCount || !paddingCount ||
+      !alignCount) {
+    return plan->emitOpError("missing required lowered plan metadata");
+  }
+  if (minBits.getInt() < 0 || maxBits.getInt() < minBits.getInt() ||
+      stepCount.getInt() < 0 || fieldCount.getInt() < 0 ||
+      paddingCount.getInt() < 0 || alignCount.getInt() < 0) {
+    return plan->emitOpError("invalid lowered plan metadata values");
+  }
+
+  const auto capacityCheckHelper =
+      plan->getAttrOfType<mlir::StringAttr>(kLoweredCapacityCheckHelperAttr);
+  if (!capacityCheckHelper || capacityCheckHelper.getValue().empty()) {
+    return plan->emitOpError("missing lowered capacity-check helper attribute '" +
+                             std::string(kLoweredCapacityCheckHelperAttr) + "'");
+  }
+  if (!module.lookupSymbol<mlir::func::FuncOp>(capacityCheckHelper.getValue())) {
+    return plan->emitOpError("missing lowered capacity-check helper symbol: " +
+                             capacityCheckHelper.getValue().str());
+  }
+
+  if (plan->hasAttr("is_union")) {
+    const auto unionTagBits =
+        plan->getAttrOfType<mlir::IntegerAttr>("union_tag_bits");
+    const auto unionOptionCount =
+        plan->getAttrOfType<mlir::IntegerAttr>("union_option_count");
+    const auto unionTagValidateHelper = plan->getAttrOfType<mlir::StringAttr>(
+        kLoweredUnionTagValidateHelperAttr);
+    const auto unionTagSerializeHelper =
+        plan->getAttrOfType<mlir::StringAttr>(kLoweredSerUnionTagHelperAttr);
+    const auto unionTagDeserializeHelper = plan->getAttrOfType<mlir::StringAttr>(
+        kLoweredDeserUnionTagHelperAttr);
+    if (!unionTagBits || !unionOptionCount || !unionTagValidateHelper ||
+        !unionTagSerializeHelper || !unionTagDeserializeHelper) {
+      return plan->emitOpError("missing required lowered union metadata");
+    }
+    if (unionTagBits.getInt() <= 0 || unionTagBits.getInt() > 64 ||
+        unionOptionCount.getInt() <= 0) {
+      return plan->emitOpError("invalid lowered union metadata values");
+    }
+    if (!module.lookupSymbol<mlir::func::FuncOp>(
+            unionTagValidateHelper.getValue()) ||
+        !module.lookupSymbol<mlir::func::FuncOp>(
+            unionTagSerializeHelper.getValue()) ||
+        !module.lookupSymbol<mlir::func::FuncOp>(
+            unionTagDeserializeHelper.getValue())) {
+      return plan->emitOpError(
+          "missing lowered union-tag helper symbol body");
+    }
+  }
+
+  if (plan->getNumRegions() == 0 || plan->getRegion(0).empty()) {
+    return plan->emitOpError("must contain a non-empty lowered plan body");
+  }
+
+  std::int64_t observedStepCount = 0;
+  std::int64_t observedFieldCount = 0;
+  std::int64_t observedPaddingCount = 0;
+  std::int64_t observedAlignCount = 0;
+  std::set<std::int64_t> seenStepIndexes;
+  for (mlir::Operation &step : plan->getRegion(0).front()) {
+    const auto stepName = step.getName().getStringRef();
+    if (stepName == "dsdl.align") {
+      const auto bits = step.getAttrOfType<mlir::IntegerAttr>("bits");
+      const auto stepIndex = step.getAttrOfType<mlir::IntegerAttr>("step_index");
+      if (!bits || !stepIndex) {
+        return step.emitOpError("missing lowered align metadata");
+      }
+      if (bits.getInt() <= 1) {
+        return step.emitOpError("unexpected no-op alignment in lowered plan");
+      }
+      if (!seenStepIndexes.insert(stepIndex.getInt()).second) {
+        return step.emitOpError("duplicate lowered step_index");
+      }
+      ++observedStepCount;
+      ++observedAlignCount;
+      continue;
+    }
+    if (stepName != "dsdl.io") {
+      return step.emitOpError("unsupported lowered plan operation");
+    }
+
+    const auto stepMinBits = step.getAttrOfType<mlir::IntegerAttr>("min_bits");
+    const auto stepMaxBits = step.getAttrOfType<mlir::IntegerAttr>("max_bits");
+    const auto loweredBits = step.getAttrOfType<mlir::IntegerAttr>("lowered_bits");
+    const auto stepIndex = step.getAttrOfType<mlir::IntegerAttr>("step_index");
+    const auto scalarCategory =
+        step.getAttrOfType<mlir::StringAttr>("scalar_category");
+    const auto arrayKind = step.getAttrOfType<mlir::StringAttr>("array_kind");
+    const auto kind = step.getAttrOfType<mlir::StringAttr>("kind");
+    const auto bitLength = step.getAttrOfType<mlir::IntegerAttr>("bit_length");
+    const auto alignmentBits =
+        step.getAttrOfType<mlir::IntegerAttr>("alignment_bits");
+    if (!stepMinBits || !stepMaxBits || !loweredBits || !stepIndex ||
+        !scalarCategory || !arrayKind || !kind || !bitLength ||
+        !alignmentBits) {
+      return step.emitOpError("missing required lowered step metadata");
+    }
+    if (stepMinBits.getInt() < 0 || stepMaxBits.getInt() < stepMinBits.getInt() ||
+        loweredBits.getInt() < 0 || loweredBits.getInt() != stepMaxBits.getInt() ||
+        bitLength.getInt() < 0 || alignmentBits.getInt() <= 0) {
+      return step.emitOpError("invalid lowered step metadata values");
+    }
+    if (!isSupportedArrayKind(arrayKind.getValue())) {
+      return step.emitOpError("unsupported array kind in lowered step metadata");
+    }
+    if (kind.getValue() != "field" && kind.getValue() != "padding") {
+      return step.emitOpError("unsupported step kind in lowered step metadata");
+    }
+    if (!seenStepIndexes.insert(stepIndex.getInt()).second) {
+      return step.emitOpError("duplicate lowered step_index");
+    }
+    ++observedStepCount;
+
+    const bool isPadding = kind.getValue() == "padding";
+    if (isPadding) {
+      ++observedPaddingCount;
+    } else {
+      ++observedFieldCount;
+    }
+    auto requireStepHelperSymbol =
+        [&](llvm::StringRef attrName,
+            llvm::StringRef helperLabel) -> mlir::LogicalResult {
+      const auto helper = step.getAttrOfType<mlir::StringAttr>(attrName);
+      if (!helper || helper.getValue().empty()) {
+        return step.emitOpError("missing lowered " + helperLabel.str() +
+                                " helper attribute '" + attrName.str() + "'");
+      }
+      if (!module.lookupSymbol<mlir::func::FuncOp>(helper.getValue())) {
+        return step.emitOpError("missing lowered " + helperLabel.str() +
+                                " helper symbol: " +
+                                helper.getValue().str());
+      }
+      return mlir::success();
+    };
+
+    const bool variableArray = isVariableArrayKind(arrayKind.getValue());
+    const auto arrayPrefixBits =
+        step.getAttrOfType<mlir::IntegerAttr>("array_length_prefix_bits");
+    if (variableArray && (!arrayPrefixBits || arrayPrefixBits.getInt() <= 0 ||
+                          arrayPrefixBits.getInt() > 64)) {
+      return step.emitOpError("missing valid array-length prefix width");
+    }
+    if (!isPadding && variableArray) {
+      if (mlir::failed(requireStepHelperSymbol(
+              "lowered_ser_array_length_prefix_helper",
+              "array-length-prefix")) ||
+          mlir::failed(requireStepHelperSymbol(
+              "lowered_deser_array_length_prefix_helper",
+              "array-length-prefix")) ||
+          mlir::failed(requireStepHelperSymbol(
+              "lowered_array_length_validate_helper",
+              "array-length-validate"))) {
+        return mlir::failure();
+      }
+    }
+
+    if (!isPadding) {
+      const auto category = scalarCategory.getValue();
+      if (category == "unsigned" || category == "byte" || category == "utf8") {
+        if (mlir::failed(requireStepHelperSymbol("lowered_ser_unsigned_helper",
+                                                 "scalar-unsigned")) ||
+            mlir::failed(requireStepHelperSymbol("lowered_deser_unsigned_helper",
+                                                 "scalar-unsigned"))) {
+          return mlir::failure();
+        }
+      } else if (category == "signed") {
+        if (mlir::failed(requireStepHelperSymbol("lowered_ser_signed_helper",
+                                                 "scalar-signed")) ||
+            mlir::failed(requireStepHelperSymbol("lowered_deser_signed_helper",
+                                                 "scalar-signed"))) {
+          return mlir::failure();
+        }
+      } else if (category == "float") {
+        if (mlir::failed(requireStepHelperSymbol("lowered_ser_float_helper",
+                                                 "scalar-float")) ||
+            mlir::failed(requireStepHelperSymbol("lowered_deser_float_helper",
+                                                 "scalar-float"))) {
+          return mlir::failure();
+        }
+      }
+    }
+
+    if (!isPadding && scalarCategory.getValue() == "composite") {
+      const auto compositeSealed =
+          step.getAttrOfType<mlir::BoolAttr>("composite_sealed");
+      if (compositeSealed && !compositeSealed.getValue()) {
+        if (!step.getAttrOfType<mlir::IntegerAttr>("composite_extent_bits")) {
+          return step.emitOpError(
+              "delimited composite missing composite_extent_bits metadata");
+        }
+        if (mlir::failed(requireStepHelperSymbol(
+                "lowered_delimiter_validate_helper",
+                "delimiter-validate"))) {
+          return mlir::failure();
+        }
+      }
+    }
+  }
+
+  if (observedStepCount != stepCount.getInt() ||
+      observedFieldCount != fieldCount.getInt() ||
+      observedPaddingCount != paddingCount.getInt() ||
+      observedAlignCount != alignCount.getInt()) {
+    return plan->emitOpError("lowered plan counts do not match plan body");
+  }
+  for (const auto stepIndex : seenStepIndexes) {
+    if (stepIndex < 0 || stepIndex >= stepCount.getInt()) {
+      return plan->emitOpError("step_index out of lowered plan bounds");
+    }
+  }
+
+  return mlir::success();
+}
 
 std::vector<PlanStep> collectPlanSteps(mlir::Operation *plan) {
   std::vector<PlanStep> steps;
@@ -1492,6 +1695,36 @@ struct ConvertDSDLToEmitCPass
     if (schemaOps.empty()) {
       return;
     }
+    const auto contractVersion = module->getAttrOfType<mlir::IntegerAttr>(
+        kLoweredSerDesContractVersionAttr);
+    if (!contractVersion) {
+      module.emitError("lowered SerDes contract missing module attribute '" +
+                       std::string(kLoweredSerDesContractVersionAttr) +
+                       "'; run lower-dsdl-serialization before "
+                       "convert-dsdl-to-emitc");
+      signalPassFailure();
+      return;
+    }
+    if (contractVersion.getInt() != kLoweredSerDesContractVersion) {
+      module.emitError(
+          "lowered SerDes contract version mismatch: expected " +
+          std::to_string(kLoweredSerDesContractVersion) + ", got " +
+          std::to_string(contractVersion.getInt()) +
+          "; run matching lower-dsdl-serialization before convert-dsdl-to-emitc");
+      signalPassFailure();
+      return;
+    }
+    const auto contractProducer = module->getAttrOfType<mlir::StringAttr>(
+        kLoweredSerDesContractProducerAttr);
+    if (!contractProducer ||
+        contractProducer.getValue() != kLoweredSerDesContractProducer) {
+      module.emitError("lowered SerDes contract producer mismatch: expected '" +
+                       std::string(kLoweredSerDesContractProducer) +
+                       "'; run lower-dsdl-serialization before "
+                       "convert-dsdl-to-emitc");
+      signalPassFailure();
+      return;
+    }
 
     std::vector<std::string> emittedFunctions;
     emittedFunctions.reserve(schemaOps.size() * 4U);
@@ -1529,26 +1762,65 @@ struct ConvertDSDLToEmitCPass
         if (child.getName().getStringRef() != "dsdl.serialization_plan") {
           continue;
         }
+        const auto planContractVersion =
+            child.getAttrOfType<mlir::IntegerAttr>(
+                kLoweredSerDesContractVersionAttr);
+        if (!planContractVersion ||
+            planContractVersion.getInt() != kLoweredSerDesContractVersion) {
+          child.emitOpError(
+              "missing or incompatible lowered contract version; run "
+              "lower-dsdl-serialization before convert-dsdl-to-emitc");
+          signalPassFailure();
+          return;
+        }
+        const auto planContractProducer =
+            child.getAttrOfType<mlir::StringAttr>(
+                kLoweredSerDesContractProducerAttr);
+        if (!planContractProducer ||
+            planContractProducer.getValue() !=
+                kLoweredSerDesContractProducer) {
+          child.emitOpError(
+              "missing lowered contract producer marker; run "
+              "lower-dsdl-serialization before convert-dsdl-to-emitc");
+          signalPassFailure();
+          return;
+        }
+        if (mlir::failed(verifyLoweredPlanContract(module, &child))) {
+          signalPassFailure();
+          return;
+        }
         const auto sectionAttr = child.getAttrOfType<mlir::StringAttr>("section");
         const std::string section =
             sectionAttr ? sectionAttr.getValue().str() : std::string{};
         const std::string fnStem =
             symNameAttr.getValue().str() + sectionSuffix(section);
+        const auto capacityCheckAttr = child.getAttrOfType<mlir::StringAttr>(
+            kLoweredCapacityCheckHelperAttr);
         const std::string capacityCheckSymbol =
-            "__llvmdsdl_plan_capacity_check__" + fnStem;
-        const bool hasCapacityCheck =
-            module.lookupSymbol<mlir::func::FuncOp>(capacityCheckSymbol) !=
-            nullptr;
-        if (!hasCapacityCheck) {
-          child.emitOpError("missing lowered capacity-check helper symbol: " +
-                            capacityCheckSymbol +
-                            "; run lower-dsdl-serialization before "
-                            "convert-dsdl-to-emitc");
+            capacityCheckAttr ? capacityCheckAttr.getValue().str() : std::string{};
+        const auto loweredMinBitsAttr =
+            child.getAttrOfType<mlir::IntegerAttr>(kLoweredMinBitsAttr);
+        const auto loweredMaxBitsAttr =
+            child.getAttrOfType<mlir::IntegerAttr>(kLoweredMaxBitsAttr);
+        const auto loweredStepCountAttr =
+            child.getAttrOfType<mlir::IntegerAttr>(kLoweredStepCountAttr);
+        const auto loweredFieldCountAttr =
+            child.getAttrOfType<mlir::IntegerAttr>(kLoweredFieldCountAttr);
+        if (!loweredMinBitsAttr || !loweredMaxBitsAttr || !loweredStepCountAttr ||
+            !loweredFieldCountAttr) {
+          child.emitOpError(
+              "missing required lowered plan metadata; run "
+              "lower-dsdl-serialization before convert-dsdl-to-emitc");
           signalPassFailure();
           return;
         }
-        const std::int64_t minBits = inferPlanBits(&child, "min_bits");
-        const std::int64_t maxBits = inferPlanBits(&child, "max_bits");
+        const std::int64_t minBits = nonNegative(loweredMinBitsAttr.getInt());
+        const std::int64_t maxBits = nonNegative(loweredMaxBitsAttr.getInt());
+        if (maxBits < minBits) {
+          child.emitOpError("invalid lowered bit-range metadata");
+          signalPassFailure();
+          return;
+        }
         const auto cTypeNameAttr =
             child.getAttrOfType<mlir::StringAttr>("c_type_name");
         const auto cSerializeSymbolAttr =
@@ -1664,9 +1936,9 @@ struct ConvertDSDLToEmitCPass
         const std::int64_t unionTagBits =
             unionTagBitsAttr ? nonNegative(unionTagBitsAttr.getInt()) : 0;
         const auto unionTagSerHelperAttr =
-            child.getAttrOfType<mlir::StringAttr>("lowered_ser_union_tag_helper");
+            child.getAttrOfType<mlir::StringAttr>(kLoweredSerUnionTagHelperAttr);
         const auto unionTagDeserHelperAttr = child.getAttrOfType<mlir::StringAttr>(
-            "lowered_deser_union_tag_helper");
+            kLoweredDeserUnionTagHelperAttr);
         const std::string unionTagSerializeHelper =
             unionTagSerHelperAttr ? unionTagSerHelperAttr.getValue().str()
                                   : std::string{};
@@ -1675,19 +1947,11 @@ struct ConvertDSDLToEmitCPass
                                     : std::string{};
         std::string unionTagValidateSymbol;
         if (isUnion) {
-          unionTagValidateSymbol =
-              "__llvmdsdl_plan_validate_union_tag__" + fnStem;
-          const bool hasUnionTagValidate =
-              module.lookupSymbol<mlir::func::FuncOp>(unionTagValidateSymbol) !=
-              nullptr;
-          if (!hasUnionTagValidate) {
-            child.emitOpError("missing lowered union-tag validation helper symbol: " +
-                              unionTagValidateSymbol +
-                              "; run lower-dsdl-serialization before "
-                              "convert-dsdl-to-emitc");
-            signalPassFailure();
-            return;
-          }
+          const auto unionTagValidateAttr = child.getAttrOfType<mlir::StringAttr>(
+              kLoweredUnionTagValidateHelperAttr);
+          unionTagValidateSymbol = unionTagValidateAttr
+                                       ? unionTagValidateAttr.getValue().str()
+                                       : std::string{};
           unionTagValidateSymbols.insert(unionTagValidateSymbol);
           if (unionTagSerializeHelper.empty() ||
               unionTagDeserializeHelper.empty()) {

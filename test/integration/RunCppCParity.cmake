@@ -168,7 +168,7 @@ set(min_random 128)
 set(min_cases 7)
 set(min_directed 1)
 string(REGEX MATCH
-  "PASS cpp-c parity random=([0-9]+) cases=([0-9]+) directed=([0-9]+)"
+  "PASS cpp-c parity random_iterations=([0-9]+) random_cases=([0-9]+) directed_cases=([0-9]+)"
   parity_summary_line
   "${run_stdout}")
 if(NOT parity_summary_line)
@@ -192,7 +192,7 @@ if(observed_directed LESS min_directed)
 endif()
 
 string(REGEX MATCH
-  "PASS cpp-c inventory cases=([0-9]+) directed=([0-9]+)"
+  "PASS cpp-c inventory random_cases=([0-9]+) directed_cases=([0-9]+)"
   inventory_summary_match
   "${run_stdout}")
 if(NOT inventory_summary_match)
@@ -229,6 +229,35 @@ if(NOT observed_directed_pass_lines EQUAL observed_directed)
     "C/C++ directed execution count mismatch: pass-lines=${observed_directed_pass_lines}, "
     "summary directed=${observed_directed}")
 endif()
+
+set(required_directed_markers
+  "INFO cpp-c directed marker heartbeat_empty_deserialize"
+  "INFO cpp-c directed marker frame_bad_union_tag_deserialize"
+  "INFO cpp-c directed marker execute_request_truncated_payload_roundtrip"
+  "INFO cpp-c directed marker execute_response_truncated_payload_roundtrip"
+  "INFO cpp-c directed marker execute_response_bad_array_length_deserialize"
+  "INFO cpp-c directed marker list_bad_delimiter_header_deserialize"
+  "INFO cpp-c directed marker list_second_delimiter_header_deserialize"
+  "INFO cpp-c directed marker list_nested_bad_union_tag_deserialize"
+  "INFO cpp-c directed marker list_second_section_nested_bad_union_tag_deserialize"
+  "INFO cpp-c directed marker list_third_delimiter_header_deserialize"
+  "INFO cpp-c directed marker list_nested_bad_array_length_serialize"
+  "INFO cpp-c directed marker frame_bad_union_tag_serialize"
+  "INFO cpp-c directed marker execute_request_too_small_serialize"
+  "INFO cpp-c directed marker execute_request_bad_array_length_serialize"
+  "INFO cpp-c directed marker execute_response_bad_array_length_serialize"
+  "INFO cpp-c directed marker heartbeat_too_small_serialize"
+  "INFO cpp-c directed marker health_saturating_serialize"
+  "INFO cpp-c directed marker synchronized_timestamp_truncating_serialize"
+  "INFO cpp-c directed marker integer8_signed_roundtrip"
+)
+foreach(marker IN LISTS required_directed_markers)
+  string(FIND "${run_stdout}" "${marker}" marker_pos)
+  if(marker_pos EQUAL -1)
+    message(FATAL_ERROR
+      "required C/C++ directed parity marker missing: ${marker}")
+  endif()
+endforeach()
 
 set(summary_file "${OUT_DIR}/cpp-c-parity-${CPP_PROFILE}-summary.txt")
 string(RANDOM LENGTH 8 ALPHABET 0123456789abcdef summary_nonce)

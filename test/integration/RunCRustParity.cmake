@@ -181,7 +181,7 @@ set(min_random 128)
 set(min_cases 8)
 set(min_directed 1)
 string(REGEX MATCH
-  "PASS c/rust parity random=([0-9]+) cases=([0-9]+) directed=([0-9]+)"
+  "PASS c/rust parity random_iterations=([0-9]+) random_cases=([0-9]+) directed_cases=([0-9]+)"
   parity_summary_line
   "${run_stdout}")
 if(NOT parity_summary_line)
@@ -205,7 +205,7 @@ if(observed_directed LESS min_directed)
 endif()
 
 string(REGEX MATCH
-  "PASS c/rust inventory cases=([0-9]+) directed=([0-9]+)"
+  "PASS c/rust inventory random_cases=([0-9]+) directed_cases=([0-9]+)"
   inventory_summary_match
   "${run_stdout}")
 if(NOT inventory_summary_match)
@@ -242,6 +242,35 @@ if(NOT observed_directed_pass_lines EQUAL observed_directed)
     "C/Rust directed execution count mismatch: pass-lines=${observed_directed_pass_lines}, "
     "summary directed=${observed_directed}")
 endif()
+
+set(required_directed_markers
+  "INFO c/rust directed marker heartbeat_empty_deserialize"
+  "INFO c/rust directed marker frame_bad_union_tag_deserialize"
+  "INFO c/rust directed marker execute_request_truncated_payload_roundtrip"
+  "INFO c/rust directed marker execute_response_truncated_payload_roundtrip"
+  "INFO c/rust directed marker execute_response_bad_array_length_deserialize"
+  "INFO c/rust directed marker list_bad_delimiter_header_deserialize"
+  "INFO c/rust directed marker list_second_delimiter_header_deserialize"
+  "INFO c/rust directed marker list_nested_bad_union_tag_deserialize"
+  "INFO c/rust directed marker list_second_section_nested_bad_union_tag_deserialize"
+  "INFO c/rust directed marker list_third_delimiter_header_deserialize"
+  "INFO c/rust directed marker list_nested_bad_array_length_serialize"
+  "INFO c/rust directed marker frame_bad_union_tag_serialize"
+  "INFO c/rust directed marker execute_response_bad_array_length_serialize"
+  "INFO c/rust directed marker execute_request_bad_array_length_serialize"
+  "INFO c/rust directed marker execute_request_too_small_serialize"
+  "INFO c/rust directed marker heartbeat_too_small_serialize"
+  "INFO c/rust directed marker health_saturating_serialize"
+  "INFO c/rust directed marker synchronized_timestamp_truncating_serialize"
+  "INFO c/rust directed marker integer8_signed_roundtrip"
+)
+foreach(marker IN LISTS required_directed_markers)
+  string(FIND "${run_stdout}" "${marker}" marker_pos)
+  if(marker_pos EQUAL -1)
+    message(FATAL_ERROR
+      "required C/Rust directed parity marker missing: ${marker}")
+  endif()
+endforeach()
 
 set(summary_file "${OUT_DIR}/c-rust-parity-summary.txt")
 string(RANDOM LENGTH 8 ALPHABET 0123456789abcdef summary_nonce)

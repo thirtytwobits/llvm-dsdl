@@ -279,5 +279,80 @@ if(NOT run_result EQUAL 0)
   message(FATAL_ERROR "differential parity harness reported mismatches")
 endif()
 
-file(WRITE "${OUT_DIR}/differential-summary.txt" "${run_stdout}\n")
+set(min_random_iterations 128)
+set(min_random_cases 6)
+set(expected_directed_cases 0)
+string(REGEX MATCH
+  "PASS differential parity random_iterations=([0-9]+) random_cases=([0-9]+) directed_cases=([0-9]+)"
+  parity_summary_line
+  "${run_stdout}")
+if(NOT parity_summary_line)
+  message(FATAL_ERROR
+    "failed to parse differential parity summary line from harness output")
+endif()
+set(observed_random_iterations "${CMAKE_MATCH_1}")
+set(observed_random_cases "${CMAKE_MATCH_2}")
+set(observed_directed_cases "${CMAKE_MATCH_3}")
+if(observed_random_iterations LESS min_random_iterations)
+  message(FATAL_ERROR
+    "differential parity random-iteration regression: observed=${observed_random_iterations}, required>=${min_random_iterations}")
+endif()
+if(observed_random_cases LESS min_random_cases)
+  message(FATAL_ERROR
+    "differential parity random-case regression: observed=${observed_random_cases}, required>=${min_random_cases}")
+endif()
+if(NOT observed_directed_cases EQUAL expected_directed_cases)
+  message(FATAL_ERROR
+    "differential parity directed-case drift: observed=${observed_directed_cases}, expected=${expected_directed_cases}")
+endif()
+
+string(REGEX MATCH
+  "PASS differential inventory random_cases=([0-9]+) directed_cases=([0-9]+)"
+  inventory_summary_match
+  "${run_stdout}")
+if(NOT inventory_summary_match)
+  message(FATAL_ERROR "missing differential parity inventory summary marker")
+endif()
+set(inventory_random_cases "${CMAKE_MATCH_1}")
+set(inventory_directed_cases "${CMAKE_MATCH_2}")
+if(NOT inventory_random_cases EQUAL observed_random_cases OR
+   NOT inventory_directed_cases EQUAL observed_directed_cases)
+  message(FATAL_ERROR
+    "differential parity inventory mismatch: inventory random=${inventory_random_cases}, "
+    "inventory directed=${inventory_directed_cases}, summary random=${observed_random_cases}, "
+    "summary directed=${observed_directed_cases}")
+endif()
+
+string(REGEX MATCHALL
+  "PASS [A-Za-z0-9_.]+ random \\([0-9]+ iterations\\)"
+  random_pass_lines
+  "${run_stdout}")
+list(LENGTH random_pass_lines observed_random_pass_lines)
+if(NOT observed_random_pass_lines EQUAL observed_random_cases)
+  message(FATAL_ERROR
+    "differential parity random execution count mismatch: pass-lines=${observed_random_pass_lines}, "
+    "summary random=${observed_random_cases}")
+endif()
+
+string(REGEX MATCHALL
+  "PASS [A-Za-z0-9_]+ directed"
+  directed_pass_lines
+  "${run_stdout}")
+list(LENGTH directed_pass_lines observed_directed_pass_lines)
+if(NOT observed_directed_pass_lines EQUAL observed_directed_cases)
+  message(FATAL_ERROR
+    "differential parity directed execution count mismatch: pass-lines=${observed_directed_pass_lines}, "
+    "summary directed=${observed_directed_cases}")
+endif()
+
+string(FIND "${run_stdout}" "INFO differential directed baseline directed_cases=0" directed_baseline_pos)
+if(directed_baseline_pos EQUAL -1)
+  message(FATAL_ERROR "missing differential parity directed baseline marker")
+endif()
+
+string(RANDOM LENGTH 8 ALPHABET 0123456789abcdef summary_nonce)
+set(summary_file "${OUT_DIR}/differential-summary.txt")
+set(summary_tmp "${summary_file}.tmp-${summary_nonce}")
+file(WRITE "${summary_tmp}" "${run_stdout}\n")
+file(RENAME "${summary_tmp}" "${summary_file}")
 message(STATUS "Differential parity summary:\n${run_stdout}")

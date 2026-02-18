@@ -616,7 +616,7 @@ func main() {
 	const randomCases = 2
 
 	fmt.Printf(
-		"PASS signed-narrow inventory random_cases=%d directed_cases=%d\n",
+		"PASS signed-narrow-c-go-parity inventory random_cases=%d directed_cases=%d\n",
 		randomCases,
 		directedCases,
 	)

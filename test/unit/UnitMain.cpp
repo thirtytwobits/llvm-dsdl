@@ -6,6 +6,7 @@ bool runEvaluatorTests();
 bool runAnalyzerTests();
 bool runRuntimeTests();
 bool runArrayWirePlanTests();
+bool runLoweredBodyPlanTests();
 bool runSectionHelperBindingPlanTests();
 bool runSerDesStatementPlanTests();
 bool runHelperBindingRenderTests();
@@ -21,6 +22,7 @@ int main() {
   ok = runAnalyzerTests() && ok;
   ok = runRuntimeTests() && ok;
   ok = runArrayWirePlanTests() && ok;
+  ok = runLoweredBodyPlanTests() && ok;
   ok = runSectionHelperBindingPlanTests() && ok;
   ok = runSerDesStatementPlanTests() && ok;
   ok = runHelperBindingRenderTests() && ok;

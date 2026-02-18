@@ -201,7 +201,7 @@ set(min_random 128)
 set(min_cases 109)
 set(min_directed 265)
 string(REGEX MATCH
-  "PASS c/go parity random=([0-9]+) cases=([0-9]+) directed=([0-9]+)"
+  "PASS c/go parity random_iterations=([0-9]+) random_cases=([0-9]+) directed_cases=([0-9]+)"
   parity_summary_line
   "${run_stdout}")
 if(NOT parity_summary_line)
@@ -254,7 +254,7 @@ if(NOT observed_directed_vector_pass_lines EQUAL observed_directed)
 endif()
 
 string(REGEX MATCH
-  "PASS parity inventory cases=([0-9]+) directed=([0-9]+)"
+  "PASS c/go inventory random_cases=([0-9]+) directed_cases=([0-9]+)"
   inventory_summary_match
   "${run_stdout}")
 if(NOT inventory_summary_match)

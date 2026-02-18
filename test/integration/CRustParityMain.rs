@@ -363,6 +363,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 c_result.deserialize_rc, c_result.deserialize_consumed, rust_rc, rust_consumed
             ));
         }
+        println!("INFO c/rust directed marker heartbeat_empty_deserialize");
     }
 
     {
@@ -390,6 +391,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 c_result.deserialize_rc, c_result.deserialize_consumed, rust_rc, rust_consumed
             ));
         }
+        println!("INFO c/rust directed marker frame_bad_union_tag_deserialize");
     }
 
     {
@@ -459,6 +461,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 format_bytes(&rust_output[..rust_ser_size])
             ));
         }
+        println!("INFO c/rust directed marker execute_request_truncated_payload_roundtrip");
     }
 
     {
@@ -528,6 +531,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 format_bytes(&rust_output[..rust_ser_size])
             ));
         }
+        println!("INFO c/rust directed marker execute_response_truncated_payload_roundtrip");
     }
 
     {
@@ -556,6 +560,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 c_result.deserialize_rc, c_result.deserialize_consumed, rust_rc, rust_consumed
             ));
         }
+        println!("INFO c/rust directed marker execute_response_bad_array_length_deserialize");
     }
 
     {
@@ -585,6 +590,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 c_result.deserialize_rc, c_result.deserialize_consumed, rust_rc, rust_consumed
             ));
         }
+        println!("INFO c/rust directed marker list_bad_delimiter_header_deserialize");
     }
 
     {
@@ -614,6 +620,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 c_result.deserialize_rc, c_result.deserialize_consumed, rust_rc, rust_consumed
             ));
         }
+        println!("INFO c/rust directed marker list_nested_bad_union_tag_deserialize");
     }
 
     {
@@ -644,6 +651,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 c_result.deserialize_rc, c_result.deserialize_consumed, rust_rc, rust_consumed
             ));
         }
+        println!("INFO c/rust directed marker list_second_delimiter_header_deserialize");
     }
 
     {
@@ -675,6 +683,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 c_result.deserialize_rc, c_result.deserialize_consumed, rust_rc, rust_consumed
             ));
         }
+        println!("INFO c/rust directed marker list_second_section_nested_bad_union_tag_deserialize");
     }
 
     {
@@ -706,6 +715,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 c_result.deserialize_rc, c_result.deserialize_consumed, rust_rc, rust_consumed
             ));
         }
+        println!("INFO c/rust directed marker list_third_delimiter_header_deserialize");
     }
 
     {
@@ -739,6 +749,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 c_result.serialize_rc, c_result.serialize_size, rust_rc
             ));
         }
+        println!("INFO c/rust directed marker list_nested_bad_array_length_serialize");
     }
 
     {
@@ -770,6 +781,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 c_result.serialize_rc, c_result.serialize_size, rust_rc
             ));
         }
+        println!("INFO c/rust directed marker frame_bad_union_tag_serialize");
     }
 
     {
@@ -800,6 +812,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 c_result.serialize_rc, c_result.serialize_size, rust_rc
             ));
         }
+        println!("INFO c/rust directed marker execute_response_bad_array_length_serialize");
     }
 
     {
@@ -830,6 +843,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 c_result.serialize_rc, c_result.serialize_size, rust_rc
             ));
         }
+        println!("INFO c/rust directed marker execute_request_bad_array_length_serialize");
     }
 
     {
@@ -862,6 +876,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 c_result.serialize_rc, c_result.serialize_size, rust_rc
             ));
         }
+        println!("INFO c/rust directed marker execute_request_too_small_serialize");
     }
 
     {
@@ -890,6 +905,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 c_result.serialize_rc, c_result.serialize_size, rust_rc
             ));
         }
+        println!("INFO c/rust directed marker heartbeat_too_small_serialize");
     }
 
     {
@@ -932,6 +948,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 rust_output[0]
             ));
         }
+        println!("INFO c/rust directed marker health_saturating_serialize");
     }
 
     {
@@ -980,6 +997,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 format_bytes(&rust_output[..rust_size.min(MAX_IO_BUFFER)])
             ));
         }
+        println!("INFO c/rust directed marker synchronized_timestamp_truncating_serialize");
     }
 
     {
@@ -1042,6 +1060,7 @@ fn run_directed_error_cases() -> Result<(), String> {
                 ));
             }
         }
+        println!("INFO c/rust directed marker integer8_signed_roundtrip");
     }
 
     println!("PASS directed_error_parity directed");
@@ -1175,10 +1194,10 @@ fn main() {
     match result {
         Ok(()) => {
             println!(
-                "PASS c/rust inventory cases={RANDOM_CASES} directed={DIRECTED_CASES}"
+                "PASS c/rust inventory random_cases={RANDOM_CASES} directed_cases={DIRECTED_CASES}"
             );
             println!(
-                "PASS c/rust parity random={iterations} cases={RANDOM_CASES} directed={DIRECTED_CASES}"
+                "PASS c/rust parity random_iterations={iterations} random_cases={RANDOM_CASES} directed_cases={DIRECTED_CASES}"
             );
             println!("C/Rust parity PASS");
         }

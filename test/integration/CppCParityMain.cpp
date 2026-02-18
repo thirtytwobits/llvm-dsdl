@@ -226,6 +226,7 @@ int runDirectedErrorCases() {
                    cppConsumed);
       return 1;
     }
+    std::printf("INFO cpp-c directed marker heartbeat_empty_deserialize\n");
   }
 
   {
@@ -246,6 +247,7 @@ int runDirectedErrorCases() {
                    cppConsumed);
       return 1;
     }
+    std::printf("INFO cpp-c directed marker frame_bad_union_tag_deserialize\n");
   }
 
   {
@@ -292,6 +294,7 @@ int runDirectedErrorCases() {
       dumpBytes("cpp", cppOut, cppSize);
       return 1;
     }
+    std::printf("INFO cpp-c directed marker execute_request_truncated_payload_roundtrip\n");
   }
 
   {
@@ -338,6 +341,7 @@ int runDirectedErrorCases() {
       dumpBytes("cpp", cppOut, cppSize);
       return 1;
     }
+    std::printf("INFO cpp-c directed marker execute_response_truncated_payload_roundtrip\n");
   }
 
   {
@@ -359,6 +363,7 @@ int runDirectedErrorCases() {
                    cppConsumed);
       return 1;
     }
+    std::printf("INFO cpp-c directed marker execute_response_bad_array_length_deserialize\n");
   }
 
   {
@@ -380,6 +385,7 @@ int runDirectedErrorCases() {
                    cppConsumed);
       return 1;
     }
+    std::printf("INFO cpp-c directed marker list_bad_delimiter_header_deserialize\n");
   }
 
   {
@@ -402,6 +408,7 @@ int runDirectedErrorCases() {
                    cppConsumed);
       return 1;
     }
+    std::printf("INFO cpp-c directed marker list_second_delimiter_header_deserialize\n");
   }
 
   {
@@ -424,6 +431,7 @@ int runDirectedErrorCases() {
                    cppConsumed);
       return 1;
     }
+    std::printf("INFO cpp-c directed marker list_nested_bad_union_tag_deserialize\n");
   }
 
   {
@@ -448,6 +456,7 @@ int runDirectedErrorCases() {
                    cppConsumed);
       return 1;
     }
+    std::printf("INFO cpp-c directed marker list_second_section_nested_bad_union_tag_deserialize\n");
   }
 
   {
@@ -473,6 +482,7 @@ int runDirectedErrorCases() {
                    cppConsumed);
       return 1;
     }
+    std::printf("INFO cpp-c directed marker list_third_delimiter_header_deserialize\n");
   }
 
   {
@@ -503,6 +513,7 @@ int runDirectedErrorCases() {
                    cppSize);
       return 1;
     }
+    std::printf("INFO cpp-c directed marker list_nested_bad_array_length_serialize\n");
   }
 
   {
@@ -528,6 +539,7 @@ int runDirectedErrorCases() {
                    cppSize);
       return 1;
     }
+    std::printf("INFO cpp-c directed marker frame_bad_union_tag_serialize\n");
   }
 
   {
@@ -553,6 +565,7 @@ int runDirectedErrorCases() {
                    cppSize);
       return 1;
     }
+    std::printf("INFO cpp-c directed marker execute_request_too_small_serialize\n");
   }
 
   {
@@ -585,6 +598,7 @@ int runDirectedErrorCases() {
                    cppSize);
       return 1;
     }
+    std::printf("INFO cpp-c directed marker execute_request_bad_array_length_serialize\n");
   }
 
   {
@@ -616,6 +630,7 @@ int runDirectedErrorCases() {
                    cppSize);
       return 1;
     }
+    std::printf("INFO cpp-c directed marker execute_response_bad_array_length_serialize\n");
   }
 
   {
@@ -639,6 +654,7 @@ int runDirectedErrorCases() {
                    cppSize);
       return 1;
     }
+    std::printf("INFO cpp-c directed marker heartbeat_too_small_serialize\n");
   }
 
   {
@@ -663,6 +679,7 @@ int runDirectedErrorCases() {
                    cppSize, cppBuffer[0]);
       return 1;
     }
+    std::printf("INFO cpp-c directed marker health_saturating_serialize\n");
   }
 
   {
@@ -698,6 +715,7 @@ int runDirectedErrorCases() {
       dumpBytes("cpp", cppBuffer, cppSize);
       return 1;
     }
+    std::printf("INFO cpp-c directed marker synchronized_timestamp_truncating_serialize\n");
   }
 
   {
@@ -740,6 +758,7 @@ int runDirectedErrorCases() {
                    static_cast<int>(cppSerRc), cppSize, cppBuffer[0]);
       return 1;
     }
+    std::printf("INFO cpp-c directed marker integer8_signed_roundtrip\n");
   }
 
   std::printf("PASS directed_error_parity directed\n");
@@ -995,10 +1014,11 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  std::printf("PASS cpp-c inventory cases=%zu directed=%zu\n", kRandomCases,
-              kDirectedCases);
-  std::printf("PASS cpp-c parity random=%zu cases=%zu directed=%zu\n", iterations,
+  std::printf("PASS cpp-c inventory random_cases=%zu directed_cases=%zu\n",
               kRandomCases, kDirectedCases);
+  std::printf(
+      "PASS cpp-c parity random_iterations=%zu random_cases=%zu directed_cases=%zu\n",
+      iterations, kRandomCases, kDirectedCases);
   std::printf("C/C++ parity PASS\n");
   return 0;
 }

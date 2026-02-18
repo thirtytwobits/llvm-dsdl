@@ -147,7 +147,7 @@ static int runCase(const CasePair *const testCase, const size_t iterations,
     }
   }
 
-  printf("PASS %s (%zu iterations)\n", testCase->name, iterations);
+  printf("PASS %s random (%zu iterations)\n", testCase->name, iterations);
   return 0;
 }
 
@@ -178,6 +178,9 @@ int main(int argc, char **argv) {
       return 1;
     }
   }
-  printf("Differential parity PASS (%zu cases)\n", caseCount);
+  printf("PASS differential parity random_iterations=%zu random_cases=%zu directed_cases=0\n",
+         iterations, caseCount);
+  printf("PASS differential inventory random_cases=%zu directed_cases=0\n", caseCount);
+  printf("INFO differential directed baseline directed_cases=0\n");
   return 0;
 }

@@ -89,6 +89,8 @@ endif()
 file(READ "${lowered_mlir}" lowered_text)
 
 foreach(required
+    "llvmdsdl.lowered_contract_version = 1 : i64"
+    "llvmdsdl.lowered_contract_producer = \"lower-dsdl-serialization\""
     "lowered"
     "lowered_step_count ="
     "lowered_field_count ="

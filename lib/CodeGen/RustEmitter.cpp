@@ -2,10 +2,9 @@
 #include "llvmdsdl/CodeGen/ArrayWirePlan.h"
 #include "llvmdsdl/CodeGen/HelperBindingRender.h"
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
+#include "llvmdsdl/CodeGen/LoweredBodyPlan.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
-#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
 #include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
-#include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 
@@ -329,12 +328,12 @@ public:
     emitLine(out, 1,
              "pub fn serialize(&self, buffer: &mut [u8]) -> core::result::Result<usize, i8> {");
     emitLine(out, 2, "let mut offset_bits: usize = 0;");
-    emitSerializeMlirHelperBindings(out, section, 2, sectionFacts);
-    const auto fieldPlan = buildSectionStatementPlan(section, sectionFacts);
-    if (const auto capacityHelperSymbol =
-            resolveSectionCapacityCheckHelperSymbol(sectionFacts);
-        !capacityHelperSymbol.empty()) {
-      const auto capacityHelper = helperBindingName(capacityHelperSymbol);
+    const auto loweredPlan = buildLoweredBodyPlan(
+        section, sectionFacts, HelperBindingDirection::Serialize);
+    emitSerializeMlirHelperBindings(out, loweredPlan.helperBindings, 2);
+    if (loweredPlan.helperBindings.capacityCheck) {
+      const auto capacityHelper =
+          helperBindingName(loweredPlan.helperBindings.capacityCheck->symbol);
       emitLine(out, 2,
                "let _err_capacity = " + capacityHelper +
                    "(buffer.len().saturating_mul(8) as i64);");
@@ -351,9 +350,10 @@ public:
     }
 
     if (section.isUnion) {
-      emitSerializeUnion(out, section, fieldPlan.unionBranches, 2, sectionFacts);
+      emitSerializeUnion(out, section, loweredPlan.statements.unionBranches, 2,
+                         sectionFacts, loweredPlan.helperBindings);
     } else {
-      for (const auto &step : fieldPlan.orderedFields) {
+      for (const auto &step : loweredPlan.statements.orderedFields) {
         const auto &field = *step.field;
         emitAlignSerialize(out, field.resolvedType.alignmentBits, 2);
         if (field.isPadding) {
@@ -380,14 +380,15 @@ public:
     emitLine(out, 2, "let capacity_bytes = buffer.len();");
     emitLine(out, 2, "let capacity_bits = capacity_bytes.saturating_mul(8);\n");
     emitLine(out, 2, "let mut offset_bits: usize = 0;");
-    emitDeserializeMlirHelperBindings(out, section, 2, sectionFacts);
-    const auto fieldPlan = buildSectionStatementPlan(section, sectionFacts);
+    const auto loweredPlan = buildLoweredBodyPlan(
+        section, sectionFacts, HelperBindingDirection::Deserialize);
+    emitDeserializeMlirHelperBindings(out, loweredPlan.helperBindings, 2);
 
     if (section.isUnion) {
-      emitDeserializeUnion(out, section, fieldPlan.unionBranches, 2,
-                           sectionFacts);
+      emitDeserializeUnion(out, section, loweredPlan.statements.unionBranches, 2,
+                           sectionFacts, loweredPlan.helperBindings);
     } else {
-      for (const auto &step : fieldPlan.orderedFields) {
+      for (const auto &step : loweredPlan.statements.orderedFields) {
         const auto &field = *step.field;
         emitAlignDeserialize(out, field.resolvedType.alignmentBits, 2);
         if (field.isPadding) {
@@ -427,10 +428,8 @@ private:
   }
 
   void emitSerializeMlirHelperBindings(
-      std::ostringstream &out, const SemanticSection &section, const int indent,
-      const LoweredSectionFacts *const sectionFacts) {
-    const auto plan = buildSectionHelperBindingPlan(
-        section, sectionFacts, HelperBindingDirection::Serialize);
+      std::ostringstream &out, const SectionHelperBindingPlan &plan,
+      const int indent) {
     for (const auto &line : renderSectionHelperBindings(
              plan, HelperBindingRenderLanguage::Rust,
              ScalarBindingRenderDirection::Serialize,
@@ -443,10 +442,8 @@ private:
   }
 
   void emitDeserializeMlirHelperBindings(
-      std::ostringstream &out, const SemanticSection &section, const int indent,
-      const LoweredSectionFacts *const sectionFacts) {
-    const auto plan = buildSectionHelperBindingPlan(
-        section, sectionFacts, HelperBindingDirection::Deserialize);
+      std::ostringstream &out, const SectionHelperBindingPlan &plan,
+      const int indent) {
     for (const auto &line : renderSectionHelperBindings(
              plan, HelperBindingRenderLanguage::Rust,
              ScalarBindingRenderDirection::Deserialize,
@@ -513,23 +510,23 @@ private:
   void emitSerializeUnion(std::ostringstream &out, const SemanticSection &section,
                           const std::vector<PlannedFieldStep> &unionBranches,
                           const int indent,
-                          const LoweredSectionFacts *const sectionFacts) {
+                          const LoweredSectionFacts *const sectionFacts,
+                          const SectionHelperBindingPlan &helperBindings) {
     const auto tagBits = resolveUnionTagBits(section, sectionFacts);
-    const auto validateHelperSymbol =
-        resolveSectionUnionTagValidateHelperSymbol(sectionFacts);
-    const auto validateHelper = validateHelperSymbol.empty()
+    const auto validateHelper = !helperBindings.unionTagValidate
                                     ? std::string{}
-                                    : helperBindingName(validateHelperSymbol);
+                                    : helperBindingName(
+                                          helperBindings.unionTagValidate->symbol);
     if (!validateHelper.empty()) {
       emitLine(out, indent,
                "let _err_union_tag = " + validateHelper + "(self._tag_ as i64);");
       emitLine(out, indent,
                "if _err_union_tag != crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS { return Err(_err_union_tag); }");
     }
-    const auto tagHelperSymbol = resolveSectionUnionTagMaskHelperSymbol(
-        sectionFacts, HelperBindingDirection::Serialize);
-    const auto tagHelper = tagHelperSymbol.empty() ? std::string{}
-                                                   : helperBindingName(tagHelperSymbol);
+    const auto tagHelper = !helperBindings.unionTagMask
+                               ? std::string{}
+                               : helperBindingName(
+                                     helperBindings.unionTagMask->symbol);
     std::string tagExpr = "self._tag_ as u64";
     if (!tagHelper.empty()) {
       tagExpr = tagHelper + "(" + tagExpr + ")";
@@ -564,27 +561,27 @@ private:
                             const SemanticSection &section,
                             const std::vector<PlannedFieldStep> &unionBranches,
                             const int indent,
-                            const LoweredSectionFacts *const sectionFacts) {
+                            const LoweredSectionFacts *const sectionFacts,
+                            const SectionHelperBindingPlan &helperBindings) {
     const auto tagBits = resolveUnionTagBits(section, sectionFacts);
     const auto rawTag = nextName("tag_raw");
     emitLine(out, indent,
              "let " + rawTag + " = crate::dsdl_runtime::get_u64(buffer, offset_bits, " +
                  std::to_string(tagBits) + "u8);");
-    const auto tagHelperSymbol = resolveSectionUnionTagMaskHelperSymbol(
-        sectionFacts, HelperBindingDirection::Deserialize);
-    const auto tagHelper = tagHelperSymbol.empty() ? std::string{}
-                                                   : helperBindingName(tagHelperSymbol);
+    const auto tagHelper = !helperBindings.unionTagMask
+                               ? std::string{}
+                               : helperBindingName(
+                                     helperBindings.unionTagMask->symbol);
     std::string tagExpr = rawTag;
     if (!tagHelper.empty()) {
       tagExpr = tagHelper + "(" + tagExpr + ")";
     }
     emitLine(out, indent,
              "self._tag_ = (" + tagExpr + ") as u8;");
-    const auto validateHelperSymbol =
-        resolveSectionUnionTagValidateHelperSymbol(sectionFacts);
-    const auto validateHelper = validateHelperSymbol.empty()
+    const auto validateHelper = !helperBindings.unionTagValidate
                                     ? std::string{}
-                                    : helperBindingName(validateHelperSymbol);
+                                    : helperBindingName(
+                                          helperBindings.unionTagValidate->symbol);
     if (!validateHelper.empty()) {
       emitLine(out, indent,
                "let _err_union_tag = " + validateHelper + "(self._tag_ as i64);");
@@ -657,18 +654,12 @@ private:
           type, fieldFacts, HelperBindingDirection::Serialize);
       const auto helper = helperSymbol.empty() ? std::string{}
                                                : helperBindingName(helperSymbol);
-      if (!helper.empty()) {
-        valueExpr = helper + "(" + valueExpr + ")";
-      } else if (type.castMode == CastMode::Saturated) {
-        if (const auto maxVal = resolveUnsignedSaturationMax(type.bitLength)) {
-          const auto sat = nextName("sat");
-          emitLine(out, indent, "let mut " + sat + " = " + valueExpr + ";");
-          emitLine(out, indent,
-                   "if " + sat + " > " + std::to_string(*maxVal) + "u64 { " +
-                       sat + " = " + std::to_string(*maxVal) + "u64; }");
-          valueExpr = sat;
-        }
+      if (helper.empty()) {
+        emitLine(out, indent,
+                 "return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+        return;
       }
+      valueExpr = helper + "(" + valueExpr + ")";
 
       const auto err = nextName("err");
       emitLine(out, indent,
@@ -685,23 +676,12 @@ private:
           type, fieldFacts, HelperBindingDirection::Serialize);
       const auto helper = helperSymbol.empty() ? std::string{}
                                                : helperBindingName(helperSymbol);
-      if (!helper.empty()) {
-        valueExpr = helper + "(" + valueExpr + ")";
-      } else if (type.castMode == CastMode::Saturated) {
-        if (const auto range = resolveSignedSaturationRange(type.bitLength)) {
-          const auto sat = nextName("sat");
-          emitLine(out, indent, "let mut " + sat + " = " + valueExpr + ";");
-          emitLine(out, indent,
-                   "if " + sat + " < " + std::to_string(range->first) +
-                       "i64 { " + sat + " = " + std::to_string(range->first) +
-                       "i64; }");
-          emitLine(out, indent,
-                   "if " + sat + " > " + std::to_string(range->second) +
-                       "i64 { " + sat + " = " +
-                       std::to_string(range->second) + "i64; }");
-          valueExpr = sat;
-        }
+      if (helper.empty()) {
+        emitLine(out, indent,
+                 "return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+        return;
       }
+      valueExpr = helper + "(" + valueExpr + ")";
 
       const auto err = nextName("err");
       emitLine(out, indent,
@@ -719,9 +699,12 @@ private:
           type, fieldFacts, HelperBindingDirection::Serialize);
       const auto helper = helperSymbol.empty() ? std::string{}
                                                : helperBindingName(helperSymbol);
-      if (!helper.empty()) {
-        normalizedExpr = helper + "(" + normalizedExpr + ")";
+      if (helper.empty()) {
+        emitLine(out, indent,
+                 "return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+        return;
       }
+      normalizedExpr = helper + "(" + normalizedExpr + ")";
       std::string setCall;
       if (type.bitLength == 16U) {
         setCall = "crate::dsdl_runtime::set_f16(buffer, offset_bits, " +
@@ -767,21 +750,19 @@ private:
           type, fieldFacts, HelperBindingDirection::Deserialize);
       const auto helper = helperSymbol.empty() ? std::string{}
                                                : helperBindingName(helperSymbol);
-      if (!helper.empty()) {
-        const auto raw = nextName("raw");
+      if (helper.empty()) {
         emitLine(out, indent,
-                 "let " + raw + " = crate::dsdl_runtime::" + getter +
-                     "(buffer, offset_bits, " + std::to_string(type.bitLength) +
-                     "u8) as u64;");
-        emitLine(out, indent,
-                 expr + " = " + helper + "(" + raw + ") as " +
-                     unsignedStorageType(type.bitLength) + ";");
-      } else {
-        emitLine(out, indent,
-                 expr + " = crate::dsdl_runtime::" + getter +
-                     "(buffer, offset_bits, " + std::to_string(type.bitLength) +
-                     "u8) as " + unsignedStorageType(type.bitLength) + ";");
+                 "return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+        return;
       }
+      const auto raw = nextName("raw");
+      emitLine(out, indent,
+               "let " + raw + " = crate::dsdl_runtime::" + getter +
+                   "(buffer, offset_bits, " + std::to_string(type.bitLength) +
+                   "u8) as u64;");
+      emitLine(out, indent,
+               expr + " = " + helper + "(" + raw + ") as " +
+                   unsignedStorageType(type.bitLength) + ";");
       emitLine(out, indent,
                "offset_bits += " + std::to_string(type.bitLength) + ";");
       break;
@@ -793,20 +774,18 @@ private:
           type, fieldFacts, HelperBindingDirection::Deserialize);
       const auto helper = helperSymbol.empty() ? std::string{}
                                                : helperBindingName(helperSymbol);
-      if (!helper.empty()) {
-        const auto raw = nextName("raw");
+      if (helper.empty()) {
         emitLine(out, indent,
-                 "let " + raw + " = crate::dsdl_runtime::get_u64(buffer, offset_bits, " +
-                     std::to_string(type.bitLength) + "u8) as i64;");
-        emitLine(out, indent,
-                 expr + " = " + helper + "(" + raw + ") as " +
-                     signedStorageType(type.bitLength) + ";");
-      } else {
-        emitLine(out, indent,
-                 expr + " = crate::dsdl_runtime::" + getter +
-                     "(buffer, offset_bits, " + std::to_string(type.bitLength) +
-                     "u8) as " + signedStorageType(type.bitLength) + ";");
+                 "return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+        return;
       }
+      const auto raw = nextName("raw");
+      emitLine(out, indent,
+               "let " + raw + " = crate::dsdl_runtime::get_u64(buffer, offset_bits, " +
+                   std::to_string(type.bitLength) + "u8) as i64;");
+      emitLine(out, indent,
+               expr + " = " + helper + "(" + raw + ") as " +
+                   signedStorageType(type.bitLength) + ";");
       emitLine(out, indent,
                "offset_bits += " + std::to_string(type.bitLength) + ";");
       break;
@@ -816,33 +795,23 @@ private:
           type, fieldFacts, HelperBindingDirection::Deserialize);
       const auto helper = helperSymbol.empty() ? std::string{}
                                                : helperBindingName(helperSymbol);
+      if (helper.empty()) {
+        emitLine(out, indent,
+                 "return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+        return;
+      }
       if (type.bitLength == 16U) {
-        if (!helper.empty()) {
-          emitLine(out, indent,
-                   expr + " = " + helper +
-                       "(crate::dsdl_runtime::get_f16(buffer, offset_bits) as f64) as f32;");
-        } else {
-          emitLine(out, indent,
-                   expr + " = crate::dsdl_runtime::get_f16(buffer, offset_bits);");
-        }
+        emitLine(out, indent,
+                 expr + " = " + helper +
+                     "(crate::dsdl_runtime::get_f16(buffer, offset_bits) as f64) as f32;");
       } else if (type.bitLength == 32U) {
-        if (!helper.empty()) {
-          emitLine(out, indent,
-                   expr + " = " + helper +
-                       "(crate::dsdl_runtime::get_f32(buffer, offset_bits) as f64) as f32;");
-        } else {
-          emitLine(out, indent,
-                   expr + " = crate::dsdl_runtime::get_f32(buffer, offset_bits);");
-        }
+        emitLine(out, indent,
+                 expr + " = " + helper +
+                     "(crate::dsdl_runtime::get_f32(buffer, offset_bits) as f64) as f32;");
       } else {
-        if (!helper.empty()) {
-          emitLine(out, indent,
-                   expr + " = " + helper +
-                       "(crate::dsdl_runtime::get_f64(buffer, offset_bits) as f64) as f64;");
-        } else {
-          emitLine(out, indent,
-                   expr + " = crate::dsdl_runtime::get_f64(buffer, offset_bits);");
-        }
+        emitLine(out, indent,
+                 expr + " = " + helper +
+                     "(crate::dsdl_runtime::get_f64(buffer, offset_bits) as f64) as f64;");
       }
       emitLine(out, indent,
                "offset_bits += " + std::to_string(type.bitLength) + ";");
@@ -880,27 +849,28 @@ private:
       if (arrayDescriptor && !arrayDescriptor->validateSymbol.empty()) {
         validateHelper = helperBindingName(arrayDescriptor->validateSymbol);
       }
-      if (!validateHelper.empty()) {
-        const auto validateRc = nextName("len_rc");
+      if (validateHelper.empty()) {
         emitLine(out, indent,
-                 "let " + validateRc + " = " + validateHelper +
-                     "(" + expr + ".len() as i64);");
-        emitLine(out, indent,
-                 "if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
-      } else {
-        emitLine(out, indent,
-                 "if " + expr + ".len() > " +
-                     std::to_string(type.arrayCapacity) +
-                     "usize { return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH); }");
+                 "return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+        return;
       }
+      const auto validateRc = nextName("len_rc");
+      emitLine(out, indent,
+               "let " + validateRc + " = " + validateHelper +
+                   "(" + expr + ".len() as i64);");
+      emitLine(out, indent,
+               "if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
       std::string prefixExpr = expr + ".len() as u64";
       std::string serPrefixHelper;
       if (arrayDescriptor && !arrayDescriptor->prefixSymbol.empty()) {
         serPrefixHelper = helperBindingName(arrayDescriptor->prefixSymbol);
       }
-      if (!serPrefixHelper.empty()) {
-        prefixExpr = serPrefixHelper + "(" + prefixExpr + ")";
+      if (serPrefixHelper.empty()) {
+        emitLine(out, indent,
+                 "return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+        return;
       }
+      prefixExpr = serPrefixHelper + "(" + prefixExpr + ")";
       const auto err = nextName("err");
       emitLine(out, indent,
                "let " + err + " = crate::dsdl_runtime::set_uxx(buffer, offset_bits, " +
@@ -956,25 +926,27 @@ private:
       if (arrayDescriptor && !arrayDescriptor->prefixSymbol.empty()) {
         deserPrefixHelper = helperBindingName(arrayDescriptor->prefixSymbol);
       }
-      if (!deserPrefixHelper.empty()) {
-        countExpr = deserPrefixHelper + "(" + rawCount + ") as usize";
+      if (deserPrefixHelper.empty()) {
+        emitLine(out, indent,
+                 "return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+        return;
       }
+      countExpr = deserPrefixHelper + "(" + rawCount + ") as usize";
       emitLine(out, indent, "let " + count + " = " + countExpr + ";");
       std::string validateHelper;
       if (arrayDescriptor && !arrayDescriptor->validateSymbol.empty()) {
         validateHelper = helperBindingName(arrayDescriptor->validateSymbol);
       }
-      if (!validateHelper.empty()) {
-        const auto validateRc = nextName("len_rc");
+      if (validateHelper.empty()) {
         emitLine(out, indent,
-                 "let " + validateRc + " = " + validateHelper + "(" + count + " as i64);");
-        emitLine(out, indent,
-                 "if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
-      } else {
-        emitLine(out, indent,
-                 "if " + count + " > " + std::to_string(type.arrayCapacity) +
-                     "usize { return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH); }");
+                 "return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+        return;
       }
+      const auto validateRc = nextName("len_rc");
+      emitLine(out, indent,
+               "let " + validateRc + " = " + validateHelper + "(" + count + " as i64);");
+      emitLine(out, indent,
+               "if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
       emitLine(out, indent, expr + ".clear();");
       emitLine(out, indent, expr + ".reserve(" + count + ");");
     } else {
@@ -1021,18 +993,17 @@ private:
           resolveDelimiterValidateHelperSymbol(type, fieldFacts);
       const auto helper = helperSymbol.empty() ? std::string{}
                                                : helperBindingName(helperSymbol);
-      if (!helper.empty()) {
-        const auto validateRc = nextName("rc");
+      if (helper.empty()) {
         emitLine(out, indent,
-                 "let " + validateRc + " = " + helper +
-                     "(" + sizeVar + " as i64, _remaining as i64);");
-        emitLine(out, indent,
-                 "if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
-      } else {
-        emitLine(out, indent,
-                 "if " + sizeVar +
-                     " > _remaining { return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER); }");
+                 "return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+        return;
       }
+      const auto validateRc = nextName("rc");
+      emitLine(out, indent,
+               "let " + validateRc + " = " + helper +
+                   "(" + sizeVar + " as i64, _remaining as i64);");
+      emitLine(out, indent,
+               "if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
     }
     emitLine(out, indent,
              "let _start = crate::dsdl_runtime::choose_min(offset_bits / 8, buffer.len());");
@@ -1072,18 +1043,17 @@ private:
           resolveDelimiterValidateHelperSymbol(type, fieldFacts);
       const auto helper = helperSymbol.empty() ? std::string{}
                                                : helperBindingName(helperSymbol);
-      if (!helper.empty()) {
-        const auto validateRc = nextName("rc");
+      if (helper.empty()) {
         emitLine(out, indent,
-                 "let " + validateRc + " = " + helper +
-                     "(" + sizeVar + " as i64, _remaining as i64);");
-        emitLine(out, indent,
-                 "if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
-      } else {
-        emitLine(out, indent,
-                 "if " + sizeVar +
-                     " > _remaining { return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER); }");
+                 "return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+        return;
       }
+      const auto validateRc = nextName("rc");
+      emitLine(out, indent,
+               "let " + validateRc + " = " + helper +
+                   "(" + sizeVar + " as i64, _remaining as i64);");
+      emitLine(out, indent,
+               "if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
       emitLine(out, indent,
                "let _start = crate::dsdl_runtime::choose_min(offset_bits / 8, buffer.len());");
       emitLine(out, indent,

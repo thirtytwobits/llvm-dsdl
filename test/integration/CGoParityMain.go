@@ -872,7 +872,7 @@ func validateCaseInventory(cases []parityCase, directed []directedVector) error 
 		}
 	}
 
-	fmt.Printf("PASS parity inventory cases=%d directed=%d\n", len(cases), len(directed))
+	fmt.Printf("PASS c/go inventory random_cases=%d directed_cases=%d\n", len(cases), len(directed))
 	return nil
 }
 
@@ -4437,7 +4437,12 @@ func runCGoParity(iterations int) error {
 	emitCategorySummary("random", randomCategoryCounts)
 	emitCategorySummary("directed", directedCategoryCounts)
 
-	fmt.Printf("PASS c/go parity random=%d cases=%d directed=%d\n", iterations, len(cases), len(directed))
+	fmt.Printf(
+		"PASS c/go parity random_iterations=%d random_cases=%d directed_cases=%d\n",
+		iterations,
+		len(cases),
+		len(directed),
+	)
 	return nil
 }
 

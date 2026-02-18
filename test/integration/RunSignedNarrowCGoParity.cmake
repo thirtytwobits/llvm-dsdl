@@ -225,7 +225,7 @@ if(observed_directed_cases LESS min_directed_cases)
 endif()
 
 string(REGEX MATCH
-  "PASS signed-narrow inventory random_cases=([0-9]+) directed_cases=([0-9]+)"
+  "PASS signed-narrow-c-go-parity inventory random_cases=([0-9]+) directed_cases=([0-9]+)"
   inventory_line
   "${run_stdout}")
 if(NOT inventory_line)

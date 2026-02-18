@@ -6,6 +6,7 @@ add_executable(llvmdsdl-unit-tests
   AnalyzerTests.cpp
   RuntimeTests.cpp
   ArrayWirePlanTests.cpp
+  LoweredBodyPlanTests.cpp
   SectionHelperBindingPlanTests.cpp
   SerDesStatementPlanTests.cpp
   HelperBindingRenderTests.cpp
