@@ -14,6 +14,7 @@ namespace llvmdsdl {
 enum class HelperBindingRenderLanguage {
   Cpp,
   Rust,
+  Go,
 };
 
 enum class ScalarBindingRenderDirection {

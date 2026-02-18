@@ -91,7 +91,7 @@ int runCase(const char *const name, const std::size_t iterations,
     }
   }
 
-  std::printf("PASS %s (%zu iterations)\n", name, iterations);
+  std::printf("PASS %s random (%zu iterations)\n", name, iterations);
   return 0;
 }
 
@@ -251,13 +251,15 @@ int runDirectedChecks() {
     }
   }
 
-  std::printf("PASS signed-narrow-directed\n");
+  std::printf("PASS signed_narrow_directed_cpp_c directed\n");
   return 0;
 }
 
 } // namespace
 
 int main(int argc, char **argv) {
+  constexpr std::size_t kRandomCases = 2U;
+  constexpr std::size_t kDirectedCases = 1U;
   std::size_t iterations = 256U;
   if (argc > 1) {
     char *endptr = nullptr;
@@ -291,6 +293,12 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  std::printf(
+      "PASS signed-narrow-cpp-c inventory random_cases=%zu directed_cases=%zu\n",
+      kRandomCases, kDirectedCases);
+  std::printf(
+      "PASS signed-narrow-cpp-c parity random_iterations=%zu random_cases=%zu directed_cases=%zu\n",
+      iterations, kRandomCases, kDirectedCases);
   std::printf("Signed narrow C/C++ parity PASS\n");
   return 0;
 }

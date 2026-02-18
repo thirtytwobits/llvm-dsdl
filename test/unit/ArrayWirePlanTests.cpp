@@ -53,5 +53,46 @@ bool runArrayWirePlanTests() {
     }
   }
 
+  {
+    llvmdsdl::SemanticFieldType type;
+    type.scalarCategory = llvmdsdl::SemanticScalarCategory::UnsignedInt;
+    type.bitLength = 8;
+    type.arrayKind = llvmdsdl::ArrayKind::VariableExclusive;
+    type.arrayCapacity = 7;
+    type.arrayLengthPrefixBits = 4;
+
+    const auto plan = llvmdsdl::buildArrayWirePlan(
+        type, nullptr, std::nullopt, llvmdsdl::HelperBindingDirection::Serialize);
+    if (!plan.variable || plan.prefixBits != 4 || !plan.descriptor ||
+        !plan.descriptor->prefixSymbol.empty() ||
+        !plan.descriptor->validateSymbol.empty() ||
+        plan.descriptor->prefixBits != 4 || plan.descriptor->capacity != 7) {
+      std::cerr << "variable array wire plan without lowered facts mismatch\n";
+      return false;
+    }
+  }
+
+  {
+    llvmdsdl::SemanticFieldType type;
+    type.scalarCategory = llvmdsdl::SemanticScalarCategory::UnsignedInt;
+    type.bitLength = 8;
+    type.arrayKind = llvmdsdl::ArrayKind::VariableInclusive;
+    type.arrayCapacity = 15;
+    type.arrayLengthPrefixBits = 8;
+
+    llvmdsdl::LoweredFieldFacts facts;
+    facts.serArrayLengthPrefixHelper = "prefix_ser";
+    facts.arrayLengthValidateHelper = "validate_len";
+
+    const auto plan = llvmdsdl::buildArrayWirePlan(
+        type, &facts, 5U, llvmdsdl::HelperBindingDirection::Serialize);
+    if (!plan.variable || plan.prefixBits != 5 || !plan.descriptor ||
+        plan.descriptor->prefixBits != 5 ||
+        plan.descriptor->prefixSymbol != "prefix_ser") {
+      std::cerr << "variable array wire plan prefix override mismatch\n";
+      return false;
+    }
+  }
+
   return true;
 }

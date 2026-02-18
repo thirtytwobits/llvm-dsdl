@@ -6,7 +6,6 @@ target_link_libraries(dsdl-opt
   PRIVATE
   llvmdsdlTransforms
   MLIROptLib
-  MLIRSCFDialect
 )
 
 target_include_directories(dsdl-opt PRIVATE

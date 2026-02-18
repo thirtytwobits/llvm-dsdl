@@ -1,5 +1,6 @@
 #include "llvmdsdl/CodeGen/CEmitter.h"
 #include "llvmdsdl/CodeGen/CppEmitter.h"
+#include "llvmdsdl/CodeGen/GoEmitter.h"
 #include "llvmdsdl/CodeGen/RustEmitter.h"
 #include "llvmdsdl/Frontend/ASTPrinter.h"
 #include "llvmdsdl/Frontend/Parser.h"
@@ -23,16 +24,17 @@
 namespace {
 
 void printUsage() {
-  llvm::errs() << "Usage: dsdlc <ast|mlir|c|cpp|rust> --root-namespace-dir <dir> [options]\n"
+  llvm::errs() << "Usage: dsdlc <ast|mlir|c|cpp|rust|go> --root-namespace-dir <dir> [options]\n"
                << "Options:\n"
                << "  --root-namespace-dir <dir>   Primary namespace root (repeatable)\n"
                << "  --lookup-dir <dir>           Dependency namespace root (repeatable)\n"
-               << "  --out-dir <dir>              Output directory for 'c'/'cpp'/'rust' mode\n"
+               << "  --out-dir <dir>              Output directory for 'c'/'cpp'/'rust'/'go' mode\n"
                << "  --compat-mode                Enable compatibility mode\n"
                << "  --strict                     Enable strict mode (default)\n"
                << "  --cpp-profile <std|pmr|both> C++ backend profile (default: both)\n"
                << "  --rust-crate-name <name>     Rust crate/package name (rust mode)\n"
-               << "  --rust-profile <std|no-std-alloc> Rust backend profile (default: std)\n";
+               << "  --rust-profile <std|no-std-alloc> Rust backend profile (default: std)\n"
+               << "  --go-module <name>           Go module name (go mode)\n";
 }
 
 void printDiagnostics(const llvmdsdl::DiagnosticEngine &diag) {
@@ -67,6 +69,7 @@ int main(int argc, char **argv) {
   llvmdsdl::CppProfile cppProfile = llvmdsdl::CppProfile::Both;
   std::string rustCrateName = "llvmdsdl_generated";
   llvmdsdl::RustProfile rustProfile = llvmdsdl::RustProfile::Std;
+  std::string goModuleName = "llvmdsdl_generated";
 
   for (int i = 2; i < argc; ++i) {
     const std::string arg = argv[i];
@@ -117,6 +120,8 @@ int main(int argc, char **argv) {
         printUsage();
         return 1;
       }
+    } else if (arg == "--go-module") {
+      goModuleName = requireValue(arg);
     } else {
       llvm::errs() << "Unknown argument: " << arg << "\n";
       printUsage();
@@ -230,6 +235,26 @@ int main(int argc, char **argv) {
 
     if (llvm::Error err = llvmdsdl::emitRust(*semantic, *mlirModule, options,
                                              diagnostics)) {
+      llvm::errs() << llvm::toString(std::move(err)) << "\n";
+      printDiagnostics(diagnostics);
+      return 1;
+    }
+
+    printDiagnostics(diagnostics);
+    return diagnostics.hasErrors() ? 1 : 0;
+  }
+
+  if (command == "go") {
+    if (outDir.empty()) {
+      llvm::errs() << "--out-dir is required for 'go' command\n";
+      return 1;
+    }
+    llvmdsdl::GoEmitOptions options;
+    options.outDir = outDir;
+    options.moduleName = goModuleName;
+
+    if (llvm::Error err =
+            llvmdsdl::emitGo(*semantic, *mlirModule, options, diagnostics)) {
       llvm::errs() << llvm::toString(std::move(err)) << "\n";
       printDiagnostics(diagnostics);
       return 1;

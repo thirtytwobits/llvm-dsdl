@@ -2,6 +2,7 @@ add_library(llvmdsdlCodeGen
   ArrayWirePlan.cpp
   CEmitter.cpp
   CppEmitter.cpp
+  GoEmitter.cpp
   HelperBindingRender.cpp
   HelperSymbolResolver.cpp
   MlirLoweredFacts.cpp
@@ -17,15 +18,11 @@ target_link_libraries(llvmdsdlCodeGen
   PUBLIC
   llvmdsdlLowering
   llvmdsdlTransforms
-  llvmdsdlSemantics
-  llvmdsdlIR
   MLIRFuncToEmitC
   MLIRArithToEmitC
   MLIRSCFToEmitC
   MLIRTargetCpp
   MLIRTransforms
-  MLIRPass
-  MLIRIR
 )
 
 target_include_directories(llvmdsdlCodeGen PUBLIC

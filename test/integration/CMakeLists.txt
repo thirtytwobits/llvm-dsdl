@@ -66,6 +66,28 @@ endif()
 
 find_program(CARGO_EXECUTABLE cargo QUIET)
 find_program(RUSTC_EXECUTABLE rustc QUIET)
+find_program(GO_EXECUTABLE go QUIET)
+
+if(GO_EXECUTABLE)
+  add_test(
+    NAME llvmdsdl-go-runtime-unit-tests
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/go-runtime-unit-tests-out
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunGoRuntimeUnitTests.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-go-runtime-unit-tests
+    PROPERTIES
+      LABELS "integration;go;runtime;go-differential"
+  )
+else()
+  message(STATUS "Skipping Go runtime unit tests: go unavailable")
+endif()
+
 if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
   add_test(
     NAME llvmdsdl-signed-narrow-c-rust-parity
@@ -87,6 +109,29 @@ if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
   )
 else()
   message(STATUS "Skipping signed_narrow C/Rust parity test: C compiler or cargo/rustc unavailable")
+endif()
+
+if(CMAKE_C_COMPILER AND GO_EXECUTABLE AND CMAKE_AR)
+  add_test(
+    NAME llvmdsdl-signed-narrow-c-go-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/signed-narrow-c-go-parity-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DAR_EXECUTABLE=${CMAKE_AR}
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunSignedNarrowCGoParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-signed-narrow-c-go-parity
+    PROPERTIES
+      LABELS "integration;fixtures;go;differential;go-differential"
+  )
+else()
+  message(STATUS "Skipping signed_narrow C/Go parity test: C compiler, ar, or go unavailable")
 endif()
 
 if(NOT EXISTS "${LLVMDSDL_UAVCAN_ROOT}")
@@ -154,6 +199,38 @@ set_tests_properties(
     LABELS "integration;uavcan;rust"
 )
 
+add_test(
+  NAME llvmdsdl-uavcan-go-generation
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-go-out
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanGoGeneration.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-uavcan-go-generation
+  PROPERTIES
+    LABELS "integration;uavcan;go;go-differential"
+)
+
+add_test(
+  NAME llvmdsdl-uavcan-go-determinism
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-go-determinism-out
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanGoDeterminism.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-uavcan-go-determinism
+  PROPERTIES
+    LABELS "integration;uavcan;go;go-differential;slow"
+)
+
 find_program(CARGO_EXECUTABLE cargo QUIET)
 find_program(RUSTC_EXECUTABLE rustc QUIET)
 if(CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
@@ -173,6 +250,47 @@ if(CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
     PROPERTIES
       LABELS "integration;uavcan;rust;slow"
   )
+endif()
+
+if(GO_EXECUTABLE)
+  add_test(
+    NAME llvmdsdl-uavcan-go-build
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-go-build-out
+        -DGO_EXECUTABLE=${GO_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanGoBuild.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-uavcan-go-build
+    PROPERTIES
+      LABELS "integration;uavcan;go;go-differential;slow"
+  )
+
+  if(CMAKE_AR)
+    add_test(
+      NAME llvmdsdl-uavcan-c-go-parity
+      COMMAND
+        ${CMAKE_COMMAND}
+          -DDSDLC=$<TARGET_FILE:dsdlc>
+          -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+          -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-c-go-parity-out
+          -DC_COMPILER=${CMAKE_C_COMPILER}
+          -DAR_EXECUTABLE=${CMAKE_AR}
+          -DGO_EXECUTABLE=${GO_EXECUTABLE}
+          -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/RunCGoParity.cmake
+    )
+
+    set_tests_properties(
+      llvmdsdl-uavcan-c-go-parity
+      PROPERTIES
+        LABELS "integration;uavcan;go;differential;go-differential;slow"
+    )
+  endif()
 endif()
 
 add_test(

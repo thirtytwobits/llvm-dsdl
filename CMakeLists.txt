@@ -26,12 +26,43 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
 add_definitions(${LLVM_DEFINITIONS})
 
+if(APPLE AND LLVM_LINKER_SUPPORTS_NO_WARN_DUPLICATE_LIBRARIES)
+  add_link_options("-Wl,-no_warn_duplicate_libraries")
+endif()
+
 set(LLVMDSDL_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(LLVMDSDL_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
 
 add_subdirectory(include/llvmdsdl)
 add_subdirectory(lib)
 add_subdirectory(tools)
+
+set(LLVMDSDL_SELF_CONTAINED_TOOL_BUNDLE_DEFAULT OFF)
+if(APPLE)
+  set(LLVMDSDL_SELF_CONTAINED_TOOL_BUNDLE_DEFAULT ON)
+endif()
+
+option(LLVMDSDL_ENABLE_SELF_CONTAINED_TOOL_BUNDLE
+       "Enable self-contained tool bundle target (copies dsdlc/dsdl-opt with runtime deps)"
+       ${LLVMDSDL_SELF_CONTAINED_TOOL_BUNDLE_DEFAULT})
+
+if(LLVMDSDL_ENABLE_SELF_CONTAINED_TOOL_BUNDLE)
+  set(LLVMDSDL_SELF_CONTAINED_TOOLS_DIR
+      "${LLVMDSDL_BINARY_DIR}/self-contained-tools")
+  add_custom_target(bundle-tools-self-contained
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DTOOL_DSDLC=$<TARGET_FILE:dsdlc>
+        -DTOOL_DSDLOPT=$<TARGET_FILE:dsdl-opt>
+        -DOUTPUT_DIR=${LLVMDSDL_SELF_CONTAINED_TOOLS_DIR}
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/BundleSelfContainedTools.cmake
+    DEPENDS dsdlc dsdl-opt
+    USES_TERMINAL
+    VERBATIM
+    COMMENT
+      "Bundling self-contained tools into ${LLVMDSDL_SELF_CONTAINED_TOOLS_DIR}"
+  )
+endif()
 
 set(LLVMDSDL_UAVCAN_ROOT "")
 if(EXISTS "${LLVMDSDL_SOURCE_DIR}/public_regulated_dsdl/uavcan")
@@ -104,6 +135,9 @@ if(LLVMDSDL_UAVCAN_ROOT)
                                      rust-std
                                      rust --rust-profile std --rust-crate-name
                                      uavcan_dsdl_generated)
+  llvmdsdl_add_uavcan_codegen_target(generate-uavcan-go
+                                     go
+                                     go --go-module uavcan_dsdl_generated)
 
   add_custom_target(generate-uavcan-all)
   add_dependencies(generate-uavcan-all
@@ -111,7 +145,8 @@ if(LLVMDSDL_UAVCAN_ROOT)
                    generate-uavcan-cpp-both
                    generate-uavcan-cpp-std
                    generate-uavcan-cpp-pmr
-                   generate-uavcan-rust-std)
+                   generate-uavcan-rust-std
+                   generate-uavcan-go)
 
   add_custom_target(generate-demo-2026-02-16
     COMMAND

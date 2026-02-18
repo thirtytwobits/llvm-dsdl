@@ -23,13 +23,35 @@ It currently provides:
   - `std` profile enabled now, with an explicit reserved seam for future
     `no_std + alloc`.
   - MLIR schema/plan metadata validation before emission (matching C++ structural checks).
+- Go code generation (`dsdlc go`) with:
+  - A generated module layout (`go.mod`, `uavcan/**`, `dsdlruntime/**`).
+  - Per-type Go data types and inline SerDes methods.
+  - A local Go runtime module (`dsdlruntime/dsdl_runtime.go`) with bit-level primitives.
+  - Deterministic output and strict-mode full-`uavcan` generation/build gates.
 - Strict-mode-first semantics (`--strict` is default).
+
+## Ambitions
+
+Support code generation from a common MLIR for
+- C17
+- C++20 std
+- C++20 pmr
+- Rust std
+- Rust no-std
+- typescript
+- wasm
+
+Tools
+- dsdlc -> code generator
+- dsdl-opt -> out-of tree LLVM plugin
+- libdsdlc -> dynamic DSDL serdes for each language supported.
+- dsdld -> DSDL language server
 
 ## Repository Layout
 
 - `include/llvmdsdl`: public C++ headers.
 - `lib`: frontend, semantics, IR, lowering, transforms, codegen.
-- `tools/dsdlc`: CLI driver (`ast`, `mlir`, `c`, `cpp`, `rust`).
+- `tools/dsdlc`: CLI driver (`ast`, `mlir`, `c`, `cpp`, `rust`, `go`).
 - `tools/dsdl-opt`: MLIR pass driver for the DSDL dialect.
 - `runtime/dsdl_runtime.h`: generated C runtime support header.
 - `test/unit`: unit tests.
@@ -152,6 +174,97 @@ Run only the C/C++ PMR parity test:
 ctest --test-dir build -R llvmdsdl-uavcan-cpp-pmr-c-parity --output-on-failure
 ```
 
+Run only the signed-narrow C/Go fixture parity test:
+
+```bash
+ctest --test-dir build -R llvmdsdl-signed-narrow-c-go-parity --output-on-failure
+```
+
+Run only Go runtime unit tests:
+
+```bash
+ctest --test-dir build -R llvmdsdl-go-runtime-unit-tests --output-on-failure
+```
+
+Run the full Go differential ring workflow:
+
+```bash
+cmake --workflow --preset go-differential
+```
+
+Run the full Go differential ring workflow (Homebrew LLVM):
+
+```bash
+cmake --workflow --preset go-differential-homebrew
+```
+
+Run the full Go differential ring workflow (LLVM env vars):
+
+```bash
+cmake --workflow --preset go-differential-llvm-env
+```
+
+This runs:
+
+- `llvmdsdl-go-runtime-unit-tests`
+- `llvmdsdl-signed-narrow-c-go-parity`
+- `llvmdsdl-uavcan-go-generation`
+- `llvmdsdl-uavcan-go-determinism`
+- `llvmdsdl-uavcan-go-build`
+- `llvmdsdl-uavcan-c-go-parity`
+
+`llvmdsdl-uavcan-c-go-parity` now enforces directed baseline coverage for every
+parity case: at least one truncation vector and at least one serialize-buffer
+vector per case (auto-augmented when not explicitly listed), with summary
+markers validated by `RunCGoParity.cmake`.
+It also enforces inventory parity between the C harness wrappers and executed
+random parity cases (`DEFINE_ROUNDTRIP` count must match observed `cases`).
+The harness also validates no duplicate case/vector names and emits an inventory
+summary marker (`PASS parity inventory ...`) that the CMake gate verifies.
+Finally, the gate checks line-level execution counts for random and directed
+pass markers to ensure summary totals match actual executed vectors.
+The parity harness runners also isolate each invocation into a unique
+per-run work directory under the configured output root, which avoids race
+conditions when multiple workflows/tests execute concurrently.
+Successful runs clean up their per-run scratch directories automatically, while
+still writing stable summary files under the test output root.
+The runners also remove legacy flat output subdirectories (`c/`, `go/`,
+`build/`, `harness/`, and Go caches) from older harness layouts when present.
+The signed-narrow C/Go parity gate also enforces:
+- explicit inventory marker parity (`PASS signed-narrow inventory ...`)
+- random/direct pass-line execution counts matching summary totals
+- archive existence checks before Go linking
+- atomic summary-file replacement (`*.tmp-*` then rename)
+The other parity families now enforce the same inventory/pass-line invariants:
+- `llvmdsdl-uavcan-c-rust-parity`
+- `llvmdsdl-signed-narrow-c-rust-parity`
+- `llvmdsdl-uavcan-cpp-c-parity`
+- `llvmdsdl-uavcan-cpp-pmr-c-parity`
+- `llvmdsdl-signed-narrow-cpp-c-parity`
+- `llvmdsdl-signed-narrow-cpp-pmr-c-parity`
+
+Current `uavcan` C/Go parity coverage includes representative service/message
+families for:
+
+- `uavcan.node` (`Heartbeat`, `ExecuteCommand`, `GetInfo`, `ID`, `Mode`, `Version`, `Health`, `IOStatistics`)
+- `uavcan.node.port` (`List`, `ID`, `ServiceID`, `SubjectID`, `ServiceIDList`, `SubjectIDList`)
+- `uavcan.register` (`Value`, `Access`, `Name`, `List`)
+- `uavcan.file` (`Path`, `Error`, `List`, `Read`, `Write`, `Modify`, `GetInfo`)
+- `uavcan.internet.udp` (`OutgoingPacket`, `HandleIncomingPacket`)
+- `uavcan.time` (`Synchronization`, `SynchronizedTimestamp`, `TimeSystem`, `TAIInfo`, `GetSynchronizationMasterInfo`)
+- `uavcan.diagnostic` (`Record`, `Severity`)
+- `uavcan.metatransport.can` (`Frame`, `DataClassic`, `DataFD`, `Error`, `RTR`, `Manifestation`, `ArbitrationID`)
+- `uavcan.metatransport.serial` (`Fragment`)
+- `uavcan.metatransport.ethernet` (`Frame`, `EtherType`)
+- `uavcan.metatransport.udp` (`Endpoint`, `Frame`)
+- `uavcan.primitive` (`Empty`, `String`, `Unstructured`)
+- `uavcan.primitive.scalar` (`Bit`, `Integer*`, `Natural*`, `Real*`)
+- `uavcan.primitive.array` (`Bit`, `Integer*`, `Natural*`, `Real*`)
+- `uavcan.pnp` (`NodeIDAllocationData`)
+- `uavcan.pnp.cluster` (`Entry`, `AppendEntries`, `RequestVote`, `Discovery`)
+- `uavcan.si.unit` (`angle`, `length`, `velocity`, `acceleration`, `force`, `torque`, `temperature`, `voltage`)
+- `uavcan.si.sample` (`angle`, `velocity`, `acceleration`, `force`, `torque`, `temperature`, `voltage`)
+
 Run only the generated-Rust compile gate:
 
 ```bash
@@ -169,6 +282,20 @@ macOS Homebrew LLVM workflow:
 ```bash
 cmake --workflow --preset dev-homebrew
 ```
+
+Self-contained tool bundle workflow (macOS/Homebrew LLVM):
+
+```bash
+cmake --workflow --preset self-contained-tools-homebrew
+```
+
+This produces relocatable `dsdlc` and `dsdl-opt` binaries plus their non-system
+runtime `.dylib` dependencies under:
+
+- `<build-dir>/self-contained-tools` (for example
+  `build/dev-homebrew-self-contained/self-contained-tools`)
+- `<build-dir>/self-contained-tools/MANIFEST.txt` with rewritten runtime links
+  (`@executable_path/...` / `@loader_path/...`)
 
 Environment-driven LLVM workflow:
 

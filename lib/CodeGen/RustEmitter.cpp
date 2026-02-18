@@ -659,14 +659,15 @@ private:
                                                : helperBindingName(helperSymbol);
       if (!helper.empty()) {
         valueExpr = helper + "(" + valueExpr + ")";
-      } else if (type.castMode == CastMode::Saturated && type.bitLength < 64U) {
-        const auto sat = nextName("sat");
-        const auto maxVal = (1ULL << type.bitLength) - 1ULL;
-        emitLine(out, indent, "let mut " + sat + " = " + valueExpr + ";");
-        emitLine(out, indent,
-                 "if " + sat + " > " + std::to_string(maxVal) + "u64 { " + sat +
-                     " = " + std::to_string(maxVal) + "u64; }");
-        valueExpr = sat;
+      } else if (type.castMode == CastMode::Saturated) {
+        if (const auto maxVal = resolveUnsignedSaturationMax(type.bitLength)) {
+          const auto sat = nextName("sat");
+          emitLine(out, indent, "let mut " + sat + " = " + valueExpr + ";");
+          emitLine(out, indent,
+                   "if " + sat + " > " + std::to_string(*maxVal) + "u64 { " +
+                       sat + " = " + std::to_string(*maxVal) + "u64; }");
+          valueExpr = sat;
+        }
       }
 
       const auto err = nextName("err");
@@ -686,19 +687,20 @@ private:
                                                : helperBindingName(helperSymbol);
       if (!helper.empty()) {
         valueExpr = helper + "(" + valueExpr + ")";
-      } else if (type.castMode == CastMode::Saturated && type.bitLength < 64U &&
-                 type.bitLength > 0U) {
-        const auto sat = nextName("sat");
-        const auto minVal = -(1LL << (type.bitLength - 1U));
-        const auto maxVal = (1LL << (type.bitLength - 1U)) - 1LL;
-        emitLine(out, indent, "let mut " + sat + " = " + valueExpr + ";");
-        emitLine(out, indent,
-                 "if " + sat + " < " + std::to_string(minVal) + "i64 { " + sat +
-                     " = " + std::to_string(minVal) + "i64; }");
-        emitLine(out, indent,
-                 "if " + sat + " > " + std::to_string(maxVal) + "i64 { " + sat +
-                     " = " + std::to_string(maxVal) + "i64; }");
-        valueExpr = sat;
+      } else if (type.castMode == CastMode::Saturated) {
+        if (const auto range = resolveSignedSaturationRange(type.bitLength)) {
+          const auto sat = nextName("sat");
+          emitLine(out, indent, "let mut " + sat + " = " + valueExpr + ";");
+          emitLine(out, indent,
+                   "if " + sat + " < " + std::to_string(range->first) +
+                       "i64 { " + sat + " = " + std::to_string(range->first) +
+                       "i64; }");
+          emitLine(out, indent,
+                   "if " + sat + " > " + std::to_string(range->second) +
+                       "i64 { " + sat + " = " +
+                       std::to_string(range->second) + "i64; }");
+          valueExpr = sat;
+        }
       }
 
       const auto err = nextName("err");
@@ -759,21 +761,8 @@ private:
     case SemanticScalarCategory::Byte:
     case SemanticScalarCategory::Utf8:
     case SemanticScalarCategory::UnsignedInt: {
-      std::string getter = "get_u64";
-      switch (scalarStorageBits(type.bitLength)) {
-      case 8:
-        getter = "get_u8";
-        break;
-      case 16:
-        getter = "get_u16";
-        break;
-      case 32:
-        getter = "get_u32";
-        break;
-      default:
-        getter = "get_u64";
-        break;
-      }
+      const std::string getter =
+          "get_u" + std::string(scalarWidthSuffix(type.bitLength));
       const auto helperSymbol = resolveScalarHelperSymbol(
           type, fieldFacts, HelperBindingDirection::Deserialize);
       const auto helper = helperSymbol.empty() ? std::string{}
@@ -798,21 +787,8 @@ private:
       break;
     }
     case SemanticScalarCategory::SignedInt: {
-      std::string getter = "get_i64";
-      switch (scalarStorageBits(type.bitLength)) {
-      case 8:
-        getter = "get_i8";
-        break;
-      case 16:
-        getter = "get_i16";
-        break;
-      case 32:
-        getter = "get_i32";
-        break;
-      default:
-        getter = "get_i64";
-        break;
-      }
+      const std::string getter =
+          "get_i" + std::string(scalarWidthSuffix(type.bitLength));
       const auto helperSymbol = resolveScalarHelperSymbol(
           type, fieldFacts, HelperBindingDirection::Deserialize);
       const auto helper = helperSymbol.empty() ? std::string{}

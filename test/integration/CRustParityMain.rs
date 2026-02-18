@@ -240,7 +240,7 @@ where
         }
     }
 
-    println!("PASS {name} ({iterations} iterations)");
+    println!("PASS {name} random ({iterations} iterations)");
     Ok(())
 }
 
@@ -1044,7 +1044,7 @@ fn run_directed_error_cases() -> Result<(), String> {
         }
     }
 
-    println!("PASS directed-error-parity");
+    println!("PASS directed_error_parity directed");
     Ok(())
 }
 
@@ -1064,6 +1064,8 @@ fn parse_iterations() -> Result<usize, String> {
 }
 
 fn main() {
+    const RANDOM_CASES: usize = 8;
+    const DIRECTED_CASES: usize = 1;
     let iterations = match parse_iterations() {
         Ok(v) => v,
         Err(msg) => {
@@ -1172,6 +1174,12 @@ fn main() {
 
     match result {
         Ok(()) => {
+            println!(
+                "PASS c/rust inventory cases={RANDOM_CASES} directed={DIRECTED_CASES}"
+            );
+            println!(
+                "PASS c/rust parity random={iterations} cases={RANDOM_CASES} directed={DIRECTED_CASES}"
+            );
             println!("C/Rust parity PASS");
         }
         Err(msg) => {

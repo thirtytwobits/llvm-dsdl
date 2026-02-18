@@ -16,7 +16,6 @@ add_executable(llvmdsdl-unit-tests
 
 target_link_libraries(llvmdsdl-unit-tests
   PRIVATE
-  llvmdsdlSemantics
   llvmdsdlCodeGen
 )
 

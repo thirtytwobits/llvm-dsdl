@@ -50,6 +50,15 @@
       }
     },
     {
+      "name": "dev-homebrew-self-contained",
+      "displayName": "Development (Homebrew LLVM, self-contained tools)",
+      "description": "RelWithDebInfo build plus self-contained dsdlc/dsdl-opt bundle target.",
+      "inherits": "dev-homebrew",
+      "cacheVariables": {
+        "LLVMDSDL_ENABLE_SELF_CONTAINED_TOOL_BUNDLE": "ON"
+      }
+    },
+    {
       "name": "release",
       "displayName": "Release",
       "description": "Release build for optimized tooling binaries.",
@@ -83,6 +92,14 @@
       "name": "build-dev-homebrew",
       "displayName": "Build (dev-homebrew)",
       "configurePreset": "dev-homebrew"
+    },
+    {
+      "name": "build-dev-homebrew-self-contained-tools",
+      "displayName": "Build (self-contained tools, Homebrew LLVM)",
+      "configurePreset": "dev-homebrew-self-contained",
+      "targets": [
+        "bundle-tools-self-contained"
+      ]
     },
     {
       "name": "build-release",
@@ -234,6 +251,54 @@
           "label": "integration"
         }
       }
+    },
+    {
+      "name": "test-go-differential-homebrew",
+      "displayName": "Test (Go differential ring, dev-homebrew)",
+      "configurePreset": "dev-homebrew",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "go-differential"
+        }
+      }
+    },
+    {
+      "name": "test-go-differential",
+      "displayName": "Test (Go differential ring, dev)",
+      "configurePreset": "dev",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "go-differential"
+        }
+      }
+    },
+    {
+      "name": "test-go-differential-llvm-env",
+      "displayName": "Test (Go differential ring, dev-llvm-env)",
+      "configurePreset": "dev-llvm-env",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "go-differential"
+        }
+      }
     }
   ],
   "workflowPresets": [
@@ -272,6 +337,21 @@
         {
           "type": "test",
           "name": "test-dev-homebrew"
+        }
+      ]
+    },
+    {
+      "name": "self-contained-tools-homebrew",
+      "displayName": "Workflow (self-contained tools bundle, Homebrew LLVM)",
+      "description": "Configure + build self-contained dsdlc/dsdl-opt bundle with local runtime dependencies.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev-homebrew-self-contained"
+        },
+        {
+          "type": "build",
+          "name": "build-dev-homebrew-self-contained-tools"
         }
       ]
     },
@@ -416,6 +496,63 @@
         {
           "type": "build",
           "name": "build-demo-homebrew"
+        }
+      ]
+    },
+    {
+      "name": "go-differential-homebrew",
+      "displayName": "Workflow (Go differential ring, Homebrew LLVM)",
+      "description": "Configure + build + run Go differential parity gates (signed_narrow + uavcan).",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev-homebrew"
+        },
+        {
+          "type": "build",
+          "name": "build-dev-homebrew"
+        },
+        {
+          "type": "test",
+          "name": "test-go-differential-homebrew"
+        }
+      ]
+    },
+    {
+      "name": "go-differential",
+      "displayName": "Workflow (Go differential ring)",
+      "description": "Configure + build + run Go differential ring on default dev preset.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev"
+        },
+        {
+          "type": "build",
+          "name": "build-dev"
+        },
+        {
+          "type": "test",
+          "name": "test-go-differential"
+        }
+      ]
+    },
+    {
+      "name": "go-differential-llvm-env",
+      "displayName": "Workflow (Go differential ring, LLVM env vars)",
+      "description": "Configure + build + run Go differential ring using LLVM_DIR/MLIR_DIR from environment.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev-llvm-env"
+        },
+        {
+          "type": "build",
+          "name": "build-dev-llvm-env"
+        },
+        {
+          "type": "test",
+          "name": "test-go-differential-llvm-env"
         }
       ]
     }

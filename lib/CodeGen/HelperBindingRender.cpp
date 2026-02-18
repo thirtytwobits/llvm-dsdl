@@ -10,7 +10,8 @@ namespace {
 
 std::string renderU64MaskLiteral(const HelperBindingRenderLanguage language,
                                  const std::uint32_t bits) {
-  if (language == HelperBindingRenderLanguage::Cpp) {
+  switch (language) {
+  case HelperBindingRenderLanguage::Cpp:
     if (bits == 0U) {
       return "0ULL";
     }
@@ -18,15 +19,24 @@ std::string renderU64MaskLiteral(const HelperBindingRenderLanguage language,
       return "18446744073709551615ULL";
     }
     return std::to_string((1ULL << bits) - 1ULL) + "ULL";
+  case HelperBindingRenderLanguage::Rust:
+    if (bits == 0U) {
+      return "0u64";
+    }
+    if (bits >= 64U) {
+      return "u64::MAX";
+    }
+    return std::to_string((1ULL << bits) - 1ULL) + "u64";
+  case HelperBindingRenderLanguage::Go:
+    if (bits == 0U) {
+      return "uint64(0)";
+    }
+    if (bits >= 64U) {
+      return "^uint64(0)";
+    }
+    return "uint64(" + std::to_string((1ULL << bits) - 1ULL) + ")";
   }
-
-  if (bits == 0U) {
-    return "0u64";
-  }
-  if (bits >= 64U) {
-    return "u64::MAX";
-  }
-  return std::to_string((1ULL << bits) - 1ULL) + "u64";
+  return "0";
 }
 
 void appendLines(std::vector<std::string> &out,
@@ -39,7 +49,8 @@ void appendLines(std::vector<std::string> &out,
 std::vector<std::string> renderCapacityCheckBinding(
     const HelperBindingRenderLanguage language, const std::string &helperName,
     const std::int64_t requiredBits) {
-  if (language == HelperBindingRenderLanguage::Cpp) {
+  switch (language) {
+  case HelperBindingRenderLanguage::Cpp:
     return {
         "const auto " + helperName +
             " = [](const std::int64_t capacity_bits) -> std::int8_t {",
@@ -48,41 +59,60 @@ std::vector<std::string> renderCapacityCheckBinding(
             "static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS);",
         "};",
     };
+  case HelperBindingRenderLanguage::Rust:
+    return {
+        "let " + helperName + " = |capacity_bits: i64| -> i8 {",
+        "if " + std::to_string(requiredBits) + "i64 > capacity_bits {",
+        "-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL",
+        "} else {",
+        "crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS",
+        "}",
+        "};",
+    };
+  case HelperBindingRenderLanguage::Go:
+    return {
+        helperName + " := func(capacityBits int64) int8 {",
+        "if " + std::to_string(requiredBits) + " > capacityBits {",
+        "return -dsdlruntime.DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL",
+        "}",
+        "return dsdlruntime.DSDL_RUNTIME_SUCCESS",
+        "}",
+    };
   }
-
-  return {
-      "let " + helperName + " = |capacity_bits: i64| -> i8 {",
-      "if " + std::to_string(requiredBits) + "i64 > capacity_bits {",
-      "-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL",
-      "} else {",
-      "crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS",
-      "}",
-      "};",
-  };
+  return {};
 }
 
 std::vector<std::string> renderUnionTagMaskBinding(
     const HelperBindingRenderLanguage language, const std::string &helperName,
     const std::uint32_t bits) {
   const auto bitMaskLiteral = renderU64MaskLiteral(language, bits);
-  if (language == HelperBindingRenderLanguage::Cpp) {
+  switch (language) {
+  case HelperBindingRenderLanguage::Cpp:
     return {
         "const auto " + helperName +
             " = [](const std::uint64_t value) -> std::uint64_t { return value & " +
             bitMaskLiteral + "; };",
     };
+  case HelperBindingRenderLanguage::Rust:
+    return {
+        "let " + helperName + " = |value: u64| -> u64 { value & " +
+            bitMaskLiteral + " };",
+    };
+  case HelperBindingRenderLanguage::Go:
+    return {
+        helperName +
+            " := func(value uint64) uint64 { return value & " + bitMaskLiteral +
+            " }",
+    };
   }
-
-  return {
-      "let " + helperName + " = |value: u64| -> u64 { value & " + bitMaskLiteral +
-          " };",
-  };
+  return {};
 }
 
 std::vector<std::string> renderUnionTagValidateBinding(
     const HelperBindingRenderLanguage language, const std::string &helperName,
     const std::vector<std::int64_t> &allowedTags) {
-  if (language == HelperBindingRenderLanguage::Cpp) {
+  switch (language) {
+  case HelperBindingRenderLanguage::Cpp: {
     std::string condition;
     for (const auto tag : allowedTags) {
       if (!condition.empty()) {
@@ -106,53 +136,91 @@ std::vector<std::string> renderUnionTagValidateBinding(
         "};",
     };
   }
-
-  std::string condition;
-  for (const auto tag : allowedTags) {
-    if (!condition.empty()) {
-      condition += " || ";
+  case HelperBindingRenderLanguage::Rust: {
+    std::string condition;
+    for (const auto tag : allowedTags) {
+      if (!condition.empty()) {
+        condition += " || ";
+      }
+      condition += "(tag_value == " + std::to_string(tag) + "i64)";
     }
-    condition += "(tag_value == " + std::to_string(tag) + "i64)";
-  }
-  if (condition.empty()) {
+    if (condition.empty()) {
+      return {
+          "let " + helperName + " = |tag_value: i64| -> i8 {",
+          "-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG",
+          "};",
+      };
+    }
     return {
         "let " + helperName + " = |tag_value: i64| -> i8 {",
+        "if " + condition + " {",
+        "crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS",
+        "} else {",
         "-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG",
+        "}",
         "};",
     };
   }
-  return {
-      "let " + helperName + " = |tag_value: i64| -> i8 {",
-      "if " + condition + " {",
-      "crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS",
-      "} else {",
-      "-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG",
-      "}",
-      "};",
-  };
+  case HelperBindingRenderLanguage::Go: {
+    std::string condition;
+    for (const auto tag : allowedTags) {
+      if (!condition.empty()) {
+        condition += " || ";
+      }
+      condition += "(tagValue == " + std::to_string(tag) + ")";
+    }
+    if (condition.empty()) {
+      return {
+          helperName + " := func(tagValue int64) int8 {",
+          "return -dsdlruntime.DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG",
+          "}",
+      };
+    }
+    return {
+        helperName + " := func(tagValue int64) int8 {",
+        "if " + condition + " {",
+        "return dsdlruntime.DSDL_RUNTIME_SUCCESS",
+        "}",
+        "return -dsdlruntime.DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG",
+        "}",
+    };
+  }
+  }
+  return {};
 }
 
 std::vector<std::string> renderDelimiterValidateBinding(
     const HelperBindingRenderLanguage language, const std::string &helperName) {
-  if (language == HelperBindingRenderLanguage::Cpp) {
+  switch (language) {
+  case HelperBindingRenderLanguage::Cpp:
     return {
         "const auto " + helperName +
             " = [](const std::int64_t payload_bytes, const std::int64_t remaining_bytes) -> std::int8_t {",
         "return ((payload_bytes < 0LL) || (payload_bytes > remaining_bytes)) ? static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER) : static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS);",
         "};",
     };
+  case HelperBindingRenderLanguage::Rust:
+    return {
+        "let " + helperName +
+            " = |payload_bytes: i64, remaining_bytes: i64| -> i8 {",
+        "if (payload_bytes < 0i64) || (payload_bytes > remaining_bytes) {",
+        "-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER",
+        "} else {",
+        "crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS",
+        "}",
+        "};",
+    };
+  case HelperBindingRenderLanguage::Go:
+    return {
+        helperName + " := func(payloadBytes int64, remainingBytes int64) int8 {",
+        "if (payloadBytes < 0) || (payloadBytes > remainingBytes) {",
+        "return -dsdlruntime.DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER",
+        "}",
+        "return dsdlruntime.DSDL_RUNTIME_SUCCESS",
+        "}",
+    };
   }
-
-  return {
-      "let " + helperName +
-          " = |payload_bytes: i64, remaining_bytes: i64| -> i8 {",
-      "if (payload_bytes < 0i64) || (payload_bytes > remaining_bytes) {",
-      "-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER",
-      "} else {",
-      "crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS",
-      "}",
-      "};",
-  };
+  return {};
 }
 
 std::vector<std::string> renderScalarBinding(
@@ -238,27 +306,103 @@ std::vector<std::string> renderScalarBinding(
     }
   }
 
+  if (language == HelperBindingRenderLanguage::Rust) {
+    switch (descriptor.kind) {
+    case ScalarHelperKind::Unsigned: {
+      if (direction == ScalarBindingRenderDirection::Serialize &&
+          descriptor.castMode == CastMode::Saturated &&
+          descriptor.bitLength < 64U) {
+        return {
+            "let " + helperName + " = |value: u64| -> u64 {",
+            "if value > " + maskLiteral + " { " + maskLiteral +
+                " } else { value }",
+            "};",
+        };
+      }
+      if (descriptor.bitLength < 64U) {
+        return {
+            "let " + helperName + " = |value: u64| -> u64 {",
+            "value & " + maskLiteral,
+            "};",
+        };
+      }
+      return {
+          "let " + helperName + " = |value: u64| -> u64 {",
+          "value",
+          "};",
+      };
+    }
+    case ScalarHelperKind::Signed: {
+      if (direction == ScalarBindingRenderDirection::Serialize &&
+          descriptor.castMode == CastMode::Saturated &&
+          descriptor.bitLength > 0U && descriptor.bitLength < 64U) {
+        const auto minVal = -(1LL << (descriptor.bitLength - 1U));
+        const auto maxVal = (1LL << (descriptor.bitLength - 1U)) - 1LL;
+        return {
+            "let " + helperName + " = |value: i64| -> i64 {",
+            "if value < " + std::to_string(minVal) + "i64 {",
+            std::to_string(minVal) + "i64",
+            "} else if value > " + std::to_string(maxVal) + "i64 {",
+            std::to_string(maxVal) + "i64",
+            "} else {",
+            "value",
+            "}",
+            "};",
+        };
+      }
+      if (direction == ScalarBindingRenderDirection::Deserialize &&
+          descriptor.bitLength > 0U && descriptor.bitLength < 64U) {
+        const auto signMask =
+            std::to_string((1ULL << (descriptor.bitLength - 1U))) + "u64";
+        return {
+            "let " + helperName + " = |value: i64| -> i64 {",
+            "let raw = (value as u64) & " + maskLiteral + ";",
+            "if (raw & " + signMask + ") != 0u64 {",
+            "(raw | (!" + maskLiteral + ")) as i64",
+            "} else {",
+            "raw as i64",
+            "}",
+            "};",
+        };
+      }
+      return {
+          "let " + helperName + " = |value: i64| -> i64 {",
+          "value",
+          "};",
+      };
+    }
+    case ScalarHelperKind::Float:
+      return {
+          "let " + helperName + " = |value: f64| -> f64 { value };",
+      };
+    }
+  }
+
   switch (descriptor.kind) {
   case ScalarHelperKind::Unsigned: {
     if (direction == ScalarBindingRenderDirection::Serialize &&
-        descriptor.castMode == CastMode::Saturated && descriptor.bitLength < 64U) {
+        descriptor.castMode == CastMode::Saturated &&
+        descriptor.bitLength < 64U) {
       return {
-          "let " + helperName + " = |value: u64| -> u64 {",
-          "if value > " + maskLiteral + " { " + maskLiteral + " } else { value }",
-          "};",
+          helperName + " := func(value uint64) uint64 {",
+          "if value > " + maskLiteral + " {",
+          "return " + maskLiteral,
+          "}",
+          "return value",
+          "}",
       };
     }
     if (descriptor.bitLength < 64U) {
       return {
-          "let " + helperName + " = |value: u64| -> u64 {",
-          "value & " + maskLiteral,
-          "};",
+          helperName + " := func(value uint64) uint64 {",
+          "return value & " + maskLiteral,
+          "}",
       };
     }
     return {
-        "let " + helperName + " = |value: u64| -> u64 {",
-        "value",
-        "};",
+        helperName + " := func(value uint64) uint64 {",
+        "return value",
+        "}",
     };
   }
   case ScalarHelperKind::Signed: {
@@ -268,41 +412,41 @@ std::vector<std::string> renderScalarBinding(
       const auto minVal = -(1LL << (descriptor.bitLength - 1U));
       const auto maxVal = (1LL << (descriptor.bitLength - 1U)) - 1LL;
       return {
-          "let " + helperName + " = |value: i64| -> i64 {",
-          "if value < " + std::to_string(minVal) + "i64 {",
-          std::to_string(minVal) + "i64",
-          "} else if value > " + std::to_string(maxVal) + "i64 {",
-          std::to_string(maxVal) + "i64",
-          "} else {",
-          "value",
+          helperName + " := func(value int64) int64 {",
+          "if value < " + std::to_string(minVal) + " {",
+          "return " + std::to_string(minVal),
           "}",
-          "};",
+          "if value > " + std::to_string(maxVal) + " {",
+          "return " + std::to_string(maxVal),
+          "}",
+          "return value",
+          "}",
       };
     }
     if (direction == ScalarBindingRenderDirection::Deserialize &&
         descriptor.bitLength > 0U && descriptor.bitLength < 64U) {
-      const auto signMask =
-          std::to_string((1ULL << (descriptor.bitLength - 1U))) + "u64";
+      const auto signMask = "uint64(" +
+                            std::to_string(1ULL << (descriptor.bitLength - 1U)) +
+                            ")";
       return {
-          "let " + helperName + " = |value: i64| -> i64 {",
-          "let raw = (value as u64) & " + maskLiteral + ";",
-          "if (raw & " + signMask + ") != 0u64 {",
-          "(raw | (!" + maskLiteral + ")) as i64",
-          "} else {",
-          "raw as i64",
+          helperName + " := func(value int64) int64 {",
+          "raw := uint64(value) & " + maskLiteral,
+          "if (raw & " + signMask + ") != 0 {",
+          "return int64(raw | (^" + maskLiteral + "))",
           "}",
-          "};",
+          "return int64(raw)",
+          "}",
       };
     }
     return {
-        "let " + helperName + " = |value: i64| -> i64 {",
-        "value",
-        "};",
+        helperName + " := func(value int64) int64 {",
+        "return value",
+        "}",
     };
   }
   case ScalarHelperKind::Float:
     return {
-        "let " + helperName + " = |value: f64| -> f64 { value };",
+        helperName + " := func(value float64) float64 { return value }",
     };
   }
 }
@@ -316,7 +460,8 @@ std::vector<std::string> renderArrayPrefixBinding(
 std::vector<std::string> renderArrayValidateBinding(
     const HelperBindingRenderLanguage language, const std::string &helperName,
     const std::int64_t capacity) {
-  if (language == HelperBindingRenderLanguage::Cpp) {
+  switch (language) {
+  case HelperBindingRenderLanguage::Cpp:
     return {
         "const auto " + helperName +
             " = [](const std::int64_t value) -> std::int8_t {",
@@ -324,17 +469,27 @@ std::vector<std::string> renderArrayValidateBinding(
             "LL)) ? static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH) : static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS);",
         "};",
     };
+  case HelperBindingRenderLanguage::Rust:
+    return {
+        "let " + helperName + " = |value: i64| -> i8 {",
+        "if (value < 0i64) || (value > " + std::to_string(capacity) + "i64) {",
+        "-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH",
+        "} else {",
+        "crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS",
+        "}",
+        "};",
+    };
+  case HelperBindingRenderLanguage::Go:
+    return {
+        helperName + " := func(value int64) int8 {",
+        "if (value < 0) || (value > " + std::to_string(capacity) + ") {",
+        "return -dsdlruntime.DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH",
+        "}",
+        "return dsdlruntime.DSDL_RUNTIME_SUCCESS",
+        "}",
+    };
   }
-
-  return {
-      "let " + helperName + " = |value: i64| -> i8 {",
-      "if (value < 0i64) || (value > " + std::to_string(capacity) + "i64) {",
-      "-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH",
-      "} else {",
-      "crate::dsdl_runtime::DSDL_RUNTIME_SUCCESS",
-      "}",
-      "};",
-  };
+  return {};
 }
 
 std::vector<std::string> renderSectionHelperBindings(

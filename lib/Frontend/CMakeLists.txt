@@ -8,7 +8,6 @@ add_library(llvmdsdlFrontend
 target_link_libraries(llvmdsdlFrontend
   PUBLIC
   llvmdsdlSupport
-  LLVMSupport
 )
 
 target_include_directories(llvmdsdlFrontend PUBLIC

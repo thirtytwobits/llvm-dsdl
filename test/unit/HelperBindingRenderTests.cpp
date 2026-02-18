@@ -81,6 +81,38 @@ bool runHelperBindingRenderTests() {
   }
 
   {
+    const auto lines = llvmdsdl::renderUnionTagValidateBinding(
+        llvmdsdl::HelperBindingRenderLanguage::Go, "union_check_go",
+        {0, 2, 7});
+    if (!hasSubstring(lines, "func(tagValue int64) int8") ||
+        !hasSubstring(
+            lines,
+            "(tagValue == 0) || (tagValue == 2) || (tagValue == 7)") ||
+        !hasSubstring(
+            lines,
+            "-dsdlruntime.DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG")) {
+      std::cerr << "go union validate render mismatch\n";
+      return false;
+    }
+  }
+
+  {
+    llvmdsdl::ScalarHelperDescriptor descriptor;
+    descriptor.kind = llvmdsdl::ScalarHelperKind::Signed;
+    descriptor.bitLength = 5;
+    descriptor.castMode = llvmdsdl::CastMode::Truncated;
+    const auto lines = llvmdsdl::renderScalarBinding(
+        llvmdsdl::HelperBindingRenderLanguage::Go,
+        llvmdsdl::ScalarBindingRenderDirection::Deserialize, "des_i5_go",
+        descriptor);
+    if (!hasSubstring(lines, "raw := uint64(value) & uint64(31)") ||
+        !hasSubstring(lines, "return int64(raw | (^uint64(31)))")) {
+      std::cerr << "go signed deserialize scalar render mismatch\n";
+      return false;
+    }
+  }
+
+  {
     llvmdsdl::SectionHelperBindingPlan plan;
     plan.capacityCheck = llvmdsdl::CapacityCheckHelperDescriptor{"cap", 16};
     plan.unionTagValidate = llvmdsdl::UnionTagValidateHelperDescriptor{
@@ -100,6 +132,38 @@ bool runHelperBindingRenderTests() {
         !hasSubstring(lines, "let mlir_mask_tag = |value: u64| -> u64 {") ||
         !hasSubstring(lines, "let mlir_delim = |payload_bytes: i64, remaining_bytes: i64| -> i8 {")) {
       std::cerr << "section helper binding render mismatch\n";
+      return false;
+    }
+  }
+
+  {
+    llvmdsdl::SectionHelperBindingPlan plan;
+    plan.capacityCheck = llvmdsdl::CapacityCheckHelperDescriptor{"cap", 16};
+    plan.unionTagValidate = llvmdsdl::UnionTagValidateHelperDescriptor{
+        "validate_tag", {0, 1}};
+    plan.unionTagMask =
+        llvmdsdl::UnionTagMaskBindingDescriptor{"mask_tag", 8};
+    plan.delimiterValidateBindings.push_back(
+        llvmdsdl::DelimiterValidateBindingDescriptor{"delim"});
+    plan.arrayPrefixBindings.push_back(
+        llvmdsdl::ArrayPrefixBindingDescriptor{"arr_prefix", 8});
+    plan.arrayValidateBindings.push_back(
+        llvmdsdl::ArrayValidateBindingDescriptor{"arr_validate", 32});
+
+    const auto lines = llvmdsdl::renderSectionHelperBindings(
+        plan, llvmdsdl::HelperBindingRenderLanguage::Go,
+        llvmdsdl::ScalarBindingRenderDirection::Serialize,
+        [](const std::string &symbol) { return "mlir_" + symbol; },
+        /*emitCapacityCheck=*/true);
+    if (!hasSubstring(lines, "mlir_cap := func(capacityBits int64) int8 {") ||
+        !hasSubstring(lines, "mlir_validate_tag := func(tagValue int64) int8 {") ||
+        !hasSubstring(lines, "mlir_mask_tag := func(value uint64) uint64 {") ||
+        !hasSubstring(
+            lines,
+            "mlir_delim := func(payloadBytes int64, remainingBytes int64) int8 {") ||
+        !hasSubstring(lines, "mlir_arr_prefix := func(value uint64) uint64 {") ||
+        !hasSubstring(lines, "mlir_arr_validate := func(value int64) int8 {")) {
+      std::cerr << "go section helper binding render mismatch\n";
       return false;
     }
   }

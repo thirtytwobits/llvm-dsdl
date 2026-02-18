@@ -171,5 +171,75 @@ if(NOT run_result EQUAL 0)
   message(FATAL_ERROR "signed_narrow C/C++ parity harness reported mismatches")
 endif()
 
-file(WRITE "${OUT_DIR}/signed-narrow-cpp-c-parity-${CPP_PROFILE}-summary.txt" "${run_stdout}\n")
+set(min_iterations 256)
+set(min_random_cases 2)
+set(min_directed_cases 1)
+string(REGEX MATCH
+  "PASS signed-narrow-cpp-c parity random_iterations=([0-9]+) random_cases=([0-9]+) directed_cases=([0-9]+)"
+  summary_line
+  "${run_stdout}")
+if(NOT summary_line)
+  message(FATAL_ERROR
+    "failed to parse signed_narrow C/C++ parity summary line from harness output")
+endif()
+set(observed_iterations "${CMAKE_MATCH_1}")
+set(observed_random_cases "${CMAKE_MATCH_2}")
+set(observed_directed_cases "${CMAKE_MATCH_3}")
+if(observed_iterations LESS min_iterations)
+  message(FATAL_ERROR
+    "signed_narrow C/C++ parity iteration regression: observed=${observed_iterations}, required>=${min_iterations}")
+endif()
+if(observed_random_cases LESS min_random_cases)
+  message(FATAL_ERROR
+    "signed_narrow C/C++ parity random-case regression: observed=${observed_random_cases}, required>=${min_random_cases}")
+endif()
+if(observed_directed_cases LESS min_directed_cases)
+  message(FATAL_ERROR
+    "signed_narrow C/C++ parity directed-case regression: observed=${observed_directed_cases}, required>=${min_directed_cases}")
+endif()
+
+string(REGEX MATCH
+  "PASS signed-narrow-cpp-c inventory random_cases=([0-9]+) directed_cases=([0-9]+)"
+  inventory_line
+  "${run_stdout}")
+if(NOT inventory_line)
+  message(FATAL_ERROR "missing signed_narrow C/C++ parity inventory marker")
+endif()
+set(inventory_random_cases "${CMAKE_MATCH_1}")
+set(inventory_directed_cases "${CMAKE_MATCH_2}")
+if(NOT inventory_random_cases EQUAL observed_random_cases OR
+   NOT inventory_directed_cases EQUAL observed_directed_cases)
+  message(FATAL_ERROR
+    "signed_narrow C/C++ inventory mismatch: inventory random=${inventory_random_cases}, "
+    "inventory directed=${inventory_directed_cases}, summary random=${observed_random_cases}, "
+    "summary directed=${observed_directed_cases}")
+endif()
+
+string(REGEX MATCHALL
+  "PASS [A-Za-z0-9_.]+ random \\([0-9]+ iterations\\)"
+  random_pass_lines
+  "${run_stdout}")
+list(LENGTH random_pass_lines observed_random_pass_lines)
+if(NOT observed_random_pass_lines EQUAL observed_random_cases)
+  message(FATAL_ERROR
+    "signed_narrow C/C++ random execution count mismatch: pass-lines=${observed_random_pass_lines}, "
+    "summary random=${observed_random_cases}")
+endif()
+
+string(REGEX MATCHALL
+  "PASS [A-Za-z0-9_]+ directed"
+  directed_pass_lines
+  "${run_stdout}")
+list(LENGTH directed_pass_lines observed_directed_pass_lines)
+if(NOT observed_directed_pass_lines EQUAL observed_directed_cases)
+  message(FATAL_ERROR
+    "signed_narrow C/C++ directed execution count mismatch: pass-lines=${observed_directed_pass_lines}, "
+    "summary directed=${observed_directed_cases}")
+endif()
+
+set(summary_file "${OUT_DIR}/signed-narrow-cpp-c-parity-${CPP_PROFILE}-summary.txt")
+string(RANDOM LENGTH 8 ALPHABET 0123456789abcdef summary_nonce)
+set(summary_tmp "${summary_file}.tmp-${summary_nonce}")
+file(WRITE "${summary_tmp}" "${run_stdout}\n")
+file(RENAME "${summary_tmp}" "${summary_file}")
 message(STATUS "Signed narrow C/C++ (${CPP_PROFILE}) parity summary:\n${run_stdout}")

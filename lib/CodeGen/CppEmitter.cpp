@@ -166,29 +166,11 @@ std::string signedStorageType(const std::uint32_t bitLength) {
 }
 
 std::string unsignedGetter(const std::uint32_t bitLength) {
-  switch (scalarStorageBits(bitLength)) {
-  case 8:
-    return "dsdl_runtime_get_u8";
-  case 16:
-    return "dsdl_runtime_get_u16";
-  case 32:
-    return "dsdl_runtime_get_u32";
-  default:
-    return "dsdl_runtime_get_u64";
-  }
+  return "dsdl_runtime_get_u" + std::string(scalarWidthSuffix(bitLength));
 }
 
 std::string signedGetter(const std::uint32_t bitLength) {
-  switch (scalarStorageBits(bitLength)) {
-  case 8:
-    return "dsdl_runtime_get_i8";
-  case 16:
-    return "dsdl_runtime_get_i16";
-  case 32:
-    return "dsdl_runtime_get_i32";
-  default:
-    return "dsdl_runtime_get_i64";
-  }
+  return "dsdl_runtime_get_i" + std::string(scalarWidthSuffix(bitLength));
 }
 
 std::string cppNamespacePath(const std::vector<std::string> &components) {
@@ -741,17 +723,20 @@ private:
                                                : helperBindingName(helperSymbol);
       if (!helper.empty()) {
         valueExpr = helper + "(" + valueExpr + ")";
-      } else if (type.castMode == CastMode::Saturated && type.bitLength < 64U) {
-        const auto sat = nextName("sat");
-        const auto maxVal = (1ULL << type.bitLength) - 1ULL;
-        emitLine(out, indent,
-                 "std::uint64_t " + sat + " = static_cast<std::uint64_t>(" + expr + ");");
-        emitLine(out, indent,
-                 "if (" + sat + " > " + std::to_string(maxVal) + "ULL) {");
-        emitLine(out, indent + 1,
-                 sat + " = " + std::to_string(maxVal) + "ULL;");
-        emitLine(out, indent, "}");
-        valueExpr = sat;
+      } else if (type.castMode == CastMode::Saturated) {
+        if (const auto maxVal = resolveUnsignedSaturationMax(type.bitLength)) {
+          const auto sat = nextName("sat");
+          emitLine(
+              out, indent,
+              "std::uint64_t " + sat + " = static_cast<std::uint64_t>(" + expr +
+                  ");");
+          emitLine(out, indent,
+                   "if (" + sat + " > " + std::to_string(*maxVal) + "ULL) {");
+          emitLine(out, indent + 1,
+                   sat + " = " + std::to_string(*maxVal) + "ULL;");
+          emitLine(out, indent, "}");
+          valueExpr = sat;
+        }
       }
       const auto err = nextName("err");
       emitLine(out, indent,
@@ -773,24 +758,26 @@ private:
                                                : helperBindingName(helperSymbol);
       if (!helper.empty()) {
         valueExpr = helper + "(" + valueExpr + ")";
-      } else if (type.castMode == CastMode::Saturated && type.bitLength < 64U &&
-                 type.bitLength > 0U) {
-        const auto sat = nextName("sat");
-        const auto minVal = -(1LL << (type.bitLength - 1U));
-        const auto maxVal = (1LL << (type.bitLength - 1U)) - 1LL;
-        emitLine(out, indent,
-                 "std::int64_t " + sat + " = static_cast<std::int64_t>(" + expr + ");");
-        emitLine(out, indent,
-                 "if (" + sat + " < " + std::to_string(minVal) + "LL) {");
-        emitLine(out, indent + 1,
-                 sat + " = " + std::to_string(minVal) + "LL;");
-        emitLine(out, indent, "}");
-        emitLine(out, indent,
-                 "if (" + sat + " > " + std::to_string(maxVal) + "LL) {");
-        emitLine(out, indent + 1,
-                 sat + " = " + std::to_string(maxVal) + "LL;");
-        emitLine(out, indent, "}");
-        valueExpr = sat;
+      } else if (type.castMode == CastMode::Saturated) {
+        if (const auto range = resolveSignedSaturationRange(type.bitLength)) {
+          const auto sat = nextName("sat");
+          emitLine(
+              out, indent,
+              "std::int64_t " + sat + " = static_cast<std::int64_t>(" + expr +
+                  ");");
+          emitLine(out, indent,
+                   "if (" + sat + " < " + std::to_string(range->first) + "LL) {");
+          emitLine(out, indent + 1,
+                   sat + " = " + std::to_string(range->first) + "LL;");
+          emitLine(out, indent, "}");
+          emitLine(out, indent,
+                   "if (" + sat + " > " + std::to_string(range->second) +
+                       "LL) {");
+          emitLine(out, indent + 1,
+                   sat + " = " + std::to_string(range->second) + "LL;");
+          emitLine(out, indent, "}");
+          valueExpr = sat;
+        }
       }
       const auto err = nextName("err");
       emitLine(out, indent,

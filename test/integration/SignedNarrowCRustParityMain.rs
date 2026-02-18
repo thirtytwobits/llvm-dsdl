@@ -167,7 +167,7 @@ where
         }
     }
 
-    println!("PASS {name} ({iterations} iterations)");
+    println!("PASS {name} random ({iterations} iterations)");
     Ok(())
 }
 
@@ -311,11 +311,13 @@ fn run_directed_checks() -> Result<(), String> {
         }
     }
 
-    println!("PASS signed-narrow-directed-c-rust");
+    println!("PASS signed_narrow_directed_c_rust directed");
     Ok(())
 }
 
 fn main() {
+    const RANDOM_CASES: usize = 2;
+    const DIRECTED_CASES: usize = 1;
     let mut iterations = 256usize;
     if let Some(arg) = std::env::args().nth(1) {
         iterations = arg.parse::<usize>().unwrap_or_else(|_| {
@@ -363,5 +365,11 @@ fn main() {
         std::process::exit(1);
     });
 
+    println!(
+        "PASS signed-narrow-c-rust inventory random_cases={RANDOM_CASES} directed_cases={DIRECTED_CASES}"
+    );
+    println!(
+        "PASS signed-narrow-c-rust parity random_iterations={iterations} random_cases={RANDOM_CASES} directed_cases={DIRECTED_CASES}"
+    );
     println!("Signed narrow C/Rust parity PASS");
 }

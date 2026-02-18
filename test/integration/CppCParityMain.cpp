@@ -123,7 +123,7 @@ int runCase(const char *const name, const std::size_t iterations,
     }
   }
 
-  std::printf("PASS %s (%zu iterations)\n", name, iterations);
+  std::printf("PASS %s random (%zu iterations)\n", name, iterations);
   return 0;
 }
 
@@ -742,7 +742,7 @@ int runDirectedErrorCases() {
     }
   }
 
-  std::printf("PASS directed-error-parity\n");
+  std::printf("PASS directed_error_parity directed\n");
   return 0;
 }
 
@@ -902,6 +902,8 @@ std::int8_t cppInteger8Serialize(
 } // namespace
 
 int main(int argc, char **argv) {
+  constexpr std::size_t kRandomCases = 7U;
+  constexpr std::size_t kDirectedCases = 1U;
   std::size_t iterations = 128U;
   if (argc > 1) {
     char *endptr = nullptr;
@@ -993,6 +995,10 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  std::printf("PASS cpp-c inventory cases=%zu directed=%zu\n", kRandomCases,
+              kDirectedCases);
+  std::printf("PASS cpp-c parity random=%zu cases=%zu directed=%zu\n", iterations,
+              kRandomCases, kDirectedCases);
   std::printf("C/C++ parity PASS\n");
   return 0;
 }

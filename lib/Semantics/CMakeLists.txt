@@ -7,8 +7,6 @@ add_library(llvmdsdlSemantics
 target_link_libraries(llvmdsdlSemantics
   PUBLIC
   llvmdsdlFrontend
-  llvmdsdlSupport
-  LLVMSupport
 )
 
 target_include_directories(llvmdsdlSemantics PUBLIC

@@ -16,6 +16,7 @@ The project currently supports:
 - C (`dsdlc c`)
 - C++23 (`dsdlc cpp`, with `std` and `pmr` profiles)
 - Rust (`dsdlc rust`, currently `std` profile)
+- Go (`dsdlc go`)
 
 for the `uavcan` namespace under regulated data types.
 
@@ -30,7 +31,7 @@ flowchart LR
   E --> F["MLIR DSDL lowering"]
   F --> G["MLIR module"]
   G --> H["C path: EmitC lowering + C output (per-definition impl TUs)"]
-  E --> I["C/C++/Rust header emitters"]
+  E --> I["C/C++/Rust/Go emitters"]
   I --> J["Generated language artifacts"]
 ```
 
@@ -82,6 +83,8 @@ Current generators are in `lib/CodeGen`:
   - Supports `std` and `pmr` profiles.
 - `RustEmitter.cpp`
   - Emits crate/module layout and Rust SerDes/runtime integration.
+- `GoEmitter.cpp`
+  - Emits module/package layout and Go SerDes/runtime integration.
 
 #### Runtime Layer
 
@@ -90,6 +93,7 @@ Runtime helpers encapsulate wire-level bit operations and numeric conversions:
 - `runtime/dsdl_runtime.h` (C core)
 - `runtime/cpp/dsdl_runtime.hpp` (C++ wrapper)
 - `runtime/rust/dsdl_runtime.rs` (Rust runtime)
+- `runtime/go/dsdl_runtime.go` (Go runtime)
 
 ### 1.4 Tooling and Validation
 
@@ -223,9 +227,12 @@ Current:
 
 - Frontend + semantics are shared and mature enough for full `uavcan` generation.
 - C++/Rust generation is implemented and tested for strict tree generation.
+- Go generation is implemented and tested for strict tree generation.
 - C path already has an EmitC lowering route for implementation translation units.
 - Current implementation emits one `.c` translation unit per DSDL definition
   (monolithic TU-only mode has been removed).
+- Go backend verification includes generation, determinism, module build, runtime
+  unit tests, and C/Go differential parity workflows.
 
 Target trajectory:
 
