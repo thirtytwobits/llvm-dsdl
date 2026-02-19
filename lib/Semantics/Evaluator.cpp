@@ -1,495 +1,607 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Implements constant-expression evaluation for semantic analysis.
+///
+/// Expression evaluators produce typed values and diagnostics for compile-time computations in DSDL definitions.
+///
+//===----------------------------------------------------------------------===//
+
 #include "llvmdsdl/Semantics/Evaluator.h"
 
 #include <cmath>
 #include <optional>
 #include <sstream>
 
-namespace llvmdsdl {
-namespace {
+namespace llvmdsdl
+{
+namespace
+{
 
-bool asBool(const Value &v, bool &out) {
-  if (auto p = std::get_if<bool>(&v.data)) {
-    out = *p;
-    return true;
-  }
-  return false;
+bool asBool(const Value& v, bool& out)
+{
+    if (auto p = std::get_if<bool>(&v.data))
+    {
+        out = *p;
+        return true;
+    }
+    return false;
 }
 
-bool asRational(const Value &v, Rational &out) {
-  if (auto p = std::get_if<Rational>(&v.data)) {
-    out = *p;
-    return true;
-  }
-  return false;
+bool asRational(const Value& v, Rational& out)
+{
+    if (auto p = std::get_if<Rational>(&v.data))
+    {
+        out = *p;
+        return true;
+    }
+    return false;
 }
 
-bool isInteger(const Rational &r) { return r.isInteger(); }
-
-std::optional<Rational> intPow(const Rational &base, const Rational &exp) {
-  if (!exp.isInteger()) {
-    return std::nullopt;
-  }
-  const auto e = exp.asInteger().value_or(0);
-  if (e < 0) {
-    return std::nullopt;
-  }
-  Rational out(1, 1);
-  for (std::int64_t i = 0; i < e; ++i) {
-    out = out * base;
-  }
-  return out;
+bool isInteger(const Rational& r)
+{
+    return r.isInteger();
 }
 
-std::optional<Value> applyBinaryRational(BinaryOp op, const Rational &lhs,
-                                         const Rational &rhs) {
-  switch (op) {
-  case BinaryOp::Pow: {
-    auto p = intPow(lhs, rhs);
-    if (!p) {
-      return std::nullopt;
-    }
-    return Value{*p};
-  }
-  case BinaryOp::Mul:
-    return Value{lhs * rhs};
-  case BinaryOp::Div:
-    if (rhs == Rational(0, 1)) {
-      return std::nullopt;
-    }
-    return Value{lhs / rhs};
-  case BinaryOp::Mod: {
-    if (!isInteger(lhs) || !isInteger(rhs) || rhs == Rational(0, 1)) {
-      return std::nullopt;
-    }
-    const auto li = lhs.asInteger().value();
-    const auto ri = rhs.asInteger().value();
-    return Value{Rational(li % ri, 1)};
-  }
-  case BinaryOp::Add:
-    return Value{lhs + rhs};
-  case BinaryOp::Sub:
-    return Value{lhs - rhs};
-  case BinaryOp::BitOr:
-  case BinaryOp::BitXor:
-  case BinaryOp::BitAnd: {
-    if (!isInteger(lhs) || !isInteger(rhs)) {
-      return std::nullopt;
-    }
-    const auto li = lhs.asInteger().value();
-    const auto ri = rhs.asInteger().value();
-    if (op == BinaryOp::BitOr) {
-      return Value{Rational(li | ri, 1)};
-    }
-    if (op == BinaryOp::BitXor) {
-      return Value{Rational(li ^ ri, 1)};
-    }
-    return Value{Rational(li & ri, 1)};
-  }
-  case BinaryOp::Eq:
-    return Value{lhs == rhs};
-  case BinaryOp::Ne:
-    return Value{lhs != rhs};
-  case BinaryOp::Le:
-    return Value{lhs <= rhs};
-  case BinaryOp::Ge:
-    return Value{lhs >= rhs};
-  case BinaryOp::Lt:
-    return Value{lhs < rhs};
-  case BinaryOp::Gt:
-    return Value{lhs > rhs};
-  default:
-    return std::nullopt;
-  }
-}
-
-Value::Set applySetBinary(BinaryOp op, const Value::Set &lhs,
-                          const Value::Set &rhs) {
-  Value::Set out;
-  if (op == BinaryOp::BitOr) {
-    out = lhs;
-    out.insert(rhs.begin(), rhs.end());
-  } else if (op == BinaryOp::BitAnd) {
-    for (const auto &x : lhs) {
-      if (rhs.contains(x)) {
-        out.insert(x);
-      }
-    }
-  } else if (op == BinaryOp::BitXor) {
-    for (const auto &x : lhs) {
-      if (!rhs.contains(x)) {
-        out.insert(x);
-      }
-    }
-    for (const auto &x : rhs) {
-      if (!lhs.contains(x)) {
-        out.insert(x);
-      }
-    }
-  }
-  return out;
-}
-
-std::optional<Value::Set> applySetElementwise(BinaryOp op, const Value::Set &lhs,
-                                              const Value::Set &rhs) {
-  Value::Set out;
-  for (const auto &a : lhs) {
-    for (const auto &b : rhs) {
-      auto v = applyBinaryRational(op, a, b);
-      if (!v) {
+std::optional<Rational> intPow(const Rational& base, const Rational& exp)
+{
+    if (!exp.isInteger())
+    {
         return std::nullopt;
-      }
-      if (auto p = std::get_if<Rational>(&v->data)) {
-        out.insert(*p);
-      } else {
-        return std::nullopt;
-      }
     }
-  }
-  return out;
+    const auto e = exp.asInteger().value_or(0);
+    if (e < 0)
+    {
+        return std::nullopt;
+    }
+    Rational out(1, 1);
+    for (std::int64_t i = 0; i < e; ++i)
+    {
+        out = out * base;
+    }
+    return out;
 }
 
-std::optional<Value> evaluate(const ExprAST &expr, const ValueEnv &env,
-                              DiagnosticEngine &diagnostics, bool strictMode,
-                              const TypeAttributeResolver *resolver);
+std::optional<Value> applyBinaryRational(BinaryOp op, const Rational& lhs, const Rational& rhs)
+{
+    switch (op)
+    {
+    case BinaryOp::Pow: {
+        auto p = intPow(lhs, rhs);
+        if (!p)
+        {
+            return std::nullopt;
+        }
+        return Value{*p};
+    }
+    case BinaryOp::Mul:
+        return Value{lhs * rhs};
+    case BinaryOp::Div:
+        if (rhs == Rational(0, 1))
+        {
+            return std::nullopt;
+        }
+        return Value{lhs / rhs};
+    case BinaryOp::Mod: {
+        if (!isInteger(lhs) || !isInteger(rhs) || rhs == Rational(0, 1))
+        {
+            return std::nullopt;
+        }
+        const auto li = lhs.asInteger().value();
+        const auto ri = rhs.asInteger().value();
+        return Value{Rational(li % ri, 1)};
+    }
+    case BinaryOp::Add:
+        return Value{lhs + rhs};
+    case BinaryOp::Sub:
+        return Value{lhs - rhs};
+    case BinaryOp::BitOr:
+    case BinaryOp::BitXor:
+    case BinaryOp::BitAnd: {
+        if (!isInteger(lhs) || !isInteger(rhs))
+        {
+            return std::nullopt;
+        }
+        const auto li = lhs.asInteger().value();
+        const auto ri = rhs.asInteger().value();
+        if (op == BinaryOp::BitOr)
+        {
+            return Value{Rational(li | ri, 1)};
+        }
+        if (op == BinaryOp::BitXor)
+        {
+            return Value{Rational(li ^ ri, 1)};
+        }
+        return Value{Rational(li & ri, 1)};
+    }
+    case BinaryOp::Eq:
+        return Value{lhs == rhs};
+    case BinaryOp::Ne:
+        return Value{lhs != rhs};
+    case BinaryOp::Le:
+        return Value{lhs <= rhs};
+    case BinaryOp::Ge:
+        return Value{lhs >= rhs};
+    case BinaryOp::Lt:
+        return Value{lhs < rhs};
+    case BinaryOp::Gt:
+        return Value{lhs > rhs};
+    default:
+        return std::nullopt;
+    }
+}
 
-std::optional<Value> evaluateBinary(const ExprAST::Binary &b,
-                                    const SourceLocation &location,
-                                    const ValueEnv &env,
-                                    DiagnosticEngine &diagnostics,
-                                    bool strictMode,
-                                    const TypeAttributeResolver *resolver) {
-  if (b.op == BinaryOp::Attribute) {
+Value::Set applySetBinary(BinaryOp op, const Value::Set& lhs, const Value::Set& rhs)
+{
+    Value::Set out;
+    if (op == BinaryOp::BitOr)
+    {
+        out = lhs;
+        out.insert(rhs.begin(), rhs.end());
+    }
+    else if (op == BinaryOp::BitAnd)
+    {
+        for (const auto& x : lhs)
+        {
+            if (rhs.contains(x))
+            {
+                out.insert(x);
+            }
+        }
+    }
+    else if (op == BinaryOp::BitXor)
+    {
+        for (const auto& x : lhs)
+        {
+            if (!rhs.contains(x))
+            {
+                out.insert(x);
+            }
+        }
+        for (const auto& x : rhs)
+        {
+            if (!lhs.contains(x))
+            {
+                out.insert(x);
+            }
+        }
+    }
+    return out;
+}
+
+std::optional<Value::Set> applySetElementwise(BinaryOp op, const Value::Set& lhs, const Value::Set& rhs)
+{
+    Value::Set out;
+    for (const auto& a : lhs)
+    {
+        for (const auto& b : rhs)
+        {
+            auto v = applyBinaryRational(op, a, b);
+            if (!v)
+            {
+                return std::nullopt;
+            }
+            if (auto p = std::get_if<Rational>(&v->data))
+            {
+                out.insert(*p);
+            }
+            else
+            {
+                return std::nullopt;
+            }
+        }
+    }
+    return out;
+}
+
+std::optional<Value> evaluate(const ExprAST&               expr,
+                              const ValueEnv&              env,
+                              DiagnosticEngine&            diagnostics,
+                              bool                         strictMode,
+                              const TypeAttributeResolver* resolver);
+
+std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
+                                    const SourceLocation&        location,
+                                    const ValueEnv&              env,
+                                    DiagnosticEngine&            diagnostics,
+                                    bool                         strictMode,
+                                    const TypeAttributeResolver* resolver)
+{
+    if (b.op == BinaryOp::Attribute)
+    {
+        auto lhs = evaluate(*b.lhs, env, diagnostics, strictMode, resolver);
+        if (!lhs)
+        {
+            return std::nullopt;
+        }
+
+        const auto* rhsId = std::get_if<ExprAST::Identifier>(&b.rhs->value);
+        if (!rhsId)
+        {
+            if (!strictMode)
+            {
+                diagnostics.warning(location, "compat mode: malformed attribute access evaluated as 0");
+                return Value{Rational(0, 1)};
+            }
+            diagnostics.error(location, "attribute operator expects identifier on RHS");
+            return std::nullopt;
+        }
+
+        if (auto set = std::get_if<Value::Set>(&lhs->data))
+        {
+            if (rhsId->name == "count")
+            {
+                return Value{Rational(static_cast<std::int64_t>(set->size()), 1)};
+            }
+            if (set->empty())
+            {
+                if (!strictMode)
+                {
+                    diagnostics.warning(location, "compat mode: empty set attribute evaluated as 0");
+                    return Value{Rational(0, 1)};
+                }
+                diagnostics.error(location, "cannot access set min/max on an empty set literal");
+                return std::nullopt;
+            }
+            if (rhsId->name == "min")
+            {
+                return Value{*set->begin()};
+            }
+            if (rhsId->name == "max")
+            {
+                return Value{*set->rbegin()};
+            }
+        }
+
+        if (auto t = std::get_if<TypeExprAST>(&lhs->data))
+        {
+            if (resolver)
+            {
+                return (*resolver)(*t, rhsId->name, location);
+            }
+            if (rhsId->name == "_extent_")
+            {
+                return Value{Rational(0, 1)};
+            }
+            if (strictMode)
+            {
+                diagnostics.error(location, "unsupported metaserializable attribute: " + rhsId->name);
+                return std::nullopt;
+            }
+            diagnostics.warning(location, "compat mode: unknown type attribute evaluated as 0");
+            return Value{Rational(0, 1)};
+        }
+
+        if (!strictMode)
+        {
+            diagnostics.warning(location, "compat mode: unknown attribute access evaluated as 0");
+            return Value{Rational(0, 1)};
+        }
+        diagnostics.error(location, "attribute operator is not defined on " + lhs->typeName());
+        return std::nullopt;
+    }
+
     auto lhs = evaluate(*b.lhs, env, diagnostics, strictMode, resolver);
-    if (!lhs) {
-      return std::nullopt;
+    auto rhs = evaluate(*b.rhs, env, diagnostics, strictMode, resolver);
+    if (!lhs || !rhs)
+    {
+        return std::nullopt;
     }
 
-    const auto *rhsId = std::get_if<ExprAST::Identifier>(&b.rhs->value);
-    if (!rhsId) {
-      if (!strictMode) {
-        diagnostics.warning(location,
-                            "compat mode: malformed attribute access evaluated as 0");
-        return Value{Rational(0, 1)};
-      }
-      diagnostics.error(location,
-                        "attribute operator expects identifier on RHS");
-      return std::nullopt;
-    }
-
-    if (auto set = std::get_if<Value::Set>(&lhs->data)) {
-      if (rhsId->name == "count") {
-        return Value{Rational(static_cast<std::int64_t>(set->size()), 1)};
-      }
-      if (set->empty()) {
-        if (!strictMode) {
-          diagnostics.warning(location,
-                              "compat mode: empty set attribute evaluated as 0");
-          return Value{Rational(0, 1)};
+    if (auto l = std::get_if<Rational>(&lhs->data))
+    {
+        if (auto r = std::get_if<Rational>(&rhs->data))
+        {
+            auto v = applyBinaryRational(b.op, *l, *r);
+            if (!v)
+            {
+                diagnostics.error(location, "invalid rational operation");
+            }
+            return v;
         }
-        diagnostics.error(location,
-                          "cannot access set min/max on an empty set literal");
-        return std::nullopt;
-      }
-      if (rhsId->name == "min") {
-        return Value{*set->begin()};
-      }
-      if (rhsId->name == "max") {
-        return Value{*set->rbegin()};
-      }
     }
 
-    if (auto t = std::get_if<TypeExprAST>(&lhs->data)) {
-      if (resolver) {
-        return (*resolver)(*t, rhsId->name, location);
-      }
-      if (rhsId->name == "_extent_") {
-        return Value{Rational(0, 1)};
-      }
-      if (strictMode) {
-        diagnostics.error(location,
-                          "unsupported metaserializable attribute: " +
-                              rhsId->name);
-        return std::nullopt;
-      }
-      diagnostics.warning(location,
-                          "compat mode: unknown type attribute evaluated as 0");
-      return Value{Rational(0, 1)};
+    if (auto l = std::get_if<bool>(&lhs->data))
+    {
+        if (auto r = std::get_if<bool>(&rhs->data))
+        {
+            switch (b.op)
+            {
+            case BinaryOp::LogicalOr:
+                return Value{*l || *r};
+            case BinaryOp::LogicalAnd:
+                return Value{*l && *r};
+            case BinaryOp::Eq:
+                return Value{*l == *r};
+            case BinaryOp::Ne:
+                return Value{*l != *r};
+            default:
+                break;
+            }
+        }
     }
 
-    if (!strictMode) {
-      diagnostics.warning(location,
-                          "compat mode: unknown attribute access evaluated as 0");
-      return Value{Rational(0, 1)};
+    if (auto l = std::get_if<std::string>(&lhs->data))
+    {
+        if (auto r = std::get_if<std::string>(&rhs->data))
+        {
+            switch (b.op)
+            {
+            case BinaryOp::Add:
+                return Value{*l + *r};
+            case BinaryOp::Eq:
+                return Value{*l == *r};
+            case BinaryOp::Ne:
+                return Value{*l != *r};
+            default:
+                break;
+            }
+        }
     }
-    diagnostics.error(location,
-                      "attribute operator is not defined on " + lhs->typeName());
+
+    if (auto ls = std::get_if<Value::Set>(&lhs->data))
+    {
+        if (auto rs = std::get_if<Value::Set>(&rhs->data))
+        {
+            if (b.op == BinaryOp::Eq)
+            {
+                return Value{*ls == *rs};
+            }
+            if (b.op == BinaryOp::Ne)
+            {
+                return Value{*ls != *rs};
+            }
+            if (b.op == BinaryOp::Le || b.op == BinaryOp::Lt || b.op == BinaryOp::Ge || b.op == BinaryOp::Gt)
+            {
+                const auto subset = [&]() {
+                    return std::all_of(ls->begin(), ls->end(), [&](const Rational& x) { return rs->contains(x); });
+                }();
+                const auto superset = [&]() {
+                    return std::all_of(rs->begin(), rs->end(), [&](const Rational& x) { return ls->contains(x); });
+                }();
+                if (b.op == BinaryOp::Le)
+                {
+                    return Value{subset};
+                }
+                if (b.op == BinaryOp::Lt)
+                {
+                    return Value{subset && (*ls != *rs)};
+                }
+                if (b.op == BinaryOp::Ge)
+                {
+                    return Value{superset};
+                }
+                return Value{superset && (*ls != *rs)};
+            }
+            if (b.op == BinaryOp::BitOr || b.op == BinaryOp::BitAnd || b.op == BinaryOp::BitXor)
+            {
+                return Value{applySetBinary(b.op, *ls, *rs)};
+            }
+            if (b.op == BinaryOp::Pow || b.op == BinaryOp::Mul || b.op == BinaryOp::Div || b.op == BinaryOp::Mod ||
+                b.op == BinaryOp::Add || b.op == BinaryOp::Sub)
+            {
+                auto out = applySetElementwise(b.op, *ls, *rs);
+                if (!out)
+                {
+                    diagnostics.error(location, "invalid elementwise set operation");
+                    return std::nullopt;
+                }
+                return Value{*out};
+            }
+        }
+
+        if (auto rr = std::get_if<Rational>(&rhs->data))
+        {
+            Value::Set rs{*rr};
+            if (b.op == BinaryOp::Pow || b.op == BinaryOp::Mul || b.op == BinaryOp::Div || b.op == BinaryOp::Mod ||
+                b.op == BinaryOp::Add || b.op == BinaryOp::Sub)
+            {
+                auto out = applySetElementwise(b.op, *ls, rs);
+                if (!out)
+                {
+                    diagnostics.error(location, "invalid elementwise set operation");
+                    return std::nullopt;
+                }
+                return Value{*out};
+            }
+        }
+    }
+
+    if (auto lr = std::get_if<Rational>(&lhs->data))
+    {
+        if (auto rs = std::get_if<Value::Set>(&rhs->data))
+        {
+            Value::Set ls{*lr};
+            if (b.op == BinaryOp::Pow || b.op == BinaryOp::Mul || b.op == BinaryOp::Div || b.op == BinaryOp::Mod ||
+                b.op == BinaryOp::Add || b.op == BinaryOp::Sub)
+            {
+                auto out = applySetElementwise(b.op, ls, *rs);
+                if (!out)
+                {
+                    diagnostics.error(location, "invalid elementwise set operation");
+                    return std::nullopt;
+                }
+                return Value{*out};
+            }
+        }
+    }
+
+    diagnostics.error(location, "unsupported operand types: " + lhs->typeName() + " and " + rhs->typeName());
     return std::nullopt;
-  }
+}
 
-  auto lhs = evaluate(*b.lhs, env, diagnostics, strictMode, resolver);
-  auto rhs = evaluate(*b.rhs, env, diagnostics, strictMode, resolver);
-  if (!lhs || !rhs) {
+std::optional<Value> evaluate(const ExprAST&               expr,
+                              const ValueEnv&              env,
+                              DiagnosticEngine&            diagnostics,
+                              bool                         strictMode,
+                              const TypeAttributeResolver* resolver)
+{
+    if (auto p = std::get_if<bool>(&expr.value))
+    {
+        return Value{*p};
+    }
+    if (auto p = std::get_if<Rational>(&expr.value))
+    {
+        return Value{*p};
+    }
+    if (auto p = std::get_if<std::string>(&expr.value))
+    {
+        return Value{*p};
+    }
+    if (auto p = std::get_if<ExprAST::Identifier>(&expr.value))
+    {
+        const auto it = env.find(p->name);
+        if (it == env.end())
+        {
+            if (!strictMode)
+            {
+                diagnostics.warning(expr.location,
+                                    "compat mode: undefined identifier '" + p->name + "' evaluated as 0");
+                return Value{Rational(0, 1)};
+            }
+            diagnostics.error(expr.location, "undefined identifier: " + p->name);
+            return std::nullopt;
+        }
+        return it->second;
+    }
+    if (auto p = std::get_if<ExprAST::Unary>(&expr.value))
+    {
+        auto operand = evaluate(*p->operand, env, diagnostics, strictMode, resolver);
+        if (!operand)
+        {
+            return std::nullopt;
+        }
+
+        if (p->op == UnaryOp::LogicalNot)
+        {
+            bool b = false;
+            if (!asBool(*operand, b))
+            {
+                diagnostics.error(expr.location, "logical not requires boolean operand");
+                return std::nullopt;
+            }
+            return Value{!b};
+        }
+
+        Rational r;
+        if (!asRational(*operand, r))
+        {
+            diagnostics.error(expr.location, "unary +/- requires rational operand");
+            return std::nullopt;
+        }
+        if (p->op == UnaryOp::Minus)
+        {
+            return Value{Rational(-r.numerator(), r.denominator())};
+        }
+        return Value{r};
+    }
+    if (auto p = std::get_if<ExprAST::Binary>(&expr.value))
+    {
+        return evaluateBinary(*p, expr.location, env, diagnostics, strictMode, resolver);
+    }
+    if (auto p = std::get_if<ExprAST::SetLiteral>(&expr.value))
+    {
+        Value::Set set;
+        for (const auto& elem : p->elements)
+        {
+            auto value = evaluate(*elem, env, diagnostics, strictMode, resolver);
+            if (!value)
+            {
+                return std::nullopt;
+            }
+            auto rv = std::get_if<Rational>(&value->data);
+            if (!rv)
+            {
+                diagnostics.error(elem->location, "set literal elements must evaluate to rational");
+                return std::nullopt;
+            }
+            set.insert(*rv);
+        }
+        return Value{set};
+    }
+    if (auto p = std::get_if<ExprAST::TypeLiteral>(&expr.value))
+    {
+        return Value{p->type};
+    }
+
+    diagnostics.error(expr.location, "unsupported expression kind");
     return std::nullopt;
-  }
-
-  if (auto l = std::get_if<Rational>(&lhs->data)) {
-    if (auto r = std::get_if<Rational>(&rhs->data)) {
-      auto v = applyBinaryRational(b.op, *l, *r);
-      if (!v) {
-        diagnostics.error(location, "invalid rational operation");
-      }
-      return v;
-    }
-  }
-
-  if (auto l = std::get_if<bool>(&lhs->data)) {
-    if (auto r = std::get_if<bool>(&rhs->data)) {
-      switch (b.op) {
-      case BinaryOp::LogicalOr:
-        return Value{*l || *r};
-      case BinaryOp::LogicalAnd:
-        return Value{*l && *r};
-      case BinaryOp::Eq:
-        return Value{*l == *r};
-      case BinaryOp::Ne:
-        return Value{*l != *r};
-      default:
-        break;
-      }
-    }
-  }
-
-  if (auto l = std::get_if<std::string>(&lhs->data)) {
-    if (auto r = std::get_if<std::string>(&rhs->data)) {
-      switch (b.op) {
-      case BinaryOp::Add:
-        return Value{*l + *r};
-      case BinaryOp::Eq:
-        return Value{*l == *r};
-      case BinaryOp::Ne:
-        return Value{*l != *r};
-      default:
-        break;
-      }
-    }
-  }
-
-  if (auto ls = std::get_if<Value::Set>(&lhs->data)) {
-    if (auto rs = std::get_if<Value::Set>(&rhs->data)) {
-      if (b.op == BinaryOp::Eq) {
-        return Value{*ls == *rs};
-      }
-      if (b.op == BinaryOp::Ne) {
-        return Value{*ls != *rs};
-      }
-      if (b.op == BinaryOp::Le || b.op == BinaryOp::Lt || b.op == BinaryOp::Ge ||
-          b.op == BinaryOp::Gt) {
-        const auto subset = [&]() {
-          return std::all_of(ls->begin(), ls->end(), [&](const Rational &x) {
-            return rs->contains(x);
-          });
-        }();
-        const auto superset = [&]() {
-          return std::all_of(rs->begin(), rs->end(), [&](const Rational &x) {
-            return ls->contains(x);
-          });
-        }();
-        if (b.op == BinaryOp::Le) {
-          return Value{subset};
-        }
-        if (b.op == BinaryOp::Lt) {
-          return Value{subset && (*ls != *rs)};
-        }
-        if (b.op == BinaryOp::Ge) {
-          return Value{superset};
-        }
-        return Value{superset && (*ls != *rs)};
-      }
-      if (b.op == BinaryOp::BitOr || b.op == BinaryOp::BitAnd ||
-          b.op == BinaryOp::BitXor) {
-        return Value{applySetBinary(b.op, *ls, *rs)};
-      }
-      if (b.op == BinaryOp::Pow || b.op == BinaryOp::Mul || b.op == BinaryOp::Div ||
-          b.op == BinaryOp::Mod || b.op == BinaryOp::Add || b.op == BinaryOp::Sub) {
-        auto out = applySetElementwise(b.op, *ls, *rs);
-        if (!out) {
-          diagnostics.error(location, "invalid elementwise set operation");
-          return std::nullopt;
-        }
-        return Value{*out};
-      }
-    }
-
-    if (auto rr = std::get_if<Rational>(&rhs->data)) {
-      Value::Set rs{*rr};
-      if (b.op == BinaryOp::Pow || b.op == BinaryOp::Mul || b.op == BinaryOp::Div ||
-          b.op == BinaryOp::Mod || b.op == BinaryOp::Add || b.op == BinaryOp::Sub) {
-        auto out = applySetElementwise(b.op, *ls, rs);
-        if (!out) {
-          diagnostics.error(location, "invalid elementwise set operation");
-          return std::nullopt;
-        }
-        return Value{*out};
-      }
-    }
-  }
-
-  if (auto lr = std::get_if<Rational>(&lhs->data)) {
-    if (auto rs = std::get_if<Value::Set>(&rhs->data)) {
-      Value::Set ls{*lr};
-      if (b.op == BinaryOp::Pow || b.op == BinaryOp::Mul || b.op == BinaryOp::Div ||
-          b.op == BinaryOp::Mod || b.op == BinaryOp::Add || b.op == BinaryOp::Sub) {
-        auto out = applySetElementwise(b.op, ls, *rs);
-        if (!out) {
-          diagnostics.error(location, "invalid elementwise set operation");
-          return std::nullopt;
-        }
-        return Value{*out};
-      }
-    }
-  }
-
-  diagnostics.error(location, "unsupported operand types: " + lhs->typeName() +
-                                  " and " + rhs->typeName());
-  return std::nullopt;
 }
 
-std::optional<Value> evaluate(const ExprAST &expr, const ValueEnv &env,
-                              DiagnosticEngine &diagnostics, bool strictMode,
-                              const TypeAttributeResolver *resolver) {
-  if (auto p = std::get_if<bool>(&expr.value)) {
-    return Value{*p};
-  }
-  if (auto p = std::get_if<Rational>(&expr.value)) {
-    return Value{*p};
-  }
-  if (auto p = std::get_if<std::string>(&expr.value)) {
-    return Value{*p};
-  }
-  if (auto p = std::get_if<ExprAST::Identifier>(&expr.value)) {
-    const auto it = env.find(p->name);
-    if (it == env.end()) {
-      if (!strictMode) {
-        diagnostics.warning(expr.location,
-                            "compat mode: undefined identifier '" + p->name +
-                                "' evaluated as 0");
-        return Value{Rational(0, 1)};
-      }
-      diagnostics.error(expr.location, "undefined identifier: " + p->name);
-      return std::nullopt;
-    }
-    return it->second;
-  }
-  if (auto p = std::get_if<ExprAST::Unary>(&expr.value)) {
-    auto operand = evaluate(*p->operand, env, diagnostics, strictMode, resolver);
-    if (!operand) {
-      return std::nullopt;
-    }
+}  // namespace
 
-    if (p->op == UnaryOp::LogicalNot) {
-      bool b = false;
-      if (!asBool(*operand, b)) {
-        diagnostics.error(expr.location,
-                          "logical not requires boolean operand");
-        return std::nullopt;
-      }
-      return Value{!b};
+std::string Value::typeName() const
+{
+    if (std::holds_alternative<bool>(data))
+    {
+        return "bool";
     }
-
-    Rational r;
-    if (!asRational(*operand, r)) {
-      diagnostics.error(expr.location,
-                        "unary +/- requires rational operand");
-      return std::nullopt;
+    if (std::holds_alternative<Rational>(data))
+    {
+        return "rational";
     }
-    if (p->op == UnaryOp::Minus) {
-      return Value{Rational(-r.numerator(), r.denominator())};
+    if (std::holds_alternative<std::string>(data))
+    {
+        return "string";
     }
-    return Value{r};
-  }
-  if (auto p = std::get_if<ExprAST::Binary>(&expr.value)) {
-    return evaluateBinary(*p, expr.location, env, diagnostics, strictMode,
-                          resolver);
-  }
-  if (auto p = std::get_if<ExprAST::SetLiteral>(&expr.value)) {
-    Value::Set set;
-    for (const auto &elem : p->elements) {
-      auto value = evaluate(*elem, env, diagnostics, strictMode, resolver);
-      if (!value) {
-        return std::nullopt;
-      }
-      auto rv = std::get_if<Rational>(&value->data);
-      if (!rv) {
-        diagnostics.error(elem->location,
-                          "set literal elements must evaluate to rational");
-        return std::nullopt;
-      }
-      set.insert(*rv);
+    if (std::holds_alternative<Set>(data))
+    {
+        return "set<rational>";
     }
-    return Value{set};
-  }
-  if (auto p = std::get_if<ExprAST::TypeLiteral>(&expr.value)) {
-    return Value{p->type};
-  }
-
-  diagnostics.error(expr.location, "unsupported expression kind");
-  return std::nullopt;
+    return "metaserializable";
 }
 
-} // namespace
-
-std::string Value::typeName() const {
-  if (std::holds_alternative<bool>(data)) {
-    return "bool";
-  }
-  if (std::holds_alternative<Rational>(data)) {
-    return "rational";
-  }
-  if (std::holds_alternative<std::string>(data)) {
-    return "string";
-  }
-  if (std::holds_alternative<Set>(data)) {
-    return "set<rational>";
-  }
-  return "metaserializable";
-}
-
-std::string Value::str() const {
-  std::ostringstream out;
-  if (auto p = std::get_if<bool>(&data)) {
-    out << (*p ? "true" : "false");
-  } else if (auto p = std::get_if<Rational>(&data)) {
-    out << p->str();
-  } else if (auto p = std::get_if<std::string>(&data)) {
-    out << '\'' << *p << '\'';
-  } else if (auto p = std::get_if<Set>(&data)) {
-    out << '{';
-    bool first = true;
-    for (const auto &v : *p) {
-      if (!first) {
-        out << ", ";
-      }
-      out << v.str();
-      first = false;
+std::string Value::str() const
+{
+    std::ostringstream out;
+    if (auto p = std::get_if<bool>(&data))
+    {
+        out << (*p ? "true" : "false");
     }
-    out << '}';
-  } else if (auto p = std::get_if<TypeExprAST>(&data)) {
-    out << p->str();
-  }
-  return out.str();
+    else if (auto p = std::get_if<Rational>(&data))
+    {
+        out << p->str();
+    }
+    else if (auto p = std::get_if<std::string>(&data))
+    {
+        out << '\'' << *p << '\'';
+    }
+    else if (auto p = std::get_if<Set>(&data))
+    {
+        out << '{';
+        bool first = true;
+        for (const auto& v : *p)
+        {
+            if (!first)
+            {
+                out << ", ";
+            }
+            out << v.str();
+            first = false;
+        }
+        out << '}';
+    }
+    else if (auto p = std::get_if<TypeExprAST>(&data))
+    {
+        out << p->str();
+    }
+    return out.str();
 }
 
-std::optional<Value> evaluateExpression(const ExprAST &expr, const ValueEnv &env,
-                                        DiagnosticEngine &diagnostics,
-                                        const SourceLocation &location,
-                                        bool strictMode,
-                                        const TypeAttributeResolver *resolver) {
-  const auto beforeDiagnostics = diagnostics.diagnostics().size();
-  auto v = evaluate(expr, env, diagnostics, strictMode, resolver);
-  if (!v && diagnostics.diagnostics().size() == beforeDiagnostics) {
-    diagnostics.error(location, "failed to evaluate expression");
-  }
-  return v;
+std::optional<Value> evaluateExpression(const ExprAST&               expr,
+                                        const ValueEnv&              env,
+                                        DiagnosticEngine&            diagnostics,
+                                        const SourceLocation&        location,
+                                        bool                         strictMode,
+                                        const TypeAttributeResolver* resolver)
+{
+    const auto beforeDiagnostics = diagnostics.diagnostics().size();
+    auto       v                 = evaluate(expr, env, diagnostics, strictMode, resolver);
+    if (!v && diagnostics.diagnostics().size() == beforeDiagnostics)
+    {
+        diagnostics.error(location, "failed to evaluate expression");
+    }
+    return v;
 }
 
-} // namespace llvmdsdl
+}  // namespace llvmdsdl

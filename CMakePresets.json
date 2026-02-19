@@ -46,7 +46,8 @@
       },
       "cacheVariables": {
         "LLVM_DIR": "/opt/homebrew/opt/llvm/lib/cmake/llvm",
-        "MLIR_DIR": "/opt/homebrew/opt/llvm/lib/cmake/mlir"
+        "MLIR_DIR": "/opt/homebrew/opt/llvm/lib/cmake/mlir",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "26.0"
       }
     },
     {
@@ -416,6 +417,38 @@
       "name": "test-ts-llvm-env",
       "displayName": "Test (TypeScript generation/typecheck/determinism/consumer-smoke/index-contract gates, dev-llvm-env)",
       "configurePreset": "dev-llvm-env",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "ts"
+        }
+      }
+    },
+    {
+      "name": "test-ts-complete",
+      "displayName": "Test (TypeScript completion ring, strict+compat+parity, dev)",
+      "configurePreset": "dev",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "ts"
+        }
+      }
+    },
+    {
+      "name": "test-ts-complete-homebrew",
+      "displayName": "Test (TypeScript completion ring, strict+compat+parity, dev-homebrew)",
+      "configurePreset": "dev-homebrew",
       "execution": {
         "noTestsAction": "error"
       },
@@ -867,6 +900,44 @@
         {
           "type": "test",
           "name": "test-ts-llvm-env"
+        }
+      ]
+    },
+    {
+      "name": "ts-complete",
+      "displayName": "Workflow (TypeScript completion ring)",
+      "description": "Configure + build + run the TypeScript completion ring (strict+compat generation/runtime + invariant parity gates).",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev"
+        },
+        {
+          "type": "build",
+          "name": "build-dev"
+        },
+        {
+          "type": "test",
+          "name": "test-ts-complete"
+        }
+      ]
+    },
+    {
+      "name": "ts-complete-homebrew",
+      "displayName": "Workflow (TypeScript completion ring, Homebrew LLVM)",
+      "description": "Configure + build + run the TypeScript completion ring (strict+compat generation/runtime + invariant parity gates) using Homebrew LLVM/MLIR.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev-homebrew"
+        },
+        {
+          "type": "build",
+          "name": "build-dev-homebrew"
+        },
+        {
+          "type": "test",
+          "name": "test-ts-complete-homebrew"
         }
       ]
     },

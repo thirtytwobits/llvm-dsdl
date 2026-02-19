@@ -1,3 +1,12 @@
+#===----------------------------------------------------------------------===#
+##
+## @file
+## Defines the top-level library subtree for llvm-dsdl.
+##
+## This build entry point composes support, frontend, semantics, IR, lowering, transform, and codegen library targets.
+##
+#===----------------------------------------------------------------------===#
+
 add_subdirectory(Support)
 add_subdirectory(Frontend)
 add_subdirectory(Semantics)

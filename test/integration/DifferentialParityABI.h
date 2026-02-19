@@ -4,14 +4,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef int8_t (*DifferentialSerializeFn)(const void *, uint8_t *, size_t *);
-typedef int8_t (*DifferentialDeserializeFn)(void *, const uint8_t *, size_t *);
+typedef int8_t (*DifferentialSerializeFn)(const void*, uint8_t*, size_t*);
+typedef int8_t (*DifferentialDeserializeFn)(void*, const uint8_t*, size_t*);
 
-typedef struct {
-  size_t object_size;
-  size_t max_serialized_size;
-  DifferentialSerializeFn serialize;
-  DifferentialDeserializeFn deserialize;
+typedef struct
+{
+    size_t                    object_size;
+    size_t                    max_serialized_size;
+    DifferentialSerializeFn   serialize;
+    DifferentialDeserializeFn deserialize;
 } DifferentialCaseInfo;
 
 #endif

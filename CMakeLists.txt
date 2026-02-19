@@ -33,6 +33,43 @@ endif()
 set(LLVMDSDL_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(LLVMDSDL_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
 
+find_program(LLVMDSDL_CLANG_FORMAT_EXE
+  NAMES clang-format clang-format-21 clang-format-20 clang-format-19
+        clang-format-18 clang-format-17 clang-format-16 clang-format-15
+)
+
+if(NOT LLVMDSDL_CLANG_FORMAT_EXE)
+  message(WARNING
+    "clang-format not found; check-format/format-source targets will fail "
+    "until it is installed.")
+endif()
+
+add_custom_target(check-clang-format
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DCLANG_FORMAT=${LLVMDSDL_CLANG_FORMAT_EXE}
+      -DLLVMDSDL_SOURCE_DIR=${LLVMDSDL_SOURCE_DIR}
+      -P ${LLVMDSDL_SOURCE_DIR}/cmake/CheckClangFormat.cmake
+  USES_TERMINAL
+  VERBATIM
+  COMMENT "Checking source formatting with clang-format"
+)
+
+add_custom_target(check-format
+  DEPENDS check-clang-format
+)
+
+add_custom_target(format-source
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DCLANG_FORMAT=${LLVMDSDL_CLANG_FORMAT_EXE}
+      -DLLVMDSDL_SOURCE_DIR=${LLVMDSDL_SOURCE_DIR}
+      -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunClangFormat.cmake
+  USES_TERMINAL
+  VERBATIM
+  COMMENT "Reformatting project source with clang-format"
+)
+
 add_subdirectory(include/llvmdsdl)
 add_subdirectory(lib)
 add_subdirectory(tools)

@@ -5,22 +5,26 @@
 #include <cstdint>
 #include <memory_resource>
 
-extern "C" {
+extern "C"
+{
 #include "dsdl_runtime.h"
 }
 
-namespace llvmdsdl::cpp {
+namespace llvmdsdl::cpp
+{
 
 using MemoryResource = std::pmr::memory_resource;
 
-inline MemoryResource *default_memory_resource() noexcept {
-  return std::pmr::get_default_resource();
+inline MemoryResource* default_memory_resource() noexcept
+{
+    return std::pmr::get_default_resource();
 }
 
-inline constexpr MemoryResource *null_memory_resource() noexcept {
-  return nullptr;
+inline constexpr MemoryResource* null_memory_resource() noexcept
+{
+    return nullptr;
 }
 
-} // namespace llvmdsdl::cpp
+}  // namespace llvmdsdl::cpp
 
-#endif // LLVMDSDL_CPP_RUNTIME_HPP
+#endif  // LLVMDSDL_CPP_RUNTIME_HPP

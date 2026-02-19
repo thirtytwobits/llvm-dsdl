@@ -1,3 +1,9 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Shared TableGen base definitions used by DSDL dialect ops, attrs, and types.
+///
+//===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_IR_DSDLBASE_TD
 #define LLVMDSDL_IR_DSDLBASE_TD
 

@@ -1,3 +1,9 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Core semantic model declarations produced from parsed DSDL AST definitions.
+///
+//===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_SEMANTICS_MODEL_H
 #define LLVMDSDL_SEMANTICS_MODEL_H
 
@@ -9,87 +15,205 @@
 #include <string>
 #include <vector>
 
-namespace llvmdsdl {
+namespace llvmdsdl
+{
 
-struct SemanticOptions final {
-  bool strict{true};
-  bool compatMode{false};
+/// @file
+/// @brief Semantic model produced from parsed DSDL AST.
+
+/// @brief Semantic-analysis knobs controlling strictness behavior.
+struct SemanticOptions final
+{
+    /// @brief Enables strict spec-first semantic validation.
+    bool strict{true};
+
+    /// @brief Enables compatibility behavior for legacy/non-conformant inputs.
+    bool compatMode{false};
 };
 
-enum class SemanticScalarCategory {
-  Bool,
-  Byte,
-  Utf8,
-  UnsignedInt,
-  SignedInt,
-  Float,
-  Void,
-  Composite,
+/// @brief Resolved scalar category for a semantic field type.
+enum class SemanticScalarCategory
+{
+
+    /// @brief Boolean scalar.
+    Bool,
+
+    /// @brief Byte scalar.
+    Byte,
+
+    /// @brief UTF-8 code unit scalar.
+    Utf8,
+
+    /// @brief Unsigned integer scalar.
+    UnsignedInt,
+
+    /// @brief Signed integer scalar.
+    SignedInt,
+
+    /// @brief Floating-point scalar.
+    Float,
+
+    /// @brief Padding/void scalar.
+    Void,
+
+    /// @brief Composite reference scalar.
+    Composite,
 };
 
-struct SemanticTypeRef final {
-  std::string fullName;
-  std::vector<std::string> namespaceComponents;
-  std::string shortName;
-  std::uint32_t majorVersion{0};
-  std::uint32_t minorVersion{0};
+/// @brief Canonical reference to a resolved composite DSDL type.
+struct SemanticTypeRef final
+{
+    /// @brief Fully qualified type name.
+    std::string fullName;
+
+    /// @brief Namespace path components.
+    std::vector<std::string> namespaceComponents;
+
+    /// @brief Short type name.
+    std::string shortName;
+
+    /// @brief Major version.
+    std::uint32_t majorVersion{0};
+
+    /// @brief Minor version.
+    std::uint32_t minorVersion{0};
 };
 
-struct SemanticFieldType final {
-  SemanticScalarCategory scalarCategory{SemanticScalarCategory::Void};
-  CastMode castMode{CastMode::Saturated};
-  std::uint32_t bitLength{0};
-  ArrayKind arrayKind{ArrayKind::None};
-  std::int64_t arrayCapacity{0}; // Resolved max element count for arrays.
-  std::int64_t arrayLengthPrefixBits{0};
-  std::int64_t alignmentBits{1};
-  BitLengthSet bitLengthSet;
-  std::optional<SemanticTypeRef> compositeType;
-  bool compositeSealed{true};
-  std::int64_t compositeExtentBits{0};
+/// @brief Fully resolved type information used by lowering and codegen.
+struct SemanticFieldType final
+{
+    /// @brief Scalar category.
+    SemanticScalarCategory scalarCategory{SemanticScalarCategory::Void};
+
+    /// @brief Cast mode semantics for integer-like types.
+    CastMode castMode{CastMode::Saturated};
+
+    /// @brief Scalar bit width for non-composite types.
+    std::uint32_t bitLength{0};
+
+    /// @brief Array qualifier.
+    ArrayKind arrayKind{ArrayKind::None};
+
+    /// @brief Resolved maximum array element count.
+    std::int64_t arrayCapacity{0};
+
+    /// @brief Variable-array length-prefix width in bits.
+    std::int64_t arrayLengthPrefixBits{0};
+
+    /// @brief Required alignment in bits.
+    std::int64_t alignmentBits{1};
+
+    /// @brief Possible serialized bit-length set.
+    BitLengthSet bitLengthSet;
+
+    /// @brief Target composite type for composite fields.
+    std::optional<SemanticTypeRef> compositeType;
+
+    /// @brief True for sealed composites, false for appendable composites.
+    bool compositeSealed{true};
+
+    /// @brief Composite payload extent in bits for appendable types.
+    std::int64_t compositeExtentBits{0};
 };
 
-struct SemanticField final {
-  std::string name;
-  TypeExprAST type;
-  bool isPadding{false};
-  SemanticFieldType resolvedType;
-  std::string sectionName;
-  std::uint32_t unionOptionIndex{0};
-  std::uint32_t unionTagBits{0};
+/// @brief Resolved field declaration.
+struct SemanticField final
+{
+    /// @brief Field name.
+    std::string name;
+
+    /// @brief Original parsed type expression.
+    TypeExprAST type;
+
+    /// @brief True when this field represents padding.
+    bool isPadding{false};
+
+    /// @brief Resolved type metadata.
+    SemanticFieldType resolvedType;
+
+    /// @brief Logical section name for diagnostics.
+    std::string sectionName;
+
+    /// @brief Union option index when section is a union.
+    std::uint32_t unionOptionIndex{0};
+
+    /// @brief Union tag width in bits.
+    std::uint32_t unionTagBits{0};
 };
 
-struct SemanticConstant final {
-  std::string name;
-  TypeExprAST type;
-  Value value;
+/// @brief Resolved constant declaration.
+struct SemanticConstant final
+{
+    /// @brief Constant symbol name.
+    std::string name;
+
+    /// @brief Original parsed type expression.
+    TypeExprAST type;
+
+    /// @brief Evaluated constant value.
+    Value value;
 };
 
-struct SemanticSection final {
-  bool isUnion{false};
-  bool sealed{false};
-  bool deprecated{false};
-  std::optional<std::int64_t> extentBits;
-  std::vector<SemanticField> fields;
-  std::vector<SemanticConstant> constants;
-  BitLengthSet offsetAtEnd;
-  std::int64_t minBitLength{0};
-  std::int64_t maxBitLength{0};
-  bool fixedSize{true};
-  std::int64_t serializationBufferSizeBits{0};
+/// @brief Semantic representation of one serialization section.
+struct SemanticSection final
+{
+    /// @brief True when the section is a union.
+    bool isUnion{false};
+
+    /// @brief True when the section is sealed.
+    bool sealed{false};
+
+    /// @brief True when the section is deprecated.
+    bool deprecated{false};
+
+    /// @brief Optional explicit extent in bits.
+    std::optional<std::int64_t> extentBits;
+
+    /// @brief Section fields in declaration order.
+    std::vector<SemanticField> fields;
+
+    /// @brief Section constants.
+    std::vector<SemanticConstant> constants;
+
+    /// @brief Possible final offsets at section end.
+    BitLengthSet offsetAtEnd;
+
+    /// @brief Minimum serialized bit length.
+    std::int64_t minBitLength{0};
+
+    /// @brief Maximum serialized bit length.
+    std::int64_t maxBitLength{0};
+
+    /// @brief True when serialized bit length is invariant.
+    bool fixedSize{true};
+
+    /// @brief Required serialization buffer size in bits.
+    std::int64_t serializationBufferSizeBits{0};
 };
 
-struct SemanticDefinition final {
-  DiscoveredDefinition info;
-  bool isService{false};
-  SemanticSection request;
-  std::optional<SemanticSection> response;
+/// @brief Fully resolved definition including optional service response.
+struct SemanticDefinition final
+{
+    /// @brief Discovery metadata.
+    DiscoveredDefinition info;
+
+    /// @brief True when this definition is a service.
+    bool isService{false};
+
+    /// @brief Request section (or message body for non-services).
+    SemanticSection request;
+
+    /// @brief Optional response section for services.
+    std::optional<SemanticSection> response;
 };
 
-struct SemanticModule final {
-  std::vector<SemanticDefinition> definitions;
+/// @brief Semantic compilation unit.
+struct SemanticModule final
+{
+    /// @brief All resolved definitions.
+    std::vector<SemanticDefinition> definitions;
 };
 
-} // namespace llvmdsdl
+}  // namespace llvmdsdl
 
-#endif // LLVMDSDL_SEMANTICS_MODEL_H
+#endif  // LLVMDSDL_SEMANTICS_MODEL_H

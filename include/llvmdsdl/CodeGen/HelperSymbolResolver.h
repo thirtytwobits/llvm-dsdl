@@ -1,3 +1,9 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// APIs for resolving backend helper symbols from lowered metadata and semantic field types.
+///
+//===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_CODEGEN_HELPER_SYMBOL_RESOLVER_H
 #define LLVMDSDL_CODEGEN_HELPER_SYMBOL_RESOLVER_H
 
@@ -8,30 +14,56 @@
 #include <optional>
 #include <string>
 
-namespace llvmdsdl {
+namespace llvmdsdl
+{
 
-std::string resolveSectionCapacityCheckHelperSymbol(
-    const LoweredSectionFacts *sectionFacts);
+/// @file
+/// @brief Symbol-resolution helpers for lowered serdes helper functions.
 
-std::string resolveSectionUnionTagValidateHelperSymbol(
-    const LoweredSectionFacts *sectionFacts);
+/// @brief Resolves section capacity-check helper symbol.
+/// @param[in] sectionFacts Lowered section facts.
+/// @return Capacity-check helper symbol or empty string.
+std::string resolveSectionCapacityCheckHelperSymbol(const LoweredSectionFacts* sectionFacts);
 
-std::string resolveSectionUnionTagMaskHelperSymbol(
-    const LoweredSectionFacts *sectionFacts, HelperBindingDirection direction);
+/// @brief Resolves section union-tag validation helper symbol.
+/// @param[in] sectionFacts Lowered section facts.
+/// @return Union-tag validation helper symbol or empty string.
+std::string resolveSectionUnionTagValidateHelperSymbol(const LoweredSectionFacts* sectionFacts);
 
-std::string resolveScalarHelperSymbol(const SemanticFieldType &type,
-                                      const LoweredFieldFacts *fieldFacts,
-                                      HelperBindingDirection direction);
+/// @brief Resolves section union-tag mask helper symbol.
+/// @param[in] sectionFacts Lowered section facts.
+/// @param[in] direction Serialize/deserialize direction.
+/// @return Union-tag helper symbol or empty string.
+std::string resolveSectionUnionTagMaskHelperSymbol(const LoweredSectionFacts* sectionFacts,
+                                                   HelperBindingDirection     direction);
 
-std::optional<ArrayLengthHelperDescriptor>
-resolveArrayLengthHelperDescriptor(const SemanticFieldType &type,
-                                   const LoweredFieldFacts *fieldFacts,
-                                   std::optional<std::uint32_t> prefixBitsOverride,
-                                   HelperBindingDirection direction);
+/// @brief Resolves scalar helper symbol.
+/// @param[in] type Semantic field type.
+/// @param[in] fieldFacts Lowered field facts.
+/// @param[in] direction Serialize/deserialize direction.
+/// @return Scalar helper symbol or empty string.
+std::string resolveScalarHelperSymbol(const SemanticFieldType& type,
+                                      const LoweredFieldFacts* fieldFacts,
+                                      HelperBindingDirection   direction);
 
-std::string resolveDelimiterValidateHelperSymbol(const SemanticFieldType &type,
-                                                 const LoweredFieldFacts *fieldFacts);
+/// @brief Resolves variable-array helper descriptor.
+/// @param[in] type Semantic field type.
+/// @param[in] fieldFacts Lowered field facts.
+/// @param[in] prefixBitsOverride Optional prefix width override.
+/// @param[in] direction Serialize/deserialize direction.
+/// @return Helper descriptor when variable-array helpers apply.
+std::optional<ArrayLengthHelperDescriptor> resolveArrayLengthHelperDescriptor(
+    const SemanticFieldType&     type,
+    const LoweredFieldFacts*     fieldFacts,
+    std::optional<std::uint32_t> prefixBitsOverride,
+    HelperBindingDirection       direction);
 
-} // namespace llvmdsdl
+/// @brief Resolves delimiter validation helper symbol.
+/// @param[in] type Semantic field type.
+/// @param[in] fieldFacts Lowered field facts.
+/// @return Delimiter validation helper symbol or empty string.
+std::string resolveDelimiterValidateHelperSymbol(const SemanticFieldType& type, const LoweredFieldFacts* fieldFacts);
 
-#endif // LLVMDSDL_CODEGEN_HELPER_SYMBOL_RESOLVER_H
+}  // namespace llvmdsdl
+
+#endif  // LLVMDSDL_CODEGEN_HELPER_SYMBOL_RESOLVER_H

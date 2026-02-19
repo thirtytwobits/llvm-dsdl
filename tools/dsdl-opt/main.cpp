@@ -10,15 +10,18 @@
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/raw_ostream.h"
 
-int main(int argc, char **argv) {
-  llvm::InitLLVM y(argc, argv);
+int main(int argc, char** argv)
+{
+    llvm::InitLLVM y(argc, argv);
 
-  mlir::DialectRegistry registry;
-  registry.insert<mlir::dsdl::DSDLDialect, mlir::func::FuncDialect,
-                  mlir::arith::ArithDialect, mlir::scf::SCFDialect,
-                  mlir::emitc::EmitCDialect>();
+    mlir::DialectRegistry registry;
+    registry.insert<mlir::dsdl::DSDLDialect,
+                    mlir::func::FuncDialect,
+                    mlir::arith::ArithDialect,
+                    mlir::scf::SCFDialect,
+                    mlir::emitc::EmitCDialect>();
 
-  llvmdsdl::registerDSDLPasses();
+    llvmdsdl::registerDSDLPasses();
 
-  return failed(mlir::MlirOptMain(argc, argv, "dsdl-opt", registry));
+    return failed(mlir::MlirOptMain(argc, argv, "dsdl-opt", registry));
 }

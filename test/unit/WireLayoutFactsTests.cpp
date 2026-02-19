@@ -2,30 +2,33 @@
 
 #include <iostream>
 
-bool runWireLayoutFactsTests() {
-  {
-    llvmdsdl::SemanticSection section;
-    section.isUnion = true;
-    llvmdsdl::SemanticField f;
-    f.unionTagBits = 8;
-    f.isPadding = false;
-    section.fields.push_back(f);
-    if (llvmdsdl::resolveUnionTagBits(section, nullptr) != 8) {
-      std::cerr << "union tag bits default resolution mismatch\n";
-      return false;
+bool runWireLayoutFactsTests()
+{
+    {
+        llvmdsdl::SemanticSection section;
+        section.isUnion = true;
+        llvmdsdl::SemanticField f;
+        f.unionTagBits = 8;
+        f.isPadding    = false;
+        section.fields.push_back(f);
+        if (llvmdsdl::resolveUnionTagBits(section, nullptr) != 8)
+        {
+            std::cerr << "union tag bits default resolution mismatch\n";
+            return false;
+        }
     }
-  }
 
-  {
-    llvmdsdl::SemanticSection section;
-    section.isUnion = true;
-    llvmdsdl::LoweredSectionFacts facts;
-    facts.unionTagBits = 16;
-    if (llvmdsdl::resolveUnionTagBits(section, &facts) != 16) {
-      std::cerr << "union tag bits lowered override mismatch\n";
-      return false;
+    {
+        llvmdsdl::SemanticSection section;
+        section.isUnion = true;
+        llvmdsdl::LoweredSectionFacts facts;
+        facts.unionTagBits = 16;
+        if (llvmdsdl::resolveUnionTagBits(section, &facts) != 16)
+        {
+            std::cerr << "union tag bits lowered override mismatch\n";
+            return false;
+        }
     }
-  }
 
-  return true;
+    return true;
 }

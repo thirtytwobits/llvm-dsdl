@@ -1,13 +1,24 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Implements source-location rendering helpers.
+///
+/// This file contains utility formatting logic for presenting file, line, and column coordinates.
+///
+//===----------------------------------------------------------------------===//
+
 #include "llvmdsdl/Frontend/SourceLocation.h"
 
 #include <sstream>
 
-namespace llvmdsdl {
+namespace llvmdsdl
+{
 
-std::string SourceLocation::str() const {
-  std::ostringstream out;
-  out << file << ':' << line << ':' << column;
-  return out.str();
+std::string SourceLocation::str() const
+{
+    std::ostringstream out;
+    out << file << ':' << line << ':' << column;
+    return out.str();
 }
 
-} // namespace llvmdsdl
+}  // namespace llvmdsdl

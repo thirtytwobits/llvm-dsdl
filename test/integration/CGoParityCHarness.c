@@ -99,38 +99,44 @@
 #include "uavcan/node/port/List_1_0.h"
 #include "uavcan/metatransport/ethernet/EtherType_0_1.h"
 
-typedef struct CCaseResult {
-  int8_t deserialize_rc;
-  size_t deserialize_consumed;
-  int8_t serialize_rc;
-  size_t serialize_size;
+typedef struct CCaseResult
+{
+    int8_t deserialize_rc;
+    size_t deserialize_consumed;
+    int8_t serialize_rc;
+    size_t serialize_size;
 } CCaseResult;
 
-#define DEFINE_ROUNDTRIP(FN_NAME, TYPE, DESERIALIZE_FN, SERIALIZE_FN)         \
-int FN_NAME(const uint8_t *const input, const size_t input_size,              \
-            uint8_t *const output, const size_t output_capacity,              \
-            CCaseResult *const result) {                                      \
-  if ((input == NULL) || (output == NULL) || (result == NULL)) {              \
-    return -1;                                                                 \
-  }                                                                            \
-  TYPE obj;                                                                    \
-  memset(&obj, 0, sizeof(obj));                                                \
-  size_t consumed = input_size;                                                \
-  const int8_t des = DESERIALIZE_FN(&obj, input, &consumed);                  \
-  result->deserialize_rc = des;                                                \
-  result->deserialize_consumed = consumed;                                     \
-  result->serialize_rc = 0;                                                    \
-  result->serialize_size = 0;                                                  \
-  if (des < 0) {                                                               \
-    result->deserialize_consumed = 0;                                          \
-    return 0;                                                                  \
-  }                                                                            \
-  size_t out_size = output_capacity;                                           \
-  const int8_t ser = SERIALIZE_FN(&obj, output, &out_size);                   \
-  result->serialize_rc = ser;                                                  \
-  result->serialize_size = out_size;                                           \
-  return 0;                                                                    \
-}
+#define DEFINE_ROUNDTRIP(FN_NAME, TYPE, DESERIALIZE_FN, SERIALIZE_FN)          \
+    int FN_NAME(const uint8_t* const input,                                    \
+                const size_t         input_size,                               \
+                uint8_t* const       output,                                   \
+                const size_t         output_capacity,                          \
+                CCaseResult* const   result)                                   \
+    {                                                                          \
+        if ((input == NULL) || (output == NULL) || (result == NULL))           \
+        {                                                                      \
+            return -1;                                                         \
+        }                                                                      \
+        TYPE obj;                                                              \
+        memset(&obj, 0, sizeof(obj));                                          \
+        size_t       consumed        = input_size;                             \
+        const int8_t des             = DESERIALIZE_FN(&obj, input, &consumed); \
+        result->deserialize_rc       = des;                                    \
+        result->deserialize_consumed = consumed;                               \
+        result->serialize_rc         = 0;                                      \
+        result->serialize_size       = 0;                                      \
+        if (des < 0)                                                           \
+        {                                                                      \
+            result->deserialize_consumed = 0;                                  \
+            return 0;                                                          \
+        }                                                                      \
+        size_t       out_size  = output_capacity;                              \
+        const int8_t ser       = SERIALIZE_FN(&obj, output, &out_size);        \
+        result->serialize_rc   = ser;                                          \
+        result->serialize_size = out_size;                                     \
+        return 0;                                                              \
+    }
 
 DEFINE_ROUNDTRIP(c_heartbeat_roundtrip,
                  uavcan__node__Heartbeat,
@@ -147,10 +153,7 @@ DEFINE_ROUNDTRIP(c_execute_command_response_roundtrip,
                  uavcan__node__ExecuteCommand__Response__deserialize_,
                  uavcan__node__ExecuteCommand__Response__serialize_)
 
-DEFINE_ROUNDTRIP(c_node_id_roundtrip,
-                 uavcan__node__ID,
-                 uavcan__node__ID__deserialize_,
-                 uavcan__node__ID__serialize_)
+DEFINE_ROUNDTRIP(c_node_id_roundtrip, uavcan__node__ID, uavcan__node__ID__deserialize_, uavcan__node__ID__serialize_)
 
 DEFINE_ROUNDTRIP(c_node_mode_roundtrip,
                  uavcan__node__Mode,

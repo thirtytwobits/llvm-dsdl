@@ -1,3 +1,12 @@
+#===----------------------------------------------------------------------===#
+##
+## @file
+## Build rules for semantic analysis components.
+##
+## The semantics target links evaluation and bit-length reasoning modules that validate parsed DSDL definitions.
+##
+#===----------------------------------------------------------------------===#
+
 add_library(llvmdsdlSemantics
   BitLengthSet.cpp
   Evaluator.cpp

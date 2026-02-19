@@ -187,12 +187,86 @@ ctest --test-dir build/dev-homebrew \
   --output-on-failure
 ```
 
+Optional quick TypeScript variable-array C<->TS parity smoke proof:
+
+```bash
+ctest --test-dir build/dev-homebrew \
+  -R llvmdsdl-fixtures-c-ts-variable-array-parity \
+  --output-on-failure
+```
+
 Optional quick TypeScript fixed-array runtime smoke proof:
 
 ```bash
 ctest --test-dir build/dev-homebrew \
   -R llvmdsdl-ts-runtime-fixed-array-smoke \
   --output-on-failure
+```
+
+Optional quick TypeScript variable-array runtime smoke proof:
+
+```bash
+ctest --test-dir build/dev-homebrew \
+  -R llvmdsdl-ts-runtime-variable-array-smoke \
+  --output-on-failure
+```
+
+Optional quick TypeScript bigint runtime smoke proof:
+
+```bash
+ctest --test-dir build/dev-homebrew \
+  -R llvmdsdl-ts-runtime-bigint-smoke \
+  --output-on-failure
+```
+
+Optional quick TypeScript bigint C<->TS parity smoke proof:
+
+```bash
+ctest --test-dir build/dev-homebrew \
+  -R llvmdsdl-fixtures-c-ts-bigint-parity \
+  --output-on-failure
+```
+
+Optional quick TypeScript union runtime smoke proof:
+
+```bash
+ctest --test-dir build/dev-homebrew \
+  -R llvmdsdl-ts-runtime-union-smoke \
+  --output-on-failure
+```
+
+Optional quick TypeScript union C<->TS parity smoke proof:
+
+```bash
+ctest --test-dir build/dev-homebrew \
+  -R llvmdsdl-fixtures-c-ts-union-parity \
+  --output-on-failure
+```
+
+Optional quick strict-vs-compat TypeScript proof (migration semantics):
+
+```bash
+COMPAT_ROOT="$OUT/compatdemo"
+rm -rf "$COMPAT_ROOT"
+mkdir -p "$COMPAT_ROOT"
+cat > "$COMPAT_ROOT/CompatArray.1.0.dsdl" <<'DSDL'
+uint8[0] fixed_bad
+uint8[<=0] var_inc_bad
+uint8[<1] var_exc_bad
+@sealed
+DSDL
+
+# strict (spec-first) should fail
+"$DSDLC" ts --root-namespace-dir "$COMPAT_ROOT" --strict --out-dir "$OUT/ts-compat-strict" || true
+
+# compat should pass with deterministic compat warnings and clamped semantics
+"$DSDLC" ts --root-namespace-dir "$COMPAT_ROOT" --compat-mode --out-dir "$OUT/ts-compat"
+```
+
+Optional one-command TypeScript completion ring (strict + compat + parity):
+
+```bash
+ctest --test-dir build/dev-homebrew -L ts --output-on-failure
 ```
 
 ### 2.3 One type, five languages
@@ -212,7 +286,7 @@ Use this pacing:
 1. **0:00-0:30**: "We start with a platform-agnostic IDL corpus (`.dsdl`)."
 2. **0:30-1:30**: "Frontend + semantics produce structured IR (`ast`, `module.mlir`)."
 3. **1:30-2:15**: "MLIR passes lower serialization plans and can convert toward EmitC-compatible representation."
-4. **2:15-3:45**: "From the same semantic source, we emit C, C++ (`std`/`pmr`), Rust, Go, and an experimental TypeScript target."
+4. **2:15-3:45**: "From the same semantic source, we emit C, C++ (`std`/`pmr`), Rust, Go, and TypeScript."
 5. **3:45-5:00**: "The value is compiler architecture: shared analysis, explicit contracts, target-specific emitters, and repeatable transformations."
 
 ## 5) Kitchen Tour (90 seconds)
@@ -290,22 +364,22 @@ Use this close:
 
 ## 8) Caveat: Remaining Project Work
 
-As of **February 18, 2026**, Phases 0-5 in `MLIR_MAX_LOWERING_PLAN.md` are complete for the current backend scope (C/C++/Rust/Go), including optimization-enabled parity gates.
+As of **February 19, 2026**, Phases 0-5 in `MLIR_MAX_LOWERING_PLAN.md` are complete for the current backend scope (C/C++/Rust/Go), and TypeScript now includes strict+compat integration/parity coverage, including optimization-enabled parity gates.
 
 Remaining work is now the **optional stretch**:
 
 1. Continue maturing the new language-agnostic render-IR layer (`LoweredRenderIR`) so more backend code paths become pure rendering adapters.
 2. Continue profile-knob expansion (embedded allocator/runtime specialization) without changing lowered wire semantics. (`--rust-profile no-std-alloc` and `--rust-runtime-specialization fast` are implemented with generation/cargo-check/parity and semantic-diff validation lanes.)
-3. Continue maturing the first non-C-like target (TypeScript) from the current runtime-scaffold + fixture parity smoke stage into broad runtime parity coverage.
+3. Continue converging all backends (including TypeScript) on thinner shared render-IR consumption so backend code remains syntax/runtime binding.
 
 What we have now (already true):
 
 1. A versioned, backend-agnostic lowered SerDes contract as the semantic source of truth.
-2. C, C++ (`std`/`pmr`), Rust, and Go emitters converged on shared lowering products with strong parity/differential validation; TypeScript now has declaration generation, generated runtime helpers (`dsdl_runtime.ts`), compile/determinism/consumer/index-contract gates, fixture C<->TS runtime parity smoke, and a fixed-array runtime smoke gate.
+2. C, C++ (`std`/`pmr`), Rust, Go, and TypeScript emitters converged on shared lowering products with strong parity/differential validation; TypeScript includes declaration generation, generated runtime helpers (`dsdl_runtime.ts`), compile/determinism/consumer/index-contract/runtime-execution gates, strict+compat generation/runtime gates, and C<->TS parity lanes (including signed-narrow and optimized variants).
 3. Optional optimization passes with parity-preserving validation under optimization-enabled workflows.
 
 What we should have when optional stretch work is done:
 
 1. Even thinner backends built on shared render IR with backend code focused on syntax/runtime binding.
 2. Profile flexibility (`std`/`pmr`/`no_std`/runtime-specialized embedded variants) without semantic drift.
-3. A non-C-like target path where TypeScript runtime SerDes is parity-validated beyond fixture smoke (full semantic-family coverage and larger-corpus parity gates), lowering risk for additional language targets.
+3. A non-C-like target path where TypeScript remains parity-validated in strict and compat modes with no fallback runtime stubs, lowering risk for additional language targets.

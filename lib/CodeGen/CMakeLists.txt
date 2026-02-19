@@ -1,3 +1,12 @@
+#===----------------------------------------------------------------------===#
+##
+## @file
+## Build rules for language emitters and lowering planners.
+##
+## The target aggregates shared code-generation utilities and links MLIR conversion components required by emitters.
+##
+#===----------------------------------------------------------------------===#
+
 add_library(llvmdsdlCodeGen
   ArrayWirePlan.cpp
   CEmitter.cpp
@@ -12,6 +21,7 @@ add_library(llvmdsdlCodeGen
   SectionHelperBindingPlan.cpp
   SerDesStatementPlan.cpp
   SerDesHelperDescriptors.cpp
+  TsLoweredPlan.cpp
   TsEmitter.cpp
   TypeStorage.cpp
   WireLayoutFacts.cpp

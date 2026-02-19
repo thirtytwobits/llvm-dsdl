@@ -1,3 +1,9 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Public semantic analysis entry points converting AST modules into semantic modules.
+///
+//===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_SEMANTICS_ANALYZER_H
 #define LLVMDSDL_SEMANTICS_ANALYZER_H
 
@@ -7,12 +13,21 @@
 
 #include "llvm/Support/Error.h"
 
-namespace llvmdsdl {
+namespace llvmdsdl
+{
 
-llvm::Expected<SemanticModule> analyze(const ASTModule &module,
-                                       const SemanticOptions &options,
-                                       DiagnosticEngine &diagnostics);
+/// @file
+/// @brief Semantic analysis entry points.
 
-} // namespace llvmdsdl
+/// @brief Converts parsed AST into the resolved semantic model.
+/// @param[in] module Parsed AST module.
+/// @param[in] options Semantic-analysis strictness options.
+/// @param[in,out] diagnostics Diagnostic sink for semantic issues.
+/// @return Resolved semantic module on success.
+llvm::Expected<SemanticModule> analyze(const ASTModule&       module,
+                                       const SemanticOptions& options,
+                                       DiagnosticEngine&      diagnostics);
 
-#endif // LLVMDSDL_SEMANTICS_ANALYZER_H
+}  // namespace llvmdsdl
+
+#endif  // LLVMDSDL_SEMANTICS_ANALYZER_H

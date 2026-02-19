@@ -1,5 +1,11 @@
-#ifndef LLVMDSDL_CODEGEN_TSEMITTER_H
-#define LLVMDSDL_CODEGEN_TSEMITTER_H
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Public entry points and options for TypeScript backend emission.
+///
+//===----------------------------------------------------------------------===//
+#ifndef LLVMDSDL_CODEGEN_TS_EMITTER_H
+#define LLVMDSDL_CODEGEN_TS_EMITTER_H
 
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/Diagnostics.h"
@@ -10,19 +16,39 @@
 
 #include <string>
 
-namespace llvmdsdl {
+namespace llvmdsdl
+{
 
-struct TsEmitOptions final {
-  std::string outDir;
-  std::string moduleName{"llvmdsdl_generated"};
-  bool emitPackageJson{true};
-  bool optimizeLoweredSerDes{false};
+/// @file
+/// @brief TypeScript backend emission entry points.
+
+/// @brief Configuration options for TypeScript code generation.
+struct TsEmitOptions final
+{
+    /// @brief Output directory root.
+    std::string outDir;
+
+    /// @brief Generated npm/module name.
+    std::string moduleName{"llvmdsdl_generated"};
+
+    /// @brief Emits package metadata when true.
+    bool emitPackageJson{true};
+
+    /// @brief Enables optional lowered-serdes optimization before emission.
+    bool optimizeLoweredSerDes{false};
 };
 
-llvm::Error emitTs(const SemanticModule &semantic, mlir::ModuleOp module,
-                   const TsEmitOptions &options,
-                   DiagnosticEngine &diagnostics);
+/// @brief Emits TypeScript artifacts from semantic and lowered MLIR inputs.
+/// @param[in] semantic Resolved semantic module.
+/// @param[in] module Lowered MLIR module.
+/// @param[in] options Backend configuration.
+/// @param[in,out] diagnostics Diagnostic sink.
+/// @return Success or detailed failure.
+llvm::Error emitTs(const SemanticModule& semantic,
+                   mlir::ModuleOp        module,
+                   const TsEmitOptions&  options,
+                   DiagnosticEngine&     diagnostics);
 
-} // namespace llvmdsdl
+}  // namespace llvmdsdl
 
-#endif // LLVMDSDL_CODEGEN_TSEMITTER_H
+#endif  // LLVMDSDL_CODEGEN_TS_EMITTER_H

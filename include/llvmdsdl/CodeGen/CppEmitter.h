@@ -1,3 +1,9 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Public entry points and options for C++ backend emission.
+///
+//===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_CODEGEN_CPPEMITTER_H
 #define LLVMDSDL_CODEGEN_CPPEMITTER_H
 
@@ -10,24 +16,50 @@
 
 #include <string>
 
-namespace llvmdsdl {
+namespace llvmdsdl
+{
 
-enum class CppProfile {
-  Std,
-  Pmr,
-  Both,
+/// @file
+/// @brief C++ backend emission entry points.
+
+/// @brief C++ runtime profile selection.
+enum class CppProfile
+{
+
+    /// @brief Emit `std` profile only.
+    Std,
+
+    /// @brief Emit `pmr` profile only.
+    Pmr,
+
+    /// @brief Emit both `std` and `pmr` profiles.
+    Both,
 };
 
-struct CppEmitOptions final {
-  std::string outDir;
-  CppProfile profile{CppProfile::Both};
-  bool optimizeLoweredSerDes{false};
+/// @brief Configuration options for C++ code generation.
+struct CppEmitOptions final
+{
+    /// @brief Output directory root.
+    std::string outDir;
+
+    /// @brief Requested C++ profile.
+    CppProfile profile{CppProfile::Both};
+
+    /// @brief Enables optional lowered-serdes optimization before emission.
+    bool optimizeLoweredSerDes{false};
 };
 
-llvm::Error emitCpp(const SemanticModule &semantic, mlir::ModuleOp module,
-                    const CppEmitOptions &options,
-                    DiagnosticEngine &diagnostics);
+/// @brief Emits C++ artifacts from semantic and lowered MLIR inputs.
+/// @param[in] semantic Resolved semantic module.
+/// @param[in] module Lowered MLIR module.
+/// @param[in] options Backend configuration.
+/// @param[in,out] diagnostics Diagnostic sink.
+/// @return Success or detailed failure.
+llvm::Error emitCpp(const SemanticModule& semantic,
+                    mlir::ModuleOp        module,
+                    const CppEmitOptions& options,
+                    DiagnosticEngine&     diagnostics);
 
-} // namespace llvmdsdl
+}  // namespace llvmdsdl
 
-#endif // LLVMDSDL_CODEGEN_CPPEMITTER_H
+#endif  // LLVMDSDL_CODEGEN_CPPEMITTER_H

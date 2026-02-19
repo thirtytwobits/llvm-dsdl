@@ -20,6 +20,22 @@ if(EXISTS "${LLVMDSDL_FIXTURES_ROOT}")
     PROPERTIES
       LABELS "integration;tools;mlir"
   )
+
+  add_test(
+    NAME llvmdsdl-fixtures-ts-generation-hardening
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DFIXTURES_ROOT=${LLVMDSDL_FIXTURES_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-ts-generation-hardening-out
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunFixturesTsGenerationHardening.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-ts-generation-hardening
+    PROPERTIES
+      LABELS "integration;fixtures;ts"
+  )
 endif()
 
 if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER)
@@ -90,6 +106,21 @@ find_program(GO_EXECUTABLE go QUIET)
 find_program(TSC_EXECUTABLE tsc QUIET)
 find_program(NODE_EXECUTABLE node QUIET)
 
+add_test(
+  NAME llvmdsdl-ts-compat-generation
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/ts-compat-generation-out
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsCompatGeneration.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-ts-compat-generation
+  PROPERTIES
+    LABELS "integration;fixtures;ts"
+)
+
 if(GO_EXECUTABLE)
   add_test(
     NAME llvmdsdl-go-runtime-unit-tests
@@ -112,6 +143,103 @@ endif()
 
 if(CMAKE_C_COMPILER AND TSC_EXECUTABLE AND NODE_EXECUTABLE)
   add_test(
+    NAME llvmdsdl-c-ts-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/c-ts-parity-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunCTsParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-c-ts-parity
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential"
+  )
+
+  add_test(
+    NAME llvmdsdl-c-ts-parity-optimized
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DDSDLC_EXTRA_ARGS=--optimize-lowered-serdes
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/c-ts-parity-optimized-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunCTsParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-c-ts-parity-optimized
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential;optimized"
+  )
+
+  add_test(
+    NAME llvmdsdl-signed-narrow-c-ts-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/signed-narrow-c-ts-parity-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunSignedNarrowCTsParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-signed-narrow-c-ts-parity
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential"
+  )
+
+  add_test(
+    NAME llvmdsdl-signed-narrow-c-ts-parity-optimized
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DDSDLC_EXTRA_ARGS=--optimize-lowered-serdes
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/signed-narrow-c-ts-parity-optimized-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunSignedNarrowCTsParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-signed-narrow-c-ts-parity-optimized
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential;optimized"
+  )
+
+  add_test(
+    NAME llvmdsdl-fixtures-c-ts-compat-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-c-ts-compat-parity-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunFixturesCTsCompatParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-c-ts-compat-parity
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential"
+  )
+
+  add_test(
     NAME llvmdsdl-fixtures-c-ts-runtime-parity
     COMMAND
       ${CMAKE_COMMAND}
@@ -129,11 +257,332 @@ if(CMAKE_C_COMPILER AND TSC_EXECUTABLE AND NODE_EXECUTABLE)
     PROPERTIES
       LABELS "integration;fixtures;ts;differential"
   )
+
+  add_test(
+    NAME llvmdsdl-fixtures-c-ts-service-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-c-ts-service-parity-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunFixturesCTsServiceParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-c-ts-service-parity
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential"
+  )
+
+  add_test(
+    NAME llvmdsdl-fixtures-c-ts-variable-array-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-c-ts-variable-array-parity-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunFixturesCTsVariableArrayParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-c-ts-variable-array-parity
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential"
+  )
+
+  add_test(
+    NAME llvmdsdl-fixtures-c-ts-bigint-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-c-ts-bigint-parity-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunFixturesCTsBigIntParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-c-ts-bigint-parity
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential"
+  )
+
+  add_test(
+    NAME llvmdsdl-fixtures-c-ts-float-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-c-ts-float-parity-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunFixturesCTsFloatParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-c-ts-float-parity
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential"
+  )
+
+  add_test(
+    NAME llvmdsdl-fixtures-c-ts-utf8-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-c-ts-utf8-parity-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunFixturesCTsUtf8Parity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-c-ts-utf8-parity
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential"
+  )
+
+  add_test(
+    NAME llvmdsdl-fixtures-c-ts-union-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-c-ts-union-parity-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunFixturesCTsUnionParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-c-ts-union-parity
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential"
+  )
+
+  add_test(
+    NAME llvmdsdl-fixtures-c-ts-union-composite-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-c-ts-union-composite-parity-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunFixturesCTsUnionCompositeParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-c-ts-union-composite-parity
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential"
+  )
+
+  add_test(
+    NAME llvmdsdl-fixtures-c-ts-union-empty-composite-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-c-ts-union-empty-composite-parity-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunFixturesCTsUnionEmptyCompositeParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-c-ts-union-empty-composite-parity
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential"
+  )
+
+  add_test(
+    NAME llvmdsdl-fixtures-c-ts-union-array-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-c-ts-union-array-parity-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunFixturesCTsUnionArrayParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-c-ts-union-array-parity
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential"
+  )
+
+  add_test(
+    NAME llvmdsdl-fixtures-c-ts-truncated-decode-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-c-ts-truncated-decode-parity-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunFixturesCTsTruncatedDecodeParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-c-ts-truncated-decode-parity
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential"
+  )
+
+  add_test(
+    NAME llvmdsdl-fixtures-c-ts-padding-alignment-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-c-ts-padding-alignment-parity-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunFixturesCTsPaddingAlignmentParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-c-ts-padding-alignment-parity
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential"
+  )
+
+  add_test(
+    NAME llvmdsdl-fixtures-c-ts-composite-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-c-ts-composite-parity-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunFixturesCTsCompositeParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-c-ts-composite-parity
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential"
+  )
+
+  add_test(
+    NAME llvmdsdl-fixtures-c-ts-delimited-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-c-ts-delimited-parity-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunFixturesCTsDelimitedParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-c-ts-delimited-parity
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential"
+  )
+
+  add_test(
+    NAME llvmdsdl-fixtures-c-ts-delimited-invalid-header-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-c-ts-delimited-invalid-header-parity-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunFixturesCTsDelimitedInvalidHeaderParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-c-ts-delimited-invalid-header-parity
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential"
+  )
+
+  add_test(
+    NAME llvmdsdl-fixtures-c-ts-composite-fixed-array-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-c-ts-composite-fixed-array-parity-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunFixturesCTsCompositeFixedArrayParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-c-ts-composite-fixed-array-parity
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential"
+  )
+
+  add_test(
+    NAME llvmdsdl-fixtures-c-ts-composite-variable-array-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-c-ts-composite-variable-array-parity-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunFixturesCTsCompositeVariableArrayParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-c-ts-composite-variable-array-parity
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential"
+  )
 else()
   message(STATUS "Skipping fixtures C/TypeScript runtime parity test: C compiler, tsc, or node unavailable")
 endif()
 
 if(TSC_EXECUTABLE AND NODE_EXECUTABLE)
+  add_test(
+    NAME llvmdsdl-ts-compat-runtime
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/ts-compat-runtime-out
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsCompatRuntime.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-ts-compat-runtime
+    PROPERTIES
+      LABELS "integration;fixtures;ts"
+  )
+
   add_test(
     NAME llvmdsdl-ts-runtime-fixed-array-smoke
     COMMAND
@@ -151,8 +600,296 @@ if(TSC_EXECUTABLE AND NODE_EXECUTABLE)
     PROPERTIES
       LABELS "integration;fixtures;ts"
   )
+
+  add_test(
+    NAME llvmdsdl-ts-runtime-variable-array-smoke
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/ts-runtime-variable-array-smoke-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsRuntimeVariableArraySmoke.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-ts-runtime-variable-array-smoke
+    PROPERTIES
+      LABELS "integration;fixtures;ts"
+  )
+
+  add_test(
+    NAME llvmdsdl-ts-runtime-bigint-smoke
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/ts-runtime-bigint-smoke-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsRuntimeBigIntSmoke.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-ts-runtime-bigint-smoke
+    PROPERTIES
+      LABELS "integration;fixtures;ts"
+  )
+
+  add_test(
+    NAME llvmdsdl-ts-runtime-float-smoke
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/ts-runtime-float-smoke-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsRuntimeFloatSmoke.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-ts-runtime-float-smoke
+    PROPERTIES
+      LABELS "integration;fixtures;ts"
+  )
+
+  add_test(
+    NAME llvmdsdl-ts-runtime-utf8-smoke
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/ts-runtime-utf8-smoke-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsRuntimeUtf8Smoke.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-ts-runtime-utf8-smoke
+    PROPERTIES
+      LABELS "integration;fixtures;ts"
+  )
+
+  add_test(
+    NAME llvmdsdl-ts-runtime-service-smoke
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/ts-runtime-service-smoke-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsRuntimeServiceSmoke.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-ts-runtime-service-smoke
+    PROPERTIES
+      LABELS "integration;fixtures;ts"
+  )
+
+  add_test(
+    NAME llvmdsdl-ts-runtime-union-smoke
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/ts-runtime-union-smoke-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsRuntimeUnionSmoke.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-ts-runtime-union-smoke
+    PROPERTIES
+      LABELS "integration;fixtures;ts"
+  )
+
+  add_test(
+    NAME llvmdsdl-ts-runtime-union-composite-smoke
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/ts-runtime-union-composite-smoke-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsRuntimeUnionCompositeSmoke.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-ts-runtime-union-composite-smoke
+    PROPERTIES
+      LABELS "integration;fixtures;ts"
+  )
+
+  add_test(
+    NAME llvmdsdl-ts-runtime-union-empty-composite-smoke
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/ts-runtime-union-empty-composite-smoke-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsRuntimeUnionEmptyCompositeSmoke.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-ts-runtime-union-empty-composite-smoke
+    PROPERTIES
+      LABELS "integration;fixtures;ts"
+  )
+
+  add_test(
+    NAME llvmdsdl-ts-runtime-union-array-smoke
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/ts-runtime-union-array-smoke-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsRuntimeUnionArraySmoke.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-ts-runtime-union-array-smoke
+    PROPERTIES
+      LABELS "integration;fixtures;ts"
+  )
+
+  add_test(
+    NAME llvmdsdl-ts-runtime-truncated-decode-smoke
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/ts-runtime-truncated-decode-smoke-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsRuntimeTruncatedDecodeSmoke.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-ts-runtime-truncated-decode-smoke
+    PROPERTIES
+      LABELS "integration;fixtures;ts"
+  )
+
+  add_test(
+    NAME llvmdsdl-ts-runtime-padding-alignment-smoke
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/ts-runtime-padding-alignment-smoke-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsRuntimePaddingAlignmentSmoke.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-ts-runtime-padding-alignment-smoke
+    PROPERTIES
+      LABELS "integration;fixtures;ts"
+  )
+
+  add_test(
+    NAME llvmdsdl-ts-runtime-composite-smoke
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/ts-runtime-composite-smoke-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsRuntimeCompositeSmoke.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-ts-runtime-composite-smoke
+    PROPERTIES
+      LABELS "integration;fixtures;ts"
+  )
+
+  add_test(
+    NAME llvmdsdl-ts-runtime-delimited-smoke
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/ts-runtime-delimited-smoke-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsRuntimeDelimitedSmoke.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-ts-runtime-delimited-smoke
+    PROPERTIES
+      LABELS "integration;fixtures;ts"
+  )
+
+  add_test(
+    NAME llvmdsdl-ts-runtime-delimited-invalid-header-smoke
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/ts-runtime-delimited-invalid-header-smoke-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsRuntimeDelimitedInvalidHeaderSmoke.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-ts-runtime-delimited-invalid-header-smoke
+    PROPERTIES
+      LABELS "integration;fixtures;ts"
+  )
+
+  add_test(
+    NAME llvmdsdl-ts-runtime-composite-fixed-array-smoke
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/ts-runtime-composite-fixed-array-smoke-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsRuntimeCompositeFixedArraySmoke.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-ts-runtime-composite-fixed-array-smoke
+    PROPERTIES
+      LABELS "integration;fixtures;ts"
+  )
+
+  add_test(
+    NAME llvmdsdl-ts-runtime-composite-variable-array-smoke
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/ts-runtime-composite-variable-array-smoke-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsRuntimeCompositeVariableArraySmoke.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-ts-runtime-composite-variable-array-smoke
+    PROPERTIES
+      LABELS "integration;fixtures;ts"
+  )
 else()
-  message(STATUS "Skipping TypeScript fixed-array runtime smoke test: tsc or node unavailable")
+  message(STATUS "Skipping TypeScript runtime smoke tests: tsc or node unavailable")
 endif()
 
 if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
@@ -529,6 +1266,26 @@ if(TSC_EXECUTABLE)
     PROPERTIES
       LABELS "integration;uavcan;ts;slow"
   )
+
+  if(NODE_EXECUTABLE)
+    add_test(
+      NAME llvmdsdl-uavcan-ts-runtime-execution-smoke
+      COMMAND
+        ${CMAKE_COMMAND}
+          -DDSDLC=$<TARGET_FILE:dsdlc>
+          -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+          -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-ts-runtime-execution-smoke-out
+          -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+          -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanTsRuntimeExecution.cmake
+    )
+
+    set_tests_properties(
+      llvmdsdl-uavcan-ts-runtime-execution-smoke
+      PROPERTIES
+        LABELS "integration;uavcan;ts;slow"
+    )
+  endif()
 endif()
 
 add_test(

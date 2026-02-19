@@ -1,3 +1,12 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Implements and registers core DSDL transformation passes.
+///
+/// Pass implementations annotate and lower schema operations into a form consumable by backend code generators.
+///
+//===----------------------------------------------------------------------===//
+
 #include "llvmdsdl/Transforms/Passes.h"
 #include "llvmdsdl/Transforms/LoweredSerDesContract.h"
 
@@ -18,1334 +27,1385 @@
 #include <string>
 #include <vector>
 
-namespace llvmdsdl {
+namespace llvmdsdl
+{
 
 void registerDSDLConvertPasses();
 
-namespace {
+namespace
+{
 
-std::int64_t nonNegative(const std::int64_t value) {
-  return std::max<std::int64_t>(value, 0);
+std::int64_t nonNegative(const std::int64_t value)
+{
+    return std::max<std::int64_t>(value, 0);
 }
 
-std::int64_t intAttrOrDefault(mlir::Operation *op, llvm::StringRef name,
-                              const std::int64_t fallback) {
-  if (const auto attr = op->getAttrOfType<mlir::IntegerAttr>(name)) {
-    return attr.getInt();
-  }
-  return fallback;
+std::int64_t intAttrOrDefault(mlir::Operation* op, llvm::StringRef name, const std::int64_t fallback)
+{
+    if (const auto attr = op->getAttrOfType<mlir::IntegerAttr>(name))
+    {
+        return attr.getInt();
+    }
+    return fallback;
 }
 
-void setI64Attr(mlir::Operation *op, llvm::StringRef name,
-                const std::int64_t value, mlir::Builder &builder) {
-  op->setAttr(name, builder.getI64IntegerAttr(value));
+void setI64Attr(mlir::Operation* op, llvm::StringRef name, const std::int64_t value, mlir::Builder& builder)
+{
+    op->setAttr(name, builder.getI64IntegerAttr(value));
 }
 
-void setI32Attr(mlir::Operation *op, llvm::StringRef name,
-                const std::int64_t value, mlir::Builder &builder) {
-  op->setAttr(name, builder.getI32IntegerAttr(static_cast<std::int32_t>(value)));
+void setI32Attr(mlir::Operation* op, llvm::StringRef name, const std::int64_t value, mlir::Builder& builder)
+{
+    op->setAttr(name, builder.getI32IntegerAttr(static_cast<std::int32_t>(value)));
 }
 
-void stampLoweredContractAttributes(mlir::Operation *op, mlir::Builder &builder) {
-  op->setAttr(kLoweredSerDesContractVersionAttr,
-              builder.getI64IntegerAttr(kLoweredSerDesContractVersion));
-  op->setAttr(kLoweredSerDesContractProducerAttr,
-              builder.getStringAttr(kLoweredSerDesContractProducer));
+void stampLoweredContractAttributes(mlir::Operation* op, mlir::Builder& builder)
+{
+    op->setAttr(kLoweredSerDesContractVersionAttr, builder.getI64IntegerAttr(kLoweredSerDesContractVersion));
+    op->setAttr(kLoweredSerDesContractProducerAttr, builder.getStringAttr(kLoweredSerDesContractProducer));
 }
 
-bool isSupportedScalarCategory(llvm::StringRef category) {
-  return category == "bool" || category == "byte" || category == "utf8" ||
-         category == "unsigned" || category == "signed" ||
-         category == "float" || category == "void" ||
-         category == "composite";
+bool isSupportedScalarCategory(llvm::StringRef category)
+{
+    return category == "bool" || category == "byte" || category == "utf8" || category == "unsigned" ||
+           category == "signed" || category == "float" || category == "void" || category == "composite";
 }
 
-bool isSupportedCastMode(llvm::StringRef castMode) {
-  return castMode == "saturated" || castMode == "truncated";
+bool isSupportedCastMode(llvm::StringRef castMode)
+{
+    return castMode == "saturated" || castMode == "truncated";
 }
 
-bool isSupportedArrayKind(llvm::StringRef arrayKind) {
-  return arrayKind == "none" || arrayKind == "fixed" ||
-         arrayKind == "variable_inclusive" ||
-         arrayKind == "variable_exclusive";
+bool isSupportedArrayKind(llvm::StringRef arrayKind)
+{
+    return arrayKind == "none" || arrayKind == "fixed" || arrayKind == "variable_inclusive" ||
+           arrayKind == "variable_exclusive";
 }
 
-bool isVariableArrayKind(llvm::StringRef arrayKind) {
-  return arrayKind == "variable_inclusive" ||
-         arrayKind == "variable_exclusive";
+bool isVariableArrayKind(llvm::StringRef arrayKind)
+{
+    return arrayKind == "variable_inclusive" || arrayKind == "variable_exclusive";
 }
 
-std::string sectionSuffix(llvm::StringRef sectionName) {
-  if (sectionName == "request") {
-    return "__request";
-  }
-  if (sectionName == "response") {
-    return "__response";
-  }
-  return "";
+std::string sectionSuffix(llvm::StringRef sectionName)
+{
+    if (sectionName == "request")
+    {
+        return "__request";
+    }
+    if (sectionName == "response")
+    {
+        return "__response";
+    }
+    return "";
 }
 
-mlir::LogicalResult canonicalizePlan(mlir::Operation *plan, mlir::Builder &builder) {
-  if (plan->getNumRegions() == 0 || plan->getRegion(0).empty()) {
-    return plan->emitOpError("must contain a non-empty body region");
-  }
-
-  auto &body = plan->getRegion(0).front();
-  std::vector<mlir::Operation *> eraseOps;
-  std::int64_t stepIndex = 0;
-  std::int64_t alignCount = 0;
-  std::int64_t fieldCount = 0;
-  std::int64_t paddingCount = 0;
-  std::set<std::int64_t> unionOptionIndexes;
-
-  for (mlir::Operation &op : body) {
-    const auto opName = op.getName().getStringRef();
-    if (opName == "dsdl.align") {
-      const auto bitsAttr = op.getAttrOfType<mlir::IntegerAttr>("bits");
-      if (!bitsAttr) {
-        return op.emitOpError("missing required 'bits' attribute");
-      }
-      const std::int64_t bits = nonNegative(bitsAttr.getInt());
-      if (bits <= 1) {
-        eraseOps.push_back(&op);
-        continue;
-      }
-      setI32Attr(&op, "bits", bits, builder);
-      setI64Attr(&op, "step_index", stepIndex++, builder);
-      ++alignCount;
-      continue;
+mlir::LogicalResult canonicalizePlan(mlir::Operation* plan, mlir::Builder& builder)
+{
+    if (plan->getNumRegions() == 0 || plan->getRegion(0).empty())
+    {
+        return plan->emitOpError("must contain a non-empty body region");
     }
 
-    if (opName == "dsdl.io") {
-      const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
-      if (!kindAttr) {
-        return op.emitOpError("missing required 'kind' attribute");
-      }
-      const auto kind = kindAttr.getValue();
-      if (kind != "field" && kind != "padding") {
-        return op.emitOpError("unsupported 'kind' value");
-      }
-      const bool isPadding = kind == "padding";
+    auto&                         body = plan->getRegion(0).front();
+    std::vector<mlir::Operation*> eraseOps;
+    std::int64_t                  stepIndex    = 0;
+    std::int64_t                  alignCount   = 0;
+    std::int64_t                  fieldCount   = 0;
+    std::int64_t                  paddingCount = 0;
+    std::set<std::int64_t>        unionOptionIndexes;
 
-      const auto scalarCategoryAttr =
-          op.getAttrOfType<mlir::StringAttr>("scalar_category");
-      if (!scalarCategoryAttr) {
-        return op.emitOpError("missing required 'scalar_category' attribute");
-      }
-      if (!isSupportedScalarCategory(scalarCategoryAttr.getValue())) {
-        return op.emitOpError("unsupported 'scalar_category' value");
-      }
-
-      const auto castModeAttr = op.getAttrOfType<mlir::StringAttr>("cast_mode");
-      if (!castModeAttr) {
-        return op.emitOpError("missing required 'cast_mode' attribute");
-      }
-      if (!isSupportedCastMode(castModeAttr.getValue())) {
-        return op.emitOpError("unsupported 'cast_mode' value");
-      }
-
-      const auto arrayKindAttr = op.getAttrOfType<mlir::StringAttr>("array_kind");
-      if (!arrayKindAttr) {
-        return op.emitOpError("missing required 'array_kind' attribute");
-      }
-      if (!isSupportedArrayKind(arrayKindAttr.getValue())) {
-        return op.emitOpError("unsupported 'array_kind' value");
-      }
-
-      const auto minBitsAttr = op.getAttrOfType<mlir::IntegerAttr>("min_bits");
-      const auto maxBitsAttr = op.getAttrOfType<mlir::IntegerAttr>("max_bits");
-      if (!minBitsAttr || !maxBitsAttr) {
-        return op.emitOpError("missing required min_bits/max_bits metadata");
-      }
-      const std::int64_t minBits = nonNegative(minBitsAttr.getInt());
-      const std::int64_t maxBits = nonNegative(maxBitsAttr.getInt());
-      if (maxBits < minBits) {
-        return op.emitOpError("invalid min_bits/max_bits metadata");
-      }
-
-      const auto bitLengthAttr = op.getAttrOfType<mlir::IntegerAttr>("bit_length");
-      const auto arrayCapacityAttr =
-          op.getAttrOfType<mlir::IntegerAttr>("array_capacity");
-      const auto arrayPrefixBitsAttr =
-          op.getAttrOfType<mlir::IntegerAttr>("array_length_prefix_bits");
-      const auto alignmentBitsAttr =
-          op.getAttrOfType<mlir::IntegerAttr>("alignment_bits");
-      const auto unionOptionIndexAttr =
-          op.getAttrOfType<mlir::IntegerAttr>("union_option_index");
-      const auto unionTagBitsAttr =
-          op.getAttrOfType<mlir::IntegerAttr>("union_tag_bits");
-      if (!bitLengthAttr || !arrayCapacityAttr || !arrayPrefixBitsAttr ||
-          !alignmentBitsAttr || !unionOptionIndexAttr || !unionTagBitsAttr) {
-        return op.emitOpError("missing required dsdl.io metadata attributes");
-      }
-      const std::int64_t bitLength = nonNegative(bitLengthAttr.getInt());
-      const std::int64_t arrayCapacity = nonNegative(arrayCapacityAttr.getInt());
-      const std::int64_t arrayPrefixBits = nonNegative(arrayPrefixBitsAttr.getInt());
-      const std::int64_t alignmentBits =
-          std::max<std::int64_t>(nonNegative(alignmentBitsAttr.getInt()), 0);
-      const std::int64_t unionOptionIndex =
-          nonNegative(unionOptionIndexAttr.getInt());
-      const std::int64_t unionTagBits = nonNegative(unionTagBitsAttr.getInt());
-
-      if (alignmentBits <= 0) {
-        return op.emitOpError("invalid alignment_bits metadata");
-      }
-      if (!isPadding && isVariableArrayKind(arrayKindAttr.getValue()) &&
-          arrayPrefixBits <= 0) {
-        return op.emitOpError("variable array field requires positive prefix width");
-      }
-
-      if (isPadding) {
-        ++paddingCount;
-        if (maxBits == 0) {
-          eraseOps.push_back(&op);
-          continue;
+    for (mlir::Operation& op : body)
+    {
+        const auto opName = op.getName().getStringRef();
+        if (opName == "dsdl.align")
+        {
+            const auto bitsAttr = op.getAttrOfType<mlir::IntegerAttr>("bits");
+            if (!bitsAttr)
+            {
+                return op.emitOpError("missing required 'bits' attribute");
+            }
+            const std::int64_t bits = nonNegative(bitsAttr.getInt());
+            if (bits <= 1)
+            {
+                eraseOps.push_back(&op);
+                continue;
+            }
+            setI32Attr(&op, "bits", bits, builder);
+            setI64Attr(&op, "step_index", stepIndex++, builder);
+            ++alignCount;
+            continue;
         }
-      }
 
-      setI64Attr(&op, "min_bits", minBits, builder);
-      setI64Attr(&op, "max_bits", maxBits, builder);
-      setI64Attr(&op, "lowered_bits", maxBits, builder);
-      setI64Attr(&op, "step_index", stepIndex++, builder);
+        if (opName == "dsdl.io")
+        {
+            const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
+            if (!kindAttr)
+            {
+                return op.emitOpError("missing required 'kind' attribute");
+            }
+            const auto kind = kindAttr.getValue();
+            if (kind != "field" && kind != "padding")
+            {
+                return op.emitOpError("unsupported 'kind' value");
+            }
+            const bool isPadding = kind == "padding";
 
-      setI64Attr(&op, "bit_length", bitLength, builder);
-      setI64Attr(&op, "array_capacity", arrayCapacity, builder);
-      setI64Attr(&op, "array_length_prefix_bits", arrayPrefixBits, builder);
-      setI64Attr(&op, "alignment_bits", alignmentBits, builder);
-      setI64Attr(&op, "union_option_index", unionOptionIndex, builder);
-      setI64Attr(&op, "union_tag_bits", unionTagBits, builder);
+            const auto scalarCategoryAttr = op.getAttrOfType<mlir::StringAttr>("scalar_category");
+            if (!scalarCategoryAttr)
+            {
+                return op.emitOpError("missing required 'scalar_category' attribute");
+            }
+            if (!isSupportedScalarCategory(scalarCategoryAttr.getValue()))
+            {
+                return op.emitOpError("unsupported 'scalar_category' value");
+            }
 
-      if (!isPadding) {
-        unionOptionIndexes.insert(unionOptionIndex);
-      }
+            const auto castModeAttr = op.getAttrOfType<mlir::StringAttr>("cast_mode");
+            if (!castModeAttr)
+            {
+                return op.emitOpError("missing required 'cast_mode' attribute");
+            }
+            if (!isSupportedCastMode(castModeAttr.getValue()))
+            {
+                return op.emitOpError("unsupported 'cast_mode' value");
+            }
 
-      if (!isPadding) {
-        ++fieldCount;
-      }
-      continue;
+            const auto arrayKindAttr = op.getAttrOfType<mlir::StringAttr>("array_kind");
+            if (!arrayKindAttr)
+            {
+                return op.emitOpError("missing required 'array_kind' attribute");
+            }
+            if (!isSupportedArrayKind(arrayKindAttr.getValue()))
+            {
+                return op.emitOpError("unsupported 'array_kind' value");
+            }
+
+            const auto minBitsAttr = op.getAttrOfType<mlir::IntegerAttr>("min_bits");
+            const auto maxBitsAttr = op.getAttrOfType<mlir::IntegerAttr>("max_bits");
+            if (!minBitsAttr || !maxBitsAttr)
+            {
+                return op.emitOpError("missing required min_bits/max_bits metadata");
+            }
+            const std::int64_t minBits = nonNegative(minBitsAttr.getInt());
+            const std::int64_t maxBits = nonNegative(maxBitsAttr.getInt());
+            if (maxBits < minBits)
+            {
+                return op.emitOpError("invalid min_bits/max_bits metadata");
+            }
+
+            const auto bitLengthAttr        = op.getAttrOfType<mlir::IntegerAttr>("bit_length");
+            const auto arrayCapacityAttr    = op.getAttrOfType<mlir::IntegerAttr>("array_capacity");
+            const auto arrayPrefixBitsAttr  = op.getAttrOfType<mlir::IntegerAttr>("array_length_prefix_bits");
+            const auto alignmentBitsAttr    = op.getAttrOfType<mlir::IntegerAttr>("alignment_bits");
+            const auto unionOptionIndexAttr = op.getAttrOfType<mlir::IntegerAttr>("union_option_index");
+            const auto unionTagBitsAttr     = op.getAttrOfType<mlir::IntegerAttr>("union_tag_bits");
+            if (!bitLengthAttr || !arrayCapacityAttr || !arrayPrefixBitsAttr || !alignmentBitsAttr ||
+                !unionOptionIndexAttr || !unionTagBitsAttr)
+            {
+                return op.emitOpError("missing required dsdl.io metadata attributes");
+            }
+            const std::int64_t bitLength        = nonNegative(bitLengthAttr.getInt());
+            const std::int64_t arrayCapacity    = nonNegative(arrayCapacityAttr.getInt());
+            const std::int64_t arrayPrefixBits  = nonNegative(arrayPrefixBitsAttr.getInt());
+            const std::int64_t alignmentBits    = std::max<std::int64_t>(nonNegative(alignmentBitsAttr.getInt()), 0);
+            const std::int64_t unionOptionIndex = nonNegative(unionOptionIndexAttr.getInt());
+            const std::int64_t unionTagBits     = nonNegative(unionTagBitsAttr.getInt());
+
+            if (alignmentBits <= 0)
+            {
+                return op.emitOpError("invalid alignment_bits metadata");
+            }
+            if (!isPadding && isVariableArrayKind(arrayKindAttr.getValue()) && arrayPrefixBits <= 0)
+            {
+                return op.emitOpError("variable array field requires positive prefix width");
+            }
+
+            if (isPadding)
+            {
+                ++paddingCount;
+                if (maxBits == 0)
+                {
+                    eraseOps.push_back(&op);
+                    continue;
+                }
+            }
+
+            setI64Attr(&op, "min_bits", minBits, builder);
+            setI64Attr(&op, "max_bits", maxBits, builder);
+            setI64Attr(&op, "lowered_bits", maxBits, builder);
+            setI64Attr(&op, "step_index", stepIndex++, builder);
+
+            setI64Attr(&op, "bit_length", bitLength, builder);
+            setI64Attr(&op, "array_capacity", arrayCapacity, builder);
+            setI64Attr(&op, "array_length_prefix_bits", arrayPrefixBits, builder);
+            setI64Attr(&op, "alignment_bits", alignmentBits, builder);
+            setI64Attr(&op, "union_option_index", unionOptionIndex, builder);
+            setI64Attr(&op, "union_tag_bits", unionTagBits, builder);
+
+            if (!isPadding)
+            {
+                unionOptionIndexes.insert(unionOptionIndex);
+            }
+
+            if (!isPadding)
+            {
+                ++fieldCount;
+            }
+            continue;
+        }
+
+        return op.emitError("unsupported operation in serialization plan body");
     }
 
-    return op.emitError("unsupported operation in serialization plan body");
-  }
-
-  for (mlir::Operation *op : eraseOps) {
-    op->erase();
-  }
-
-  const auto planMinBitsAttr = plan->getAttrOfType<mlir::IntegerAttr>("min_bits");
-  const auto planMaxBitsAttr = plan->getAttrOfType<mlir::IntegerAttr>("max_bits");
-  if (!planMinBitsAttr || !planMaxBitsAttr) {
-    return plan->emitOpError("missing required min_bits/max_bits plan metadata");
-  }
-  std::int64_t minBits = nonNegative(planMinBitsAttr.getInt());
-  std::int64_t maxBits = nonNegative(planMaxBitsAttr.getInt());
-  if (maxBits < minBits) {
-    return plan->emitOpError("invalid min_bits/max_bits plan metadata");
-  }
-  setI64Attr(plan, "min_bits", minBits, builder);
-  setI64Attr(plan, "max_bits", maxBits, builder);
-  setI64Attr(plan, kLoweredMinBitsAttr, minBits, builder);
-  setI64Attr(plan, kLoweredMaxBitsAttr, maxBits, builder);
-  setI64Attr(plan, kLoweredStepCountAttr, stepIndex, builder);
-  setI64Attr(plan, kLoweredFieldCountAttr, fieldCount, builder);
-  setI64Attr(plan, kLoweredPaddingCountAttr, paddingCount, builder);
-  setI64Attr(plan, kLoweredAlignCountAttr, alignCount, builder);
-  plan->setAttr(kLoweredPlanMarkerAttr, builder.getUnitAttr());
-  stampLoweredContractAttributes(plan, builder);
-
-  if (plan->hasAttr("is_union")) {
-    const auto unionTagBitsAttr =
-        plan->getAttrOfType<mlir::IntegerAttr>("union_tag_bits");
-    const auto unionOptionCountAttr =
-        plan->getAttrOfType<mlir::IntegerAttr>("union_option_count");
-    if (!unionTagBitsAttr || !unionOptionCountAttr) {
-      return plan->emitOpError(
-          "union plan missing union_tag_bits/union_option_count metadata");
+    for (mlir::Operation* op : eraseOps)
+    {
+        op->erase();
     }
-    const std::int64_t unionTagBits = nonNegative(unionTagBitsAttr.getInt());
-    if (unionTagBits <= 0 || unionTagBits > 64) {
-      return plan->emitOpError("union plan has invalid union_tag_bits");
-    }
-    if (unionOptionIndexes.empty()) {
-      return plan->emitOpError("union plan has no selectable options");
-    }
-    const std::int64_t unionOptionCount =
-        static_cast<std::int64_t>(unionOptionIndexes.size());
-    if (unionOptionCountAttr.getInt() <= 0) {
-      return plan->emitOpError("union plan has invalid union_option_count");
-    }
-    setI64Attr(plan, "union_tag_bits", unionTagBits, builder);
-    setI64Attr(plan, "union_option_count", unionOptionCount, builder);
-  }
 
-  return mlir::success();
+    const auto planMinBitsAttr = plan->getAttrOfType<mlir::IntegerAttr>("min_bits");
+    const auto planMaxBitsAttr = plan->getAttrOfType<mlir::IntegerAttr>("max_bits");
+    if (!planMinBitsAttr || !planMaxBitsAttr)
+    {
+        return plan->emitOpError("missing required min_bits/max_bits plan metadata");
+    }
+    std::int64_t minBits = nonNegative(planMinBitsAttr.getInt());
+    std::int64_t maxBits = nonNegative(planMaxBitsAttr.getInt());
+    if (maxBits < minBits)
+    {
+        return plan->emitOpError("invalid min_bits/max_bits plan metadata");
+    }
+    setI64Attr(plan, "min_bits", minBits, builder);
+    setI64Attr(plan, "max_bits", maxBits, builder);
+    setI64Attr(plan, kLoweredMinBitsAttr, minBits, builder);
+    setI64Attr(plan, kLoweredMaxBitsAttr, maxBits, builder);
+    setI64Attr(plan, kLoweredStepCountAttr, stepIndex, builder);
+    setI64Attr(plan, kLoweredFieldCountAttr, fieldCount, builder);
+    setI64Attr(plan, kLoweredPaddingCountAttr, paddingCount, builder);
+    setI64Attr(plan, kLoweredAlignCountAttr, alignCount, builder);
+    plan->setAttr(kLoweredPlanMarkerAttr, builder.getUnitAttr());
+    stampLoweredContractAttributes(plan, builder);
+
+    if (plan->hasAttr("is_union"))
+    {
+        const auto unionTagBitsAttr     = plan->getAttrOfType<mlir::IntegerAttr>("union_tag_bits");
+        const auto unionOptionCountAttr = plan->getAttrOfType<mlir::IntegerAttr>("union_option_count");
+        if (!unionTagBitsAttr || !unionOptionCountAttr)
+        {
+            return plan->emitOpError("union plan missing union_tag_bits/union_option_count metadata");
+        }
+        const std::int64_t unionTagBits = nonNegative(unionTagBitsAttr.getInt());
+        if (unionTagBits <= 0 || unionTagBits > 64)
+        {
+            return plan->emitOpError("union plan has invalid union_tag_bits");
+        }
+        if (unionOptionIndexes.empty())
+        {
+            return plan->emitOpError("union plan has no selectable options");
+        }
+        const std::int64_t unionOptionCount = static_cast<std::int64_t>(unionOptionIndexes.size());
+        if (unionOptionCountAttr.getInt() <= 0)
+        {
+            return plan->emitOpError("union plan has invalid union_option_count");
+        }
+        setI64Attr(plan, "union_tag_bits", unionTagBits, builder);
+        setI64Attr(plan, "union_option_count", unionOptionCount, builder);
+    }
+
+    return mlir::success();
 }
 
-mlir::LogicalResult createPlanCapacityCheckFunction(mlir::ModuleOp module,
-                                                    mlir::Operation *plan,
-                                                    mlir::OpBuilder &builder) {
-  auto *schema = plan->getParentOp();
-  if (!schema || schema->getName().getStringRef() != "dsdl.schema") {
-    return plan->emitOpError("must be nested under dsdl.schema");
-  }
-  const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
-  if (!schemaSym) {
-    return schema->emitOpError("missing required sym_name attribute");
-  }
-  const auto sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
-  const std::string section = sectionAttr ? sectionAttr.getValue().str() : "";
-  const std::string funcName = "__llvmdsdl_plan_capacity_check__" +
-                               schemaSym.getValue().str() + sectionSuffix(section);
-  plan->setAttr(kLoweredCapacityCheckHelperAttr, builder.getStringAttr(funcName));
-  if (module.lookupSymbol<mlir::func::FuncOp>(funcName)) {
-    return mlir::success();
-  }
-
-  mlir::OpBuilder::InsertionGuard g(builder);
-  builder.setInsertionPointToEnd(&module.getBodyRegion().front());
-
-  const mlir::Location loc = plan->getLoc();
-  auto i64Ty = builder.getIntegerType(64);
-  auto i8Ty = builder.getIntegerType(8);
-  auto fnType = builder.getFunctionType(mlir::TypeRange{i64Ty},
-                                        mlir::TypeRange{i8Ty});
-  auto fn = builder.create<mlir::func::FuncOp>(loc, funcName, fnType);
-  fn->setAttr("llvmdsdl.plan_capacity_check", builder.getUnitAttr());
-  fn->setAttr("llvmdsdl.schema_sym", schemaSym);
-  if (sectionAttr) {
-    fn->setAttr("llvmdsdl.section", sectionAttr);
-  }
-  fn->setAttr("llvmdsdl.plan_origin", builder.getStringAttr("lower-dsdl-serialization"));
-
-  mlir::Block *entry = fn.addEntryBlock();
-  builder.setInsertionPointToStart(entry);
-  mlir::Value capacityBits = entry->getArgument(0);
-  std::int64_t requiredBits = 0;
-  if (const auto maxBits = plan->getAttrOfType<mlir::IntegerAttr>("max_bits")) {
-    requiredBits = nonNegative(maxBits.getInt());
-  } else if (const auto loweredMaxBits =
-                 plan->getAttrOfType<mlir::IntegerAttr>("lowered_max_bits")) {
-    requiredBits = nonNegative(loweredMaxBits.getInt());
-  } else {
-    return plan->emitOpError("missing required max_bits metadata");
-  }
-
-  auto requiredBitsValue =
-      builder.create<mlir::arith::ConstantIntOp>(loc, requiredBits, 64).getResult();
-  auto cond = builder.create<mlir::arith::CmpIOp>(
-      loc, mlir::arith::CmpIPredicate::ugt, requiredBitsValue, capacityBits);
-  auto status =
-      builder.create<mlir::scf::IfOp>(loc, mlir::TypeRange{i8Ty}, cond, true);
-  {
-    mlir::OpBuilder thenBuilder = status.getThenBodyBuilder();
-    auto fail =
-        thenBuilder.create<mlir::arith::ConstantIntOp>(loc, -3, 8).getResult();
-    thenBuilder.create<mlir::scf::YieldOp>(loc, fail);
-  }
-  {
-    mlir::OpBuilder elseBuilder = status.getElseBodyBuilder();
-    auto ok =
-        elseBuilder.create<mlir::arith::ConstantIntOp>(loc, 0, 8).getResult();
-    elseBuilder.create<mlir::scf::YieldOp>(loc, ok);
-  }
-  builder.create<mlir::func::ReturnOp>(loc, status.getResults());
-
-  return mlir::success();
-}
-
-mlir::LogicalResult createUnionTagValidationFunction(mlir::ModuleOp module,
-                                                     mlir::Operation *plan,
-                                                     mlir::OpBuilder &builder) {
-  if (!plan->hasAttr("is_union")) {
-    return mlir::success();
-  }
-
-  auto *schema = plan->getParentOp();
-  if (!schema || schema->getName().getStringRef() != "dsdl.schema") {
-    return plan->emitOpError("must be nested under dsdl.schema");
-  }
-  const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
-  if (!schemaSym) {
-    return schema->emitOpError("missing required sym_name attribute");
-  }
-  const auto sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
-  const std::string section = sectionAttr ? sectionAttr.getValue().str() : "";
-  const std::string funcName = "__llvmdsdl_plan_validate_union_tag__" +
-                               schemaSym.getValue().str() + sectionSuffix(section);
-  plan->setAttr(kLoweredUnionTagValidateHelperAttr,
-                builder.getStringAttr(funcName));
-  if (module.lookupSymbol<mlir::func::FuncOp>(funcName)) {
-    return mlir::success();
-  }
-
-  std::set<std::int64_t> optionIndexes;
-  if (plan->getNumRegions() > 0 && !plan->getRegion(0).empty()) {
-    for (mlir::Operation &op : plan->getRegion(0).front()) {
-      if (op.getName().getStringRef() != "dsdl.io") {
-        continue;
-      }
-      const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
-      const auto kind = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
-      if (kind == "padding") {
-        continue;
-      }
-      optionIndexes.insert(nonNegative(
-          intAttrOrDefault(&op, "union_option_index", /*fallback=*/0)));
+mlir::LogicalResult createPlanCapacityCheckFunction(mlir::ModuleOp   module,
+                                                    mlir::Operation* plan,
+                                                    mlir::OpBuilder& builder)
+{
+    auto* schema = plan->getParentOp();
+    if (!schema || schema->getName().getStringRef() != "dsdl.schema")
+    {
+        return plan->emitOpError("must be nested under dsdl.schema");
     }
-  }
-  if (optionIndexes.empty()) {
-    return plan->emitOpError("union plan has no selectable options");
-  }
-
-  mlir::OpBuilder::InsertionGuard g(builder);
-  builder.setInsertionPointToEnd(&module.getBodyRegion().front());
-
-  const mlir::Location loc = plan->getLoc();
-  auto i64Ty = builder.getIntegerType(64);
-  auto i8Ty = builder.getIntegerType(8);
-  auto fnType = builder.getFunctionType(mlir::TypeRange{i64Ty},
-                                        mlir::TypeRange{i8Ty});
-  auto fn = builder.create<mlir::func::FuncOp>(loc, funcName, fnType);
-  fn->setAttr("llvmdsdl.union_tag_validate", builder.getUnitAttr());
-  fn->setAttr("llvmdsdl.schema_sym", schemaSym);
-  if (sectionAttr) {
-    fn->setAttr("llvmdsdl.section", sectionAttr);
-  }
-  fn->setAttr("llvmdsdl.plan_origin", builder.getStringAttr("lower-dsdl-serialization"));
-
-  mlir::Block *entry = fn.addEntryBlock();
-  builder.setInsertionPointToStart(entry);
-  mlir::Value tagValue = entry->getArgument(0);
-  mlir::Value anyMatch =
-      builder.create<mlir::arith::ConstantIntOp>(loc, 0, 1).getResult();
-  for (const std::int64_t option : optionIndexes) {
-    auto optConst =
-        builder.create<mlir::arith::ConstantIntOp>(loc, option, 64).getResult();
-    auto match = builder.create<mlir::arith::CmpIOp>(
-        loc, mlir::arith::CmpIPredicate::eq, tagValue, optConst);
-    anyMatch = builder.create<mlir::arith::OrIOp>(loc, anyMatch, match);
-  }
-
-  auto status =
-      builder.create<mlir::scf::IfOp>(loc, mlir::TypeRange{i8Ty}, anyMatch, true);
-  {
-    mlir::OpBuilder thenBuilder = status.getThenBodyBuilder();
-    auto ok =
-        thenBuilder.create<mlir::arith::ConstantIntOp>(loc, 0, 8).getResult();
-    thenBuilder.create<mlir::scf::YieldOp>(loc, ok);
-  }
-  {
-    mlir::OpBuilder elseBuilder = status.getElseBodyBuilder();
-    auto fail =
-        elseBuilder.create<mlir::arith::ConstantIntOp>(loc, -11, 8).getResult();
-    elseBuilder.create<mlir::scf::YieldOp>(loc, fail);
-  }
-  builder.create<mlir::func::ReturnOp>(loc, status.getResults());
-
-  return mlir::success();
-}
-
-mlir::LogicalResult createScalarUnsignedFieldHelpers(mlir::ModuleOp module,
-                                                     mlir::Operation *plan,
-                                                     mlir::OpBuilder &builder) {
-  auto *schema = plan->getParentOp();
-  if (!schema || schema->getName().getStringRef() != "dsdl.schema") {
-    return plan->emitOpError("must be nested under dsdl.schema");
-  }
-  const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
-  if (!schemaSym) {
-    return schema->emitOpError("missing required sym_name attribute");
-  }
-  const auto sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
-  const std::string section = sectionAttr ? sectionAttr.getValue().str() : "";
-
-  if (plan->getNumRegions() == 0 || plan->getRegion(0).empty()) {
-    return mlir::success();
-  }
-
-  for (mlir::Operation &op : plan->getRegion(0).front()) {
-    if (op.getName().getStringRef() != "dsdl.io") {
-      continue;
+    const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
+    if (!schemaSym)
+    {
+        return schema->emitOpError("missing required sym_name attribute");
     }
-    const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
-    const auto kind = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
-    if (kind != "field") {
-      continue;
-    }
-    const auto scalarAttr = op.getAttrOfType<mlir::StringAttr>("scalar_category");
-    const auto scalar =
-        scalarAttr ? scalarAttr.getValue() : llvm::StringRef("unsigned");
-    if (scalar != "unsigned" && scalar != "byte" && scalar != "utf8") {
-      continue;
-    }
-    const std::int64_t bitLength =
-        nonNegative(intAttrOrDefault(&op, "bit_length", /*fallback=*/0));
-    if (bitLength <= 0 || bitLength > 64) {
-      continue;
-    }
-    const std::int64_t stepIndex =
-        nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
-    const auto castModeAttr = op.getAttrOfType<mlir::StringAttr>("cast_mode");
-    const auto castMode =
-        castModeAttr ? castModeAttr.getValue() : llvm::StringRef("truncated");
-
-    const std::string symbolStem = "__llvmdsdl_plan_scalar_unsigned__" +
-                                   schemaSym.getValue().str() +
-                                   sectionSuffix(section) + "__" +
-                                   std::to_string(stepIndex);
-    const std::string serName = symbolStem + "__ser";
-    const std::string deserName = symbolStem + "__deser";
-    op.setAttr("lowered_ser_unsigned_helper", builder.getStringAttr(serName));
-    op.setAttr("lowered_deser_unsigned_helper", builder.getStringAttr(deserName));
-
-    const bool fullWidth = (bitLength == 64);
-    const std::uint64_t mask =
-        fullWidth
-            ? UINT64_MAX
-            : ((UINT64_C(1) << static_cast<unsigned>(bitLength)) - UINT64_C(1));
-    const auto maskSigned = fullWidth ? INT64_C(-1)
-                                      : static_cast<std::int64_t>(mask);
-
-    if (!module.lookupSymbol<mlir::func::FuncOp>(serName)) {
-      mlir::OpBuilder::InsertionGuard g(builder);
-      builder.setInsertionPointToEnd(&module.getBodyRegion().front());
-      const mlir::Location loc = op.getLoc();
-      auto i64Ty = builder.getIntegerType(64);
-      auto fnType = builder.getFunctionType(mlir::TypeRange{i64Ty},
-                                            mlir::TypeRange{i64Ty});
-      auto fn = builder.create<mlir::func::FuncOp>(loc, serName, fnType);
-      fn->setAttr("llvmdsdl.scalar_unsigned_helper", builder.getUnitAttr());
-      fn->setAttr("llvmdsdl.scalar_unsigned_helper_kind",
-                  builder.getStringAttr("serialize"));
-      fn->setAttr("llvmdsdl.schema_sym", schemaSym);
-      if (sectionAttr) {
-        fn->setAttr("llvmdsdl.section", sectionAttr);
-      }
-      auto *entry = fn.addEntryBlock();
-      builder.setInsertionPointToStart(entry);
-      auto value = entry->getArgument(0);
-      mlir::Value result = value;
-      if (fullWidth) {
-        result = value;
-      } else if (castMode == "saturated") {
-        auto maskConst =
-            builder.create<mlir::arith::ConstantIntOp>(loc, maskSigned, 64);
-        auto over = builder.create<mlir::arith::CmpIOp>(
-            loc, mlir::arith::CmpIPredicate::ugt, value, maskConst);
-        result =
-            builder.create<mlir::arith::SelectOp>(loc, over, maskConst, value)
-                .getResult();
-      } else {
-        auto maskConst =
-            builder.create<mlir::arith::ConstantIntOp>(loc, maskSigned, 64);
-        result =
-            builder.create<mlir::arith::AndIOp>(loc, value, maskConst).getResult();
-      }
-      builder.create<mlir::func::ReturnOp>(loc, result);
-    }
-
-    if (!module.lookupSymbol<mlir::func::FuncOp>(deserName)) {
-      mlir::OpBuilder::InsertionGuard g(builder);
-      builder.setInsertionPointToEnd(&module.getBodyRegion().front());
-      const mlir::Location loc = op.getLoc();
-      auto i64Ty = builder.getIntegerType(64);
-      auto fnType = builder.getFunctionType(mlir::TypeRange{i64Ty},
-                                            mlir::TypeRange{i64Ty});
-      auto fn = builder.create<mlir::func::FuncOp>(loc, deserName, fnType);
-      fn->setAttr("llvmdsdl.scalar_unsigned_helper", builder.getUnitAttr());
-      fn->setAttr("llvmdsdl.scalar_unsigned_helper_kind",
-                  builder.getStringAttr("deserialize"));
-      fn->setAttr("llvmdsdl.schema_sym", schemaSym);
-      if (sectionAttr) {
-        fn->setAttr("llvmdsdl.section", sectionAttr);
-      }
-      auto *entry = fn.addEntryBlock();
-      builder.setInsertionPointToStart(entry);
-      auto value = entry->getArgument(0);
-      if (fullWidth) {
-        builder.create<mlir::func::ReturnOp>(loc, value);
-      } else {
-        auto maskConst =
-            builder.create<mlir::arith::ConstantIntOp>(loc, maskSigned, 64);
-        auto masked =
-            builder.create<mlir::arith::AndIOp>(loc, value, maskConst).getResult();
-        builder.create<mlir::func::ReturnOp>(loc, masked);
-      }
-    }
-  }
-
-  return mlir::success();
-}
-
-mlir::LogicalResult createScalarSignedFieldHelpers(mlir::ModuleOp module,
-                                                   mlir::Operation *plan,
-                                                   mlir::OpBuilder &builder) {
-  auto *schema = plan->getParentOp();
-  if (!schema || schema->getName().getStringRef() != "dsdl.schema") {
-    return plan->emitOpError("must be nested under dsdl.schema");
-  }
-  const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
-  if (!schemaSym) {
-    return schema->emitOpError("missing required sym_name attribute");
-  }
-  const auto sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
-  const std::string section = sectionAttr ? sectionAttr.getValue().str() : "";
-
-  if (plan->getNumRegions() == 0 || plan->getRegion(0).empty()) {
-    return mlir::success();
-  }
-
-  for (mlir::Operation &op : plan->getRegion(0).front()) {
-    if (op.getName().getStringRef() != "dsdl.io") {
-      continue;
-    }
-    const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
-    const auto kind = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
-    if (kind != "field") {
-      continue;
-    }
-    const auto scalarAttr = op.getAttrOfType<mlir::StringAttr>("scalar_category");
-    const auto scalar =
-        scalarAttr ? scalarAttr.getValue() : llvm::StringRef("signed");
-    if (scalar != "signed") {
-      continue;
-    }
-    const std::int64_t bitLength =
-        nonNegative(intAttrOrDefault(&op, "bit_length", /*fallback=*/0));
-    if (bitLength <= 0 || bitLength > 64) {
-      continue;
-    }
-    const std::int64_t stepIndex =
-        nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
-    const auto castModeAttr = op.getAttrOfType<mlir::StringAttr>("cast_mode");
-    const auto castMode =
-        castModeAttr ? castModeAttr.getValue() : llvm::StringRef("truncated");
-
-    const std::string symbolStem = "__llvmdsdl_plan_scalar_signed__" +
-                                   schemaSym.getValue().str() +
-                                   sectionSuffix(section) + "__" +
-                                   std::to_string(stepIndex);
-    const std::string serName = symbolStem + "__ser";
-    const std::string deserName = symbolStem + "__deser";
-    op.setAttr("lowered_ser_signed_helper", builder.getStringAttr(serName));
-    op.setAttr("lowered_deser_signed_helper", builder.getStringAttr(deserName));
-
-    std::int64_t minValue = std::numeric_limits<std::int64_t>::min();
-    std::int64_t maxValue = std::numeric_limits<std::int64_t>::max();
-    if (bitLength < 64) {
-      maxValue = (INT64_C(1) << static_cast<unsigned>(bitLength - 1)) - INT64_C(1);
-      minValue = -(INT64_C(1) << static_cast<unsigned>(bitLength - 1));
-    }
-
-    if (!module.lookupSymbol<mlir::func::FuncOp>(serName)) {
-      mlir::OpBuilder::InsertionGuard g(builder);
-      builder.setInsertionPointToEnd(&module.getBodyRegion().front());
-      const mlir::Location loc = op.getLoc();
-      auto i64Ty = builder.getIntegerType(64);
-      auto fnType = builder.getFunctionType(mlir::TypeRange{i64Ty},
-                                            mlir::TypeRange{i64Ty});
-      auto fn = builder.create<mlir::func::FuncOp>(loc, serName, fnType);
-      fn->setAttr("llvmdsdl.scalar_signed_helper", builder.getUnitAttr());
-      fn->setAttr("llvmdsdl.scalar_signed_helper_kind",
-                  builder.getStringAttr("serialize"));
-      fn->setAttr("llvmdsdl.schema_sym", schemaSym);
-      if (sectionAttr) {
-        fn->setAttr("llvmdsdl.section", sectionAttr);
-      }
-      auto *entry = fn.addEntryBlock();
-      builder.setInsertionPointToStart(entry);
-      auto value = entry->getArgument(0);
-      mlir::Value result = value;
-      if (castMode == "saturated" && bitLength < 64) {
-        auto minConst =
-            builder.create<mlir::arith::ConstantIntOp>(loc, minValue, 64);
-        auto maxConst =
-            builder.create<mlir::arith::ConstantIntOp>(loc, maxValue, 64);
-        auto below = builder.create<mlir::arith::CmpIOp>(
-            loc, mlir::arith::CmpIPredicate::slt, value, minConst);
-        auto above = builder.create<mlir::arith::CmpIOp>(
-            loc, mlir::arith::CmpIPredicate::sgt, value, maxConst);
-        auto clampedLow =
-            builder.create<mlir::arith::SelectOp>(loc, below, minConst, value);
-        result = builder.create<mlir::arith::SelectOp>(loc, above, maxConst,
-                                                       clampedLow)
-                     .getResult();
-      }
-      builder.create<mlir::func::ReturnOp>(loc, result);
-    }
-
-    if (!module.lookupSymbol<mlir::func::FuncOp>(deserName)) {
-      mlir::OpBuilder::InsertionGuard g(builder);
-      builder.setInsertionPointToEnd(&module.getBodyRegion().front());
-      const mlir::Location loc = op.getLoc();
-      auto i64Ty = builder.getIntegerType(64);
-      auto fnType = builder.getFunctionType(mlir::TypeRange{i64Ty},
-                                            mlir::TypeRange{i64Ty});
-      auto fn = builder.create<mlir::func::FuncOp>(loc, deserName, fnType);
-      fn->setAttr("llvmdsdl.scalar_signed_helper", builder.getUnitAttr());
-      fn->setAttr("llvmdsdl.scalar_signed_helper_kind",
-                  builder.getStringAttr("deserialize"));
-      fn->setAttr("llvmdsdl.schema_sym", schemaSym);
-      if (sectionAttr) {
-        fn->setAttr("llvmdsdl.section", sectionAttr);
-      }
-      auto *entry = fn.addEntryBlock();
-      builder.setInsertionPointToStart(entry);
-      auto value = entry->getArgument(0);
-
-      if (bitLength >= 64) {
-        builder.create<mlir::func::ReturnOp>(loc, value);
-      } else {
-        const std::uint64_t maskU =
-            (UINT64_C(1) << static_cast<unsigned>(bitLength)) - UINT64_C(1);
-        const std::uint64_t signU =
-            UINT64_C(1) << static_cast<unsigned>(bitLength - 1);
-        const std::uint64_t extendMaskU = ~maskU;
-        auto maskConst = builder.create<mlir::arith::ConstantIntOp>(
-            loc, static_cast<std::int64_t>(maskU), 64);
-        auto signConst = builder.create<mlir::arith::ConstantIntOp>(
-            loc, static_cast<std::int64_t>(signU), 64);
-        auto extendConst = builder.create<mlir::arith::ConstantIntOp>(
-            loc, static_cast<std::int64_t>(extendMaskU), 64);
-        auto zeroConst = builder.create<mlir::arith::ConstantIntOp>(loc, 0, 64);
-        auto masked =
-            builder.create<mlir::arith::AndIOp>(loc, value, maskConst).getResult();
-        auto signPart =
-            builder.create<mlir::arith::AndIOp>(loc, masked, signConst).getResult();
-        auto isNegative = builder.create<mlir::arith::CmpIOp>(
-            loc, mlir::arith::CmpIPredicate::ne, signPart, zeroConst);
-        auto negExtended =
-            builder.create<mlir::arith::OrIOp>(loc, masked, extendConst).getResult();
-        auto result =
-            builder.create<mlir::arith::SelectOp>(loc, isNegative, negExtended,
-                                                  masked)
-                .getResult();
-        builder.create<mlir::func::ReturnOp>(loc, result);
-      }
-    }
-  }
-
-  return mlir::success();
-}
-
-mlir::LogicalResult createScalarFloatFieldHelpers(mlir::ModuleOp module,
-                                                  mlir::Operation *plan,
-                                                  mlir::OpBuilder &builder) {
-  auto *schema = plan->getParentOp();
-  if (!schema || schema->getName().getStringRef() != "dsdl.schema") {
-    return plan->emitOpError("must be nested under dsdl.schema");
-  }
-  const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
-  if (!schemaSym) {
-    return schema->emitOpError("missing required sym_name attribute");
-  }
-  const auto sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
-  const std::string section = sectionAttr ? sectionAttr.getValue().str() : "";
-
-  if (plan->getNumRegions() == 0 || plan->getRegion(0).empty()) {
-    return mlir::success();
-  }
-
-  for (mlir::Operation &op : plan->getRegion(0).front()) {
-    if (op.getName().getStringRef() != "dsdl.io") {
-      continue;
-    }
-    const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
-    const auto kind = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
-    if (kind != "field") {
-      continue;
-    }
-    const auto scalarAttr = op.getAttrOfType<mlir::StringAttr>("scalar_category");
-    const auto scalar =
-        scalarAttr ? scalarAttr.getValue() : llvm::StringRef("float");
-    if (scalar != "float") {
-      continue;
-    }
-    const std::int64_t bitLength =
-        nonNegative(intAttrOrDefault(&op, "bit_length", /*fallback=*/0));
-    if (bitLength != 16 && bitLength != 32 && bitLength != 64) {
-      continue;
-    }
-    const std::int64_t stepIndex =
-        nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
-    const std::string symbolStem = "__llvmdsdl_plan_scalar_float__" +
-                                   schemaSym.getValue().str() +
-                                   sectionSuffix(section) + "__" +
-                                   std::to_string(stepIndex);
-    const std::string serName = symbolStem + "__ser";
-    const std::string deserName = symbolStem + "__deser";
-    op.setAttr("lowered_ser_float_helper", builder.getStringAttr(serName));
-    op.setAttr("lowered_deser_float_helper", builder.getStringAttr(deserName));
-
-    if (!module.lookupSymbol<mlir::func::FuncOp>(serName)) {
-      mlir::OpBuilder::InsertionGuard g(builder);
-      builder.setInsertionPointToEnd(&module.getBodyRegion().front());
-      const mlir::Location loc = op.getLoc();
-      auto f64Ty = builder.getF64Type();
-      auto fnType = builder.getFunctionType(mlir::TypeRange{f64Ty},
-                                            mlir::TypeRange{f64Ty});
-      auto fn = builder.create<mlir::func::FuncOp>(loc, serName, fnType);
-      fn->setAttr("llvmdsdl.scalar_float_helper", builder.getUnitAttr());
-      fn->setAttr("llvmdsdl.scalar_float_helper_kind",
-                  builder.getStringAttr("serialize"));
-      fn->setAttr("llvmdsdl.schema_sym", schemaSym);
-      if (sectionAttr) {
-        fn->setAttr("llvmdsdl.section", sectionAttr);
-      }
-      auto *entry = fn.addEntryBlock();
-      builder.setInsertionPointToStart(entry);
-      auto value = entry->getArgument(0);
-      builder.create<mlir::func::ReturnOp>(loc, value);
-    }
-
-    if (!module.lookupSymbol<mlir::func::FuncOp>(deserName)) {
-      mlir::OpBuilder::InsertionGuard g(builder);
-      builder.setInsertionPointToEnd(&module.getBodyRegion().front());
-      const mlir::Location loc = op.getLoc();
-      auto f64Ty = builder.getF64Type();
-      auto fnType = builder.getFunctionType(mlir::TypeRange{f64Ty},
-                                            mlir::TypeRange{f64Ty});
-      auto fn = builder.create<mlir::func::FuncOp>(loc, deserName, fnType);
-      fn->setAttr("llvmdsdl.scalar_float_helper", builder.getUnitAttr());
-      fn->setAttr("llvmdsdl.scalar_float_helper_kind",
-                  builder.getStringAttr("deserialize"));
-      fn->setAttr("llvmdsdl.schema_sym", schemaSym);
-      if (sectionAttr) {
-        fn->setAttr("llvmdsdl.section", sectionAttr);
-      }
-      auto *entry = fn.addEntryBlock();
-      builder.setInsertionPointToStart(entry);
-      auto value = entry->getArgument(0);
-      builder.create<mlir::func::ReturnOp>(loc, value);
-    }
-  }
-
-  return mlir::success();
-}
-
-mlir::LogicalResult createArrayLengthValidationHelpers(mlir::ModuleOp module,
-                                                       mlir::Operation *plan,
-                                                       mlir::OpBuilder &builder) {
-  auto *schema = plan->getParentOp();
-  if (!schema || schema->getName().getStringRef() != "dsdl.schema") {
-    return plan->emitOpError("must be nested under dsdl.schema");
-  }
-  const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
-  if (!schemaSym) {
-    return schema->emitOpError("missing required sym_name attribute");
-  }
-  const auto sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
-  const std::string section = sectionAttr ? sectionAttr.getValue().str() : "";
-
-  if (plan->getNumRegions() == 0 || plan->getRegion(0).empty()) {
-    return mlir::success();
-  }
-
-  for (mlir::Operation &op : plan->getRegion(0).front()) {
-    if (op.getName().getStringRef() != "dsdl.io") {
-      continue;
-    }
-    const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
-    const auto kind = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
-    if (kind != "field") {
-      continue;
-    }
-    const auto arrayKindAttr = op.getAttrOfType<mlir::StringAttr>("array_kind");
-    const auto arrayKind =
-        arrayKindAttr ? arrayKindAttr.getValue() : llvm::StringRef("none");
-    const bool variableArray =
-        (arrayKind == "variable_inclusive" || arrayKind == "variable_exclusive");
-    if (!variableArray) {
-      continue;
-    }
-    const std::int64_t capacity =
-        nonNegative(intAttrOrDefault(&op, "array_capacity", /*fallback=*/0));
-    const std::int64_t stepIndex =
-        nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
-    const std::string symbolName = "__llvmdsdl_plan_validate_array_length__" +
-                                   schemaSym.getValue().str() +
-                                   sectionSuffix(section) + "__" +
-                                   std::to_string(stepIndex);
-    op.setAttr("lowered_array_length_validate_helper",
-               builder.getStringAttr(symbolName));
-
-    if (module.lookupSymbol<mlir::func::FuncOp>(symbolName)) {
-      continue;
+    const auto        sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
+    const std::string section     = sectionAttr ? sectionAttr.getValue().str() : "";
+    const std::string funcName =
+        "__llvmdsdl_plan_capacity_check__" + schemaSym.getValue().str() + sectionSuffix(section);
+    plan->setAttr(kLoweredCapacityCheckHelperAttr, builder.getStringAttr(funcName));
+    if (module.lookupSymbol<mlir::func::FuncOp>(funcName))
+    {
+        return mlir::success();
     }
 
     mlir::OpBuilder::InsertionGuard g(builder);
     builder.setInsertionPointToEnd(&module.getBodyRegion().front());
 
-    const mlir::Location loc = op.getLoc();
-    auto i64Ty = builder.getIntegerType(64);
-    auto i8Ty = builder.getIntegerType(8);
-    auto fnType = builder.getFunctionType(mlir::TypeRange{i64Ty},
-                                          mlir::TypeRange{i8Ty});
-    auto fn = builder.create<mlir::func::FuncOp>(loc, symbolName, fnType);
-    fn->setAttr("llvmdsdl.array_length_validate", builder.getUnitAttr());
+    const mlir::Location loc    = plan->getLoc();
+    auto                 i64Ty  = builder.getIntegerType(64);
+    auto                 i8Ty   = builder.getIntegerType(8);
+    auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i8Ty});
+    auto                 fn     = builder.create<mlir::func::FuncOp>(loc, funcName, fnType);
+    fn->setAttr("llvmdsdl.plan_capacity_check", builder.getUnitAttr());
     fn->setAttr("llvmdsdl.schema_sym", schemaSym);
-    if (sectionAttr) {
-      fn->setAttr("llvmdsdl.section", sectionAttr);
+    if (sectionAttr)
+    {
+        fn->setAttr("llvmdsdl.section", sectionAttr);
+    }
+    fn->setAttr("llvmdsdl.plan_origin", builder.getStringAttr("lower-dsdl-serialization"));
+
+    mlir::Block* entry = fn.addEntryBlock();
+    builder.setInsertionPointToStart(entry);
+    mlir::Value  capacityBits = entry->getArgument(0);
+    std::int64_t requiredBits = 0;
+    if (const auto maxBits = plan->getAttrOfType<mlir::IntegerAttr>("max_bits"))
+    {
+        requiredBits = nonNegative(maxBits.getInt());
+    }
+    else if (const auto loweredMaxBits = plan->getAttrOfType<mlir::IntegerAttr>("lowered_max_bits"))
+    {
+        requiredBits = nonNegative(loweredMaxBits.getInt());
+    }
+    else
+    {
+        return plan->emitOpError("missing required max_bits metadata");
     }
 
-    auto *entry = fn.addEntryBlock();
-    builder.setInsertionPointToStart(entry);
-    auto length = entry->getArgument(0);
-    auto zeroConst = builder.create<mlir::arith::ConstantIntOp>(loc, 0, 64);
-    auto capConst = builder.create<mlir::arith::ConstantIntOp>(loc, capacity, 64);
-    auto isNegative = builder.create<mlir::arith::CmpIOp>(
-        loc, mlir::arith::CmpIPredicate::slt, length, zeroConst);
-    auto tooLarge = builder.create<mlir::arith::CmpIOp>(
-        loc, mlir::arith::CmpIPredicate::sgt, length, capConst);
-    auto invalid = builder.create<mlir::arith::OrIOp>(loc, isNegative, tooLarge);
-    auto status =
-        builder.create<mlir::scf::IfOp>(loc, mlir::TypeRange{i8Ty}, invalid, true);
+    auto requiredBitsValue = builder.create<mlir::arith::ConstantIntOp>(loc, requiredBits, 64).getResult();
+    auto cond =
+        builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::ugt, requiredBitsValue, capacityBits);
+    auto status = builder.create<mlir::scf::IfOp>(loc, mlir::TypeRange{i8Ty}, cond, true);
     {
-      mlir::OpBuilder thenBuilder = status.getThenBodyBuilder();
-      auto fail =
-          thenBuilder.create<mlir::arith::ConstantIntOp>(loc, -10, 8).getResult();
-      thenBuilder.create<mlir::scf::YieldOp>(loc, fail);
+        mlir::OpBuilder thenBuilder = status.getThenBodyBuilder();
+        auto            fail        = thenBuilder.create<mlir::arith::ConstantIntOp>(loc, -3, 8).getResult();
+        thenBuilder.create<mlir::scf::YieldOp>(loc, fail);
     }
     {
-      mlir::OpBuilder elseBuilder = status.getElseBodyBuilder();
-      auto ok =
-          elseBuilder.create<mlir::arith::ConstantIntOp>(loc, 0, 8).getResult();
-      elseBuilder.create<mlir::scf::YieldOp>(loc, ok);
+        mlir::OpBuilder elseBuilder = status.getElseBodyBuilder();
+        auto            ok          = elseBuilder.create<mlir::arith::ConstantIntOp>(loc, 0, 8).getResult();
+        elseBuilder.create<mlir::scf::YieldOp>(loc, ok);
     }
     builder.create<mlir::func::ReturnOp>(loc, status.getResults());
-  }
 
-  return mlir::success();
+    return mlir::success();
 }
 
-mlir::LogicalResult createArrayLengthPrefixHelpers(mlir::ModuleOp module,
-                                                   mlir::Operation *plan,
-                                                   mlir::OpBuilder &builder) {
-  auto *schema = plan->getParentOp();
-  if (!schema || schema->getName().getStringRef() != "dsdl.schema") {
-    return plan->emitOpError("must be nested under dsdl.schema");
-  }
-  const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
-  if (!schemaSym) {
-    return schema->emitOpError("missing required sym_name attribute");
-  }
-  const auto sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
-  const std::string section = sectionAttr ? sectionAttr.getValue().str() : "";
-
-  if (plan->getNumRegions() == 0 || plan->getRegion(0).empty()) {
-    return mlir::success();
-  }
-
-  for (mlir::Operation &op : plan->getRegion(0).front()) {
-    if (op.getName().getStringRef() != "dsdl.io") {
-      continue;
-    }
-    const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
-    const auto kind = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
-    if (kind != "field") {
-      continue;
-    }
-    const auto arrayKindAttr = op.getAttrOfType<mlir::StringAttr>("array_kind");
-    const auto arrayKind =
-        arrayKindAttr ? arrayKindAttr.getValue() : llvm::StringRef("none");
-    const bool variableArray =
-        (arrayKind == "variable_inclusive" || arrayKind == "variable_exclusive");
-    if (!variableArray) {
-      continue;
-    }
-    const std::int64_t prefixBits = nonNegative(
-        intAttrOrDefault(&op, "array_length_prefix_bits", /*fallback=*/0));
-    if (prefixBits <= 0 || prefixBits > 64) {
-      return op.emitOpError("invalid array-length prefix width");
-    }
-    const std::int64_t stepIndex =
-        nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
-    const std::string symbolStem =
-        "__llvmdsdl_plan_array_length_prefix__" + schemaSym.getValue().str() +
-        sectionSuffix(section) + "__" + std::to_string(stepIndex);
-    const std::string serName = symbolStem + "__ser";
-    const std::string deserName = symbolStem + "__deser";
-    op.setAttr("lowered_ser_array_length_prefix_helper",
-               builder.getStringAttr(serName));
-    op.setAttr("lowered_deser_array_length_prefix_helper",
-               builder.getStringAttr(deserName));
-
-    const bool fullWidth = (prefixBits == 64);
-    const std::uint64_t mask =
-        fullWidth
-            ? UINT64_MAX
-            : ((UINT64_C(1) << static_cast<unsigned>(prefixBits)) - UINT64_C(1));
-    const auto maskSigned =
-        fullWidth ? INT64_C(-1) : static_cast<std::int64_t>(mask);
-
-    if (!module.lookupSymbol<mlir::func::FuncOp>(serName)) {
-      mlir::OpBuilder::InsertionGuard g(builder);
-      builder.setInsertionPointToEnd(&module.getBodyRegion().front());
-      const mlir::Location loc = op.getLoc();
-      auto i64Ty = builder.getIntegerType(64);
-      auto fnType = builder.getFunctionType(mlir::TypeRange{i64Ty},
-                                            mlir::TypeRange{i64Ty});
-      auto fn = builder.create<mlir::func::FuncOp>(loc, serName, fnType);
-      fn->setAttr("llvmdsdl.array_length_prefix_helper", builder.getUnitAttr());
-      fn->setAttr("llvmdsdl.array_length_prefix_helper_kind",
-                  builder.getStringAttr("serialize"));
-      fn->setAttr("llvmdsdl.schema_sym", schemaSym);
-      if (sectionAttr) {
-        fn->setAttr("llvmdsdl.section", sectionAttr);
-      }
-      auto *entry = fn.addEntryBlock();
-      builder.setInsertionPointToStart(entry);
-      auto value = entry->getArgument(0);
-      if (fullWidth) {
-        builder.create<mlir::func::ReturnOp>(loc, value);
-      } else {
-        auto maskConst =
-            builder.create<mlir::arith::ConstantIntOp>(loc, maskSigned, 64);
-        auto result =
-            builder.create<mlir::arith::AndIOp>(loc, value, maskConst).getResult();
-        builder.create<mlir::func::ReturnOp>(loc, result);
-      }
-    }
-
-    if (!module.lookupSymbol<mlir::func::FuncOp>(deserName)) {
-      mlir::OpBuilder::InsertionGuard g(builder);
-      builder.setInsertionPointToEnd(&module.getBodyRegion().front());
-      const mlir::Location loc = op.getLoc();
-      auto i64Ty = builder.getIntegerType(64);
-      auto fnType = builder.getFunctionType(mlir::TypeRange{i64Ty},
-                                            mlir::TypeRange{i64Ty});
-      auto fn = builder.create<mlir::func::FuncOp>(loc, deserName, fnType);
-      fn->setAttr("llvmdsdl.array_length_prefix_helper", builder.getUnitAttr());
-      fn->setAttr("llvmdsdl.array_length_prefix_helper_kind",
-                  builder.getStringAttr("deserialize"));
-      fn->setAttr("llvmdsdl.schema_sym", schemaSym);
-      if (sectionAttr) {
-        fn->setAttr("llvmdsdl.section", sectionAttr);
-      }
-      auto *entry = fn.addEntryBlock();
-      builder.setInsertionPointToStart(entry);
-      auto value = entry->getArgument(0);
-      if (fullWidth) {
-        builder.create<mlir::func::ReturnOp>(loc, value);
-      } else {
-        auto maskConst =
-            builder.create<mlir::arith::ConstantIntOp>(loc, maskSigned, 64);
-        auto result =
-            builder.create<mlir::arith::AndIOp>(loc, value, maskConst).getResult();
-        builder.create<mlir::func::ReturnOp>(loc, result);
-      }
-    }
-  }
-
-  return mlir::success();
-}
-
-mlir::LogicalResult createUnionTagIoHelpers(mlir::ModuleOp module,
-                                            mlir::Operation *plan,
-                                            mlir::OpBuilder &builder) {
-  if (!plan->hasAttr("is_union")) {
-    return mlir::success();
-  }
-
-  auto *schema = plan->getParentOp();
-  if (!schema || schema->getName().getStringRef() != "dsdl.schema") {
-    return plan->emitOpError("must be nested under dsdl.schema");
-  }
-  const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
-  if (!schemaSym) {
-    return schema->emitOpError("missing required sym_name attribute");
-  }
-  const auto sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
-  const std::string section = sectionAttr ? sectionAttr.getValue().str() : "";
-  const std::int64_t tagBits =
-      nonNegative(intAttrOrDefault(plan, "union_tag_bits", /*fallback=*/0));
-  if (tagBits <= 0 || tagBits > 64) {
-    return plan->emitOpError("invalid union tag width");
-  }
-
-  const std::string symbolStem = "__llvmdsdl_plan_union_tag__" +
-                                 schemaSym.getValue().str() +
-                                 sectionSuffix(section);
-  const std::string serName = symbolStem + "__ser";
-  const std::string deserName = symbolStem + "__deser";
-  plan->setAttr(kLoweredSerUnionTagHelperAttr, builder.getStringAttr(serName));
-  plan->setAttr(kLoweredDeserUnionTagHelperAttr,
-                builder.getStringAttr(deserName));
-
-  const bool fullWidth = (tagBits == 64);
-  const std::uint64_t mask =
-      fullWidth ? UINT64_MAX
-                : ((UINT64_C(1) << static_cast<unsigned>(tagBits)) - UINT64_C(1));
-  const auto maskSigned = fullWidth ? INT64_C(-1)
-                                    : static_cast<std::int64_t>(mask);
-
-  if (!module.lookupSymbol<mlir::func::FuncOp>(serName)) {
-    mlir::OpBuilder::InsertionGuard g(builder);
-    builder.setInsertionPointToEnd(&module.getBodyRegion().front());
-    const mlir::Location loc = plan->getLoc();
-    auto i64Ty = builder.getIntegerType(64);
-    auto fnType =
-        builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i64Ty});
-    auto fn = builder.create<mlir::func::FuncOp>(loc, serName, fnType);
-    fn->setAttr("llvmdsdl.union_tag_helper", builder.getUnitAttr());
-    fn->setAttr("llvmdsdl.union_tag_helper_kind",
-                builder.getStringAttr("serialize"));
-    fn->setAttr("llvmdsdl.schema_sym", schemaSym);
-    if (sectionAttr) {
-      fn->setAttr("llvmdsdl.section", sectionAttr);
-    }
-    auto *entry = fn.addEntryBlock();
-    builder.setInsertionPointToStart(entry);
-    auto value = entry->getArgument(0);
-    if (fullWidth) {
-      builder.create<mlir::func::ReturnOp>(loc, value);
-    } else {
-      auto maskConst =
-          builder.create<mlir::arith::ConstantIntOp>(loc, maskSigned, 64);
-      auto result =
-          builder.create<mlir::arith::AndIOp>(loc, value, maskConst).getResult();
-      builder.create<mlir::func::ReturnOp>(loc, result);
-    }
-  }
-
-  if (!module.lookupSymbol<mlir::func::FuncOp>(deserName)) {
-    mlir::OpBuilder::InsertionGuard g(builder);
-    builder.setInsertionPointToEnd(&module.getBodyRegion().front());
-    const mlir::Location loc = plan->getLoc();
-    auto i64Ty = builder.getIntegerType(64);
-    auto fnType =
-        builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i64Ty});
-    auto fn = builder.create<mlir::func::FuncOp>(loc, deserName, fnType);
-    fn->setAttr("llvmdsdl.union_tag_helper", builder.getUnitAttr());
-    fn->setAttr("llvmdsdl.union_tag_helper_kind",
-                builder.getStringAttr("deserialize"));
-    fn->setAttr("llvmdsdl.schema_sym", schemaSym);
-    if (sectionAttr) {
-      fn->setAttr("llvmdsdl.section", sectionAttr);
-    }
-    auto *entry = fn.addEntryBlock();
-    builder.setInsertionPointToStart(entry);
-    auto value = entry->getArgument(0);
-    if (fullWidth) {
-      builder.create<mlir::func::ReturnOp>(loc, value);
-    } else {
-      auto maskConst =
-          builder.create<mlir::arith::ConstantIntOp>(loc, maskSigned, 64);
-      auto result =
-          builder.create<mlir::arith::AndIOp>(loc, value, maskConst).getResult();
-      builder.create<mlir::func::ReturnOp>(loc, result);
-    }
-  }
-
-  return mlir::success();
-}
-
-mlir::LogicalResult createDelimiterHeaderValidationHelpers(
-    mlir::ModuleOp module, mlir::Operation *plan, mlir::OpBuilder &builder) {
-  auto *schema = plan->getParentOp();
-  if (!schema || schema->getName().getStringRef() != "dsdl.schema") {
-    return plan->emitOpError("must be nested under dsdl.schema");
-  }
-  const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
-  if (!schemaSym) {
-    return schema->emitOpError("missing required sym_name attribute");
-  }
-  const auto sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
-  const std::string section = sectionAttr ? sectionAttr.getValue().str() : "";
-
-  if (plan->getNumRegions() == 0 || plan->getRegion(0).empty()) {
-    return mlir::success();
-  }
-
-  for (mlir::Operation &op : plan->getRegion(0).front()) {
-    if (op.getName().getStringRef() != "dsdl.io") {
-      continue;
-    }
-    const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
-    const auto kind = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
-    if (kind != "field") {
-      continue;
-    }
-    const auto scalarAttr = op.getAttrOfType<mlir::StringAttr>("scalar_category");
-    const auto scalar =
-        scalarAttr ? scalarAttr.getValue() : llvm::StringRef("unsigned");
-    if (scalar != "composite") {
-      continue;
-    }
-    const auto sealedAttr = op.getAttrOfType<mlir::BoolAttr>("composite_sealed");
-    const bool compositeSealed = sealedAttr ? sealedAttr.getValue() : true;
-    if (compositeSealed) {
-      continue;
-    }
-    const std::int64_t stepIndex =
-        nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
-    const std::string symbolName =
-        "__llvmdsdl_plan_validate_delimiter_header__" +
-        schemaSym.getValue().str() + sectionSuffix(section) + "__" +
-        std::to_string(stepIndex);
-    op.setAttr("lowered_delimiter_validate_helper",
-               builder.getStringAttr(symbolName));
-
-    if (module.lookupSymbol<mlir::func::FuncOp>(symbolName)) {
-      continue;
-    }
-
-    mlir::OpBuilder::InsertionGuard g(builder);
-    builder.setInsertionPointToEnd(&module.getBodyRegion().front());
-
-    const mlir::Location loc = op.getLoc();
-    auto i64Ty = builder.getIntegerType(64);
-    auto i8Ty = builder.getIntegerType(8);
-    auto fnType = builder.getFunctionType(mlir::TypeRange{i64Ty, i64Ty},
-                                          mlir::TypeRange{i8Ty});
-    auto fn = builder.create<mlir::func::FuncOp>(loc, symbolName, fnType);
-    fn->setAttr("llvmdsdl.delimiter_header_validate", builder.getUnitAttr());
-    fn->setAttr("llvmdsdl.schema_sym", schemaSym);
-    if (sectionAttr) {
-      fn->setAttr("llvmdsdl.section", sectionAttr);
-    }
-
-    auto *entry = fn.addEntryBlock();
-    builder.setInsertionPointToStart(entry);
-    auto headerBytes = entry->getArgument(0);
-    auto remainingBytes = entry->getArgument(1);
-    auto zeroConst = builder.create<mlir::arith::ConstantIntOp>(loc, 0, 64);
-    auto isNegative = builder.create<mlir::arith::CmpIOp>(
-        loc, mlir::arith::CmpIPredicate::slt, headerBytes, zeroConst);
-    auto tooLarge = builder.create<mlir::arith::CmpIOp>(
-        loc, mlir::arith::CmpIPredicate::ugt, headerBytes, remainingBytes);
-    auto invalid = builder.create<mlir::arith::OrIOp>(loc, isNegative, tooLarge);
-    auto status =
-        builder.create<mlir::scf::IfOp>(loc, mlir::TypeRange{i8Ty}, invalid, true);
+mlir::LogicalResult createUnionTagValidationFunction(mlir::ModuleOp   module,
+                                                     mlir::Operation* plan,
+                                                     mlir::OpBuilder& builder)
+{
+    if (!plan->hasAttr("is_union"))
     {
-      mlir::OpBuilder thenBuilder = status.getThenBodyBuilder();
-      auto fail =
-          thenBuilder.create<mlir::arith::ConstantIntOp>(loc, -12, 8).getResult();
-      thenBuilder.create<mlir::scf::YieldOp>(loc, fail);
+        return mlir::success();
+    }
+
+    auto* schema = plan->getParentOp();
+    if (!schema || schema->getName().getStringRef() != "dsdl.schema")
+    {
+        return plan->emitOpError("must be nested under dsdl.schema");
+    }
+    const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
+    if (!schemaSym)
+    {
+        return schema->emitOpError("missing required sym_name attribute");
+    }
+    const auto        sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
+    const std::string section     = sectionAttr ? sectionAttr.getValue().str() : "";
+    const std::string funcName =
+        "__llvmdsdl_plan_validate_union_tag__" + schemaSym.getValue().str() + sectionSuffix(section);
+    plan->setAttr(kLoweredUnionTagValidateHelperAttr, builder.getStringAttr(funcName));
+    if (module.lookupSymbol<mlir::func::FuncOp>(funcName))
+    {
+        return mlir::success();
+    }
+
+    std::set<std::int64_t> optionIndexes;
+    if (plan->getNumRegions() > 0 && !plan->getRegion(0).empty())
+    {
+        for (mlir::Operation& op : plan->getRegion(0).front())
+        {
+            if (op.getName().getStringRef() != "dsdl.io")
+            {
+                continue;
+            }
+            const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
+            const auto kind     = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
+            if (kind == "padding")
+            {
+                continue;
+            }
+            optionIndexes.insert(nonNegative(intAttrOrDefault(&op, "union_option_index", /*fallback=*/0)));
+        }
+    }
+    if (optionIndexes.empty())
+    {
+        return plan->emitOpError("union plan has no selectable options");
+    }
+
+    mlir::OpBuilder::InsertionGuard g(builder);
+    builder.setInsertionPointToEnd(&module.getBodyRegion().front());
+
+    const mlir::Location loc    = plan->getLoc();
+    auto                 i64Ty  = builder.getIntegerType(64);
+    auto                 i8Ty   = builder.getIntegerType(8);
+    auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i8Ty});
+    auto                 fn     = builder.create<mlir::func::FuncOp>(loc, funcName, fnType);
+    fn->setAttr("llvmdsdl.union_tag_validate", builder.getUnitAttr());
+    fn->setAttr("llvmdsdl.schema_sym", schemaSym);
+    if (sectionAttr)
+    {
+        fn->setAttr("llvmdsdl.section", sectionAttr);
+    }
+    fn->setAttr("llvmdsdl.plan_origin", builder.getStringAttr("lower-dsdl-serialization"));
+
+    mlir::Block* entry = fn.addEntryBlock();
+    builder.setInsertionPointToStart(entry);
+    mlir::Value tagValue = entry->getArgument(0);
+    mlir::Value anyMatch = builder.create<mlir::arith::ConstantIntOp>(loc, 0, 1).getResult();
+    for (const std::int64_t option : optionIndexes)
+    {
+        auto optConst = builder.create<mlir::arith::ConstantIntOp>(loc, option, 64).getResult();
+        auto match    = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::eq, tagValue, optConst);
+        anyMatch      = builder.create<mlir::arith::OrIOp>(loc, anyMatch, match);
+    }
+
+    auto status = builder.create<mlir::scf::IfOp>(loc, mlir::TypeRange{i8Ty}, anyMatch, true);
+    {
+        mlir::OpBuilder thenBuilder = status.getThenBodyBuilder();
+        auto            ok          = thenBuilder.create<mlir::arith::ConstantIntOp>(loc, 0, 8).getResult();
+        thenBuilder.create<mlir::scf::YieldOp>(loc, ok);
     }
     {
-      mlir::OpBuilder elseBuilder = status.getElseBodyBuilder();
-      auto ok =
-          elseBuilder.create<mlir::arith::ConstantIntOp>(loc, 0, 8).getResult();
-      elseBuilder.create<mlir::scf::YieldOp>(loc, ok);
+        mlir::OpBuilder elseBuilder = status.getElseBodyBuilder();
+        auto            fail        = elseBuilder.create<mlir::arith::ConstantIntOp>(loc, -11, 8).getResult();
+        elseBuilder.create<mlir::scf::YieldOp>(loc, fail);
     }
     builder.create<mlir::func::ReturnOp>(loc, status.getResults());
-  }
 
-  return mlir::success();
+    return mlir::success();
+}
+
+mlir::LogicalResult createScalarUnsignedFieldHelpers(mlir::ModuleOp   module,
+                                                     mlir::Operation* plan,
+                                                     mlir::OpBuilder& builder)
+{
+    auto* schema = plan->getParentOp();
+    if (!schema || schema->getName().getStringRef() != "dsdl.schema")
+    {
+        return plan->emitOpError("must be nested under dsdl.schema");
+    }
+    const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
+    if (!schemaSym)
+    {
+        return schema->emitOpError("missing required sym_name attribute");
+    }
+    const auto        sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
+    const std::string section     = sectionAttr ? sectionAttr.getValue().str() : "";
+
+    if (plan->getNumRegions() == 0 || plan->getRegion(0).empty())
+    {
+        return mlir::success();
+    }
+
+    for (mlir::Operation& op : plan->getRegion(0).front())
+    {
+        if (op.getName().getStringRef() != "dsdl.io")
+        {
+            continue;
+        }
+        const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
+        const auto kind     = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
+        if (kind != "field")
+        {
+            continue;
+        }
+        const auto scalarAttr = op.getAttrOfType<mlir::StringAttr>("scalar_category");
+        const auto scalar     = scalarAttr ? scalarAttr.getValue() : llvm::StringRef("unsigned");
+        if (scalar != "unsigned" && scalar != "byte" && scalar != "utf8")
+        {
+            continue;
+        }
+        const std::int64_t bitLength = nonNegative(intAttrOrDefault(&op, "bit_length", /*fallback=*/0));
+        if (bitLength <= 0 || bitLength > 64)
+        {
+            continue;
+        }
+        const std::int64_t stepIndex    = nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
+        const auto         castModeAttr = op.getAttrOfType<mlir::StringAttr>("cast_mode");
+        const auto         castMode     = castModeAttr ? castModeAttr.getValue() : llvm::StringRef("truncated");
+
+        const std::string symbolStem = "__llvmdsdl_plan_scalar_unsigned__" + schemaSym.getValue().str() +
+                                       sectionSuffix(section) + "__" + std::to_string(stepIndex);
+        const std::string serName   = symbolStem + "__ser";
+        const std::string deserName = symbolStem + "__deser";
+        op.setAttr("lowered_ser_unsigned_helper", builder.getStringAttr(serName));
+        op.setAttr("lowered_deser_unsigned_helper", builder.getStringAttr(deserName));
+
+        const bool          fullWidth = (bitLength == 64);
+        const std::uint64_t mask =
+            fullWidth ? UINT64_MAX : ((UINT64_C(1) << static_cast<unsigned>(bitLength)) - UINT64_C(1));
+        const auto maskSigned = fullWidth ? INT64_C(-1) : static_cast<std::int64_t>(mask);
+
+        if (!module.lookupSymbol<mlir::func::FuncOp>(serName))
+        {
+            mlir::OpBuilder::InsertionGuard g(builder);
+            builder.setInsertionPointToEnd(&module.getBodyRegion().front());
+            const mlir::Location loc    = op.getLoc();
+            auto                 i64Ty  = builder.getIntegerType(64);
+            auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i64Ty});
+            auto                 fn     = builder.create<mlir::func::FuncOp>(loc, serName, fnType);
+            fn->setAttr("llvmdsdl.scalar_unsigned_helper", builder.getUnitAttr());
+            fn->setAttr("llvmdsdl.scalar_unsigned_helper_kind", builder.getStringAttr("serialize"));
+            fn->setAttr("llvmdsdl.schema_sym", schemaSym);
+            if (sectionAttr)
+            {
+                fn->setAttr("llvmdsdl.section", sectionAttr);
+            }
+            auto* entry = fn.addEntryBlock();
+            builder.setInsertionPointToStart(entry);
+            auto        value  = entry->getArgument(0);
+            mlir::Value result = value;
+            if (fullWidth)
+            {
+                result = value;
+            }
+            else if (castMode == "saturated")
+            {
+                auto maskConst = builder.create<mlir::arith::ConstantIntOp>(loc, maskSigned, 64);
+                auto over = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::ugt, value, maskConst);
+                result    = builder.create<mlir::arith::SelectOp>(loc, over, maskConst, value).getResult();
+            }
+            else
+            {
+                auto maskConst = builder.create<mlir::arith::ConstantIntOp>(loc, maskSigned, 64);
+                result         = builder.create<mlir::arith::AndIOp>(loc, value, maskConst).getResult();
+            }
+            builder.create<mlir::func::ReturnOp>(loc, result);
+        }
+
+        if (!module.lookupSymbol<mlir::func::FuncOp>(deserName))
+        {
+            mlir::OpBuilder::InsertionGuard g(builder);
+            builder.setInsertionPointToEnd(&module.getBodyRegion().front());
+            const mlir::Location loc    = op.getLoc();
+            auto                 i64Ty  = builder.getIntegerType(64);
+            auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i64Ty});
+            auto                 fn     = builder.create<mlir::func::FuncOp>(loc, deserName, fnType);
+            fn->setAttr("llvmdsdl.scalar_unsigned_helper", builder.getUnitAttr());
+            fn->setAttr("llvmdsdl.scalar_unsigned_helper_kind", builder.getStringAttr("deserialize"));
+            fn->setAttr("llvmdsdl.schema_sym", schemaSym);
+            if (sectionAttr)
+            {
+                fn->setAttr("llvmdsdl.section", sectionAttr);
+            }
+            auto* entry = fn.addEntryBlock();
+            builder.setInsertionPointToStart(entry);
+            auto value = entry->getArgument(0);
+            if (fullWidth)
+            {
+                builder.create<mlir::func::ReturnOp>(loc, value);
+            }
+            else
+            {
+                auto maskConst = builder.create<mlir::arith::ConstantIntOp>(loc, maskSigned, 64);
+                auto masked    = builder.create<mlir::arith::AndIOp>(loc, value, maskConst).getResult();
+                builder.create<mlir::func::ReturnOp>(loc, masked);
+            }
+        }
+    }
+
+    return mlir::success();
+}
+
+mlir::LogicalResult createScalarSignedFieldHelpers(mlir::ModuleOp   module,
+                                                   mlir::Operation* plan,
+                                                   mlir::OpBuilder& builder)
+{
+    auto* schema = plan->getParentOp();
+    if (!schema || schema->getName().getStringRef() != "dsdl.schema")
+    {
+        return plan->emitOpError("must be nested under dsdl.schema");
+    }
+    const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
+    if (!schemaSym)
+    {
+        return schema->emitOpError("missing required sym_name attribute");
+    }
+    const auto        sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
+    const std::string section     = sectionAttr ? sectionAttr.getValue().str() : "";
+
+    if (plan->getNumRegions() == 0 || plan->getRegion(0).empty())
+    {
+        return mlir::success();
+    }
+
+    for (mlir::Operation& op : plan->getRegion(0).front())
+    {
+        if (op.getName().getStringRef() != "dsdl.io")
+        {
+            continue;
+        }
+        const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
+        const auto kind     = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
+        if (kind != "field")
+        {
+            continue;
+        }
+        const auto scalarAttr = op.getAttrOfType<mlir::StringAttr>("scalar_category");
+        const auto scalar     = scalarAttr ? scalarAttr.getValue() : llvm::StringRef("signed");
+        if (scalar != "signed")
+        {
+            continue;
+        }
+        const std::int64_t bitLength = nonNegative(intAttrOrDefault(&op, "bit_length", /*fallback=*/0));
+        if (bitLength <= 0 || bitLength > 64)
+        {
+            continue;
+        }
+        const std::int64_t stepIndex    = nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
+        const auto         castModeAttr = op.getAttrOfType<mlir::StringAttr>("cast_mode");
+        const auto         castMode     = castModeAttr ? castModeAttr.getValue() : llvm::StringRef("truncated");
+
+        const std::string symbolStem = "__llvmdsdl_plan_scalar_signed__" + schemaSym.getValue().str() +
+                                       sectionSuffix(section) + "__" + std::to_string(stepIndex);
+        const std::string serName   = symbolStem + "__ser";
+        const std::string deserName = symbolStem + "__deser";
+        op.setAttr("lowered_ser_signed_helper", builder.getStringAttr(serName));
+        op.setAttr("lowered_deser_signed_helper", builder.getStringAttr(deserName));
+
+        std::int64_t minValue = std::numeric_limits<std::int64_t>::min();
+        std::int64_t maxValue = std::numeric_limits<std::int64_t>::max();
+        if (bitLength < 64)
+        {
+            maxValue = (INT64_C(1) << static_cast<unsigned>(bitLength - 1)) - INT64_C(1);
+            minValue = -(INT64_C(1) << static_cast<unsigned>(bitLength - 1));
+        }
+
+        if (!module.lookupSymbol<mlir::func::FuncOp>(serName))
+        {
+            mlir::OpBuilder::InsertionGuard g(builder);
+            builder.setInsertionPointToEnd(&module.getBodyRegion().front());
+            const mlir::Location loc    = op.getLoc();
+            auto                 i64Ty  = builder.getIntegerType(64);
+            auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i64Ty});
+            auto                 fn     = builder.create<mlir::func::FuncOp>(loc, serName, fnType);
+            fn->setAttr("llvmdsdl.scalar_signed_helper", builder.getUnitAttr());
+            fn->setAttr("llvmdsdl.scalar_signed_helper_kind", builder.getStringAttr("serialize"));
+            fn->setAttr("llvmdsdl.schema_sym", schemaSym);
+            if (sectionAttr)
+            {
+                fn->setAttr("llvmdsdl.section", sectionAttr);
+            }
+            auto* entry = fn.addEntryBlock();
+            builder.setInsertionPointToStart(entry);
+            auto        value  = entry->getArgument(0);
+            mlir::Value result = value;
+            if (castMode == "saturated" && bitLength < 64)
+            {
+                auto minConst = builder.create<mlir::arith::ConstantIntOp>(loc, minValue, 64);
+                auto maxConst = builder.create<mlir::arith::ConstantIntOp>(loc, maxValue, 64);
+                auto below = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, value, minConst);
+                auto above = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, value, maxConst);
+                auto clampedLow = builder.create<mlir::arith::SelectOp>(loc, below, minConst, value);
+                result          = builder.create<mlir::arith::SelectOp>(loc, above, maxConst, clampedLow).getResult();
+            }
+            builder.create<mlir::func::ReturnOp>(loc, result);
+        }
+
+        if (!module.lookupSymbol<mlir::func::FuncOp>(deserName))
+        {
+            mlir::OpBuilder::InsertionGuard g(builder);
+            builder.setInsertionPointToEnd(&module.getBodyRegion().front());
+            const mlir::Location loc    = op.getLoc();
+            auto                 i64Ty  = builder.getIntegerType(64);
+            auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i64Ty});
+            auto                 fn     = builder.create<mlir::func::FuncOp>(loc, deserName, fnType);
+            fn->setAttr("llvmdsdl.scalar_signed_helper", builder.getUnitAttr());
+            fn->setAttr("llvmdsdl.scalar_signed_helper_kind", builder.getStringAttr("deserialize"));
+            fn->setAttr("llvmdsdl.schema_sym", schemaSym);
+            if (sectionAttr)
+            {
+                fn->setAttr("llvmdsdl.section", sectionAttr);
+            }
+            auto* entry = fn.addEntryBlock();
+            builder.setInsertionPointToStart(entry);
+            auto value = entry->getArgument(0);
+
+            if (bitLength >= 64)
+            {
+                builder.create<mlir::func::ReturnOp>(loc, value);
+            }
+            else
+            {
+                const std::uint64_t maskU       = (UINT64_C(1) << static_cast<unsigned>(bitLength)) - UINT64_C(1);
+                const std::uint64_t signU       = UINT64_C(1) << static_cast<unsigned>(bitLength - 1);
+                const std::uint64_t extendMaskU = ~maskU;
+                auto maskConst = builder.create<mlir::arith::ConstantIntOp>(loc, static_cast<std::int64_t>(maskU), 64);
+                auto signConst = builder.create<mlir::arith::ConstantIntOp>(loc, static_cast<std::int64_t>(signU), 64);
+                auto extendConst =
+                    builder.create<mlir::arith::ConstantIntOp>(loc, static_cast<std::int64_t>(extendMaskU), 64);
+                auto zeroConst = builder.create<mlir::arith::ConstantIntOp>(loc, 0, 64);
+                auto masked    = builder.create<mlir::arith::AndIOp>(loc, value, maskConst).getResult();
+                auto signPart  = builder.create<mlir::arith::AndIOp>(loc, masked, signConst).getResult();
+                auto isNegative =
+                    builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::ne, signPart, zeroConst);
+                auto negExtended = builder.create<mlir::arith::OrIOp>(loc, masked, extendConst).getResult();
+                auto result = builder.create<mlir::arith::SelectOp>(loc, isNegative, negExtended, masked).getResult();
+                builder.create<mlir::func::ReturnOp>(loc, result);
+            }
+        }
+    }
+
+    return mlir::success();
+}
+
+mlir::LogicalResult createScalarFloatFieldHelpers(mlir::ModuleOp   module,
+                                                  mlir::Operation* plan,
+                                                  mlir::OpBuilder& builder)
+{
+    auto* schema = plan->getParentOp();
+    if (!schema || schema->getName().getStringRef() != "dsdl.schema")
+    {
+        return plan->emitOpError("must be nested under dsdl.schema");
+    }
+    const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
+    if (!schemaSym)
+    {
+        return schema->emitOpError("missing required sym_name attribute");
+    }
+    const auto        sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
+    const std::string section     = sectionAttr ? sectionAttr.getValue().str() : "";
+
+    if (plan->getNumRegions() == 0 || plan->getRegion(0).empty())
+    {
+        return mlir::success();
+    }
+
+    for (mlir::Operation& op : plan->getRegion(0).front())
+    {
+        if (op.getName().getStringRef() != "dsdl.io")
+        {
+            continue;
+        }
+        const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
+        const auto kind     = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
+        if (kind != "field")
+        {
+            continue;
+        }
+        const auto scalarAttr = op.getAttrOfType<mlir::StringAttr>("scalar_category");
+        const auto scalar     = scalarAttr ? scalarAttr.getValue() : llvm::StringRef("float");
+        if (scalar != "float")
+        {
+            continue;
+        }
+        const std::int64_t bitLength = nonNegative(intAttrOrDefault(&op, "bit_length", /*fallback=*/0));
+        if (bitLength != 16 && bitLength != 32 && bitLength != 64)
+        {
+            continue;
+        }
+        const std::int64_t stepIndex  = nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
+        const std::string  symbolStem = "__llvmdsdl_plan_scalar_float__" + schemaSym.getValue().str() +
+                                       sectionSuffix(section) + "__" + std::to_string(stepIndex);
+        const std::string serName   = symbolStem + "__ser";
+        const std::string deserName = symbolStem + "__deser";
+        op.setAttr("lowered_ser_float_helper", builder.getStringAttr(serName));
+        op.setAttr("lowered_deser_float_helper", builder.getStringAttr(deserName));
+
+        if (!module.lookupSymbol<mlir::func::FuncOp>(serName))
+        {
+            mlir::OpBuilder::InsertionGuard g(builder);
+            builder.setInsertionPointToEnd(&module.getBodyRegion().front());
+            const mlir::Location loc    = op.getLoc();
+            auto                 f64Ty  = builder.getF64Type();
+            auto                 fnType = builder.getFunctionType(mlir::TypeRange{f64Ty}, mlir::TypeRange{f64Ty});
+            auto                 fn     = builder.create<mlir::func::FuncOp>(loc, serName, fnType);
+            fn->setAttr("llvmdsdl.scalar_float_helper", builder.getUnitAttr());
+            fn->setAttr("llvmdsdl.scalar_float_helper_kind", builder.getStringAttr("serialize"));
+            fn->setAttr("llvmdsdl.schema_sym", schemaSym);
+            if (sectionAttr)
+            {
+                fn->setAttr("llvmdsdl.section", sectionAttr);
+            }
+            auto* entry = fn.addEntryBlock();
+            builder.setInsertionPointToStart(entry);
+            auto value = entry->getArgument(0);
+            builder.create<mlir::func::ReturnOp>(loc, value);
+        }
+
+        if (!module.lookupSymbol<mlir::func::FuncOp>(deserName))
+        {
+            mlir::OpBuilder::InsertionGuard g(builder);
+            builder.setInsertionPointToEnd(&module.getBodyRegion().front());
+            const mlir::Location loc    = op.getLoc();
+            auto                 f64Ty  = builder.getF64Type();
+            auto                 fnType = builder.getFunctionType(mlir::TypeRange{f64Ty}, mlir::TypeRange{f64Ty});
+            auto                 fn     = builder.create<mlir::func::FuncOp>(loc, deserName, fnType);
+            fn->setAttr("llvmdsdl.scalar_float_helper", builder.getUnitAttr());
+            fn->setAttr("llvmdsdl.scalar_float_helper_kind", builder.getStringAttr("deserialize"));
+            fn->setAttr("llvmdsdl.schema_sym", schemaSym);
+            if (sectionAttr)
+            {
+                fn->setAttr("llvmdsdl.section", sectionAttr);
+            }
+            auto* entry = fn.addEntryBlock();
+            builder.setInsertionPointToStart(entry);
+            auto value = entry->getArgument(0);
+            builder.create<mlir::func::ReturnOp>(loc, value);
+        }
+    }
+
+    return mlir::success();
+}
+
+mlir::LogicalResult createArrayLengthValidationHelpers(mlir::ModuleOp   module,
+                                                       mlir::Operation* plan,
+                                                       mlir::OpBuilder& builder)
+{
+    auto* schema = plan->getParentOp();
+    if (!schema || schema->getName().getStringRef() != "dsdl.schema")
+    {
+        return plan->emitOpError("must be nested under dsdl.schema");
+    }
+    const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
+    if (!schemaSym)
+    {
+        return schema->emitOpError("missing required sym_name attribute");
+    }
+    const auto        sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
+    const std::string section     = sectionAttr ? sectionAttr.getValue().str() : "";
+
+    if (plan->getNumRegions() == 0 || plan->getRegion(0).empty())
+    {
+        return mlir::success();
+    }
+
+    for (mlir::Operation& op : plan->getRegion(0).front())
+    {
+        if (op.getName().getStringRef() != "dsdl.io")
+        {
+            continue;
+        }
+        const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
+        const auto kind     = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
+        if (kind != "field")
+        {
+            continue;
+        }
+        const auto arrayKindAttr = op.getAttrOfType<mlir::StringAttr>("array_kind");
+        const auto arrayKind     = arrayKindAttr ? arrayKindAttr.getValue() : llvm::StringRef("none");
+        const bool variableArray = (arrayKind == "variable_inclusive" || arrayKind == "variable_exclusive");
+        if (!variableArray)
+        {
+            continue;
+        }
+        const std::int64_t capacity   = nonNegative(intAttrOrDefault(&op, "array_capacity", /*fallback=*/0));
+        const std::int64_t stepIndex  = nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
+        const std::string  symbolName = "__llvmdsdl_plan_validate_array_length__" + schemaSym.getValue().str() +
+                                       sectionSuffix(section) + "__" + std::to_string(stepIndex);
+        op.setAttr("lowered_array_length_validate_helper", builder.getStringAttr(symbolName));
+
+        if (module.lookupSymbol<mlir::func::FuncOp>(symbolName))
+        {
+            continue;
+        }
+
+        mlir::OpBuilder::InsertionGuard g(builder);
+        builder.setInsertionPointToEnd(&module.getBodyRegion().front());
+
+        const mlir::Location loc    = op.getLoc();
+        auto                 i64Ty  = builder.getIntegerType(64);
+        auto                 i8Ty   = builder.getIntegerType(8);
+        auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i8Ty});
+        auto                 fn     = builder.create<mlir::func::FuncOp>(loc, symbolName, fnType);
+        fn->setAttr("llvmdsdl.array_length_validate", builder.getUnitAttr());
+        fn->setAttr("llvmdsdl.schema_sym", schemaSym);
+        if (sectionAttr)
+        {
+            fn->setAttr("llvmdsdl.section", sectionAttr);
+        }
+
+        auto* entry = fn.addEntryBlock();
+        builder.setInsertionPointToStart(entry);
+        auto length     = entry->getArgument(0);
+        auto zeroConst  = builder.create<mlir::arith::ConstantIntOp>(loc, 0, 64);
+        auto capConst   = builder.create<mlir::arith::ConstantIntOp>(loc, capacity, 64);
+        auto isNegative = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, length, zeroConst);
+        auto tooLarge   = builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::sgt, length, capConst);
+        auto invalid    = builder.create<mlir::arith::OrIOp>(loc, isNegative, tooLarge);
+        auto status     = builder.create<mlir::scf::IfOp>(loc, mlir::TypeRange{i8Ty}, invalid, true);
+        {
+            mlir::OpBuilder thenBuilder = status.getThenBodyBuilder();
+            auto            fail        = thenBuilder.create<mlir::arith::ConstantIntOp>(loc, -10, 8).getResult();
+            thenBuilder.create<mlir::scf::YieldOp>(loc, fail);
+        }
+        {
+            mlir::OpBuilder elseBuilder = status.getElseBodyBuilder();
+            auto            ok          = elseBuilder.create<mlir::arith::ConstantIntOp>(loc, 0, 8).getResult();
+            elseBuilder.create<mlir::scf::YieldOp>(loc, ok);
+        }
+        builder.create<mlir::func::ReturnOp>(loc, status.getResults());
+    }
+
+    return mlir::success();
+}
+
+mlir::LogicalResult createArrayLengthPrefixHelpers(mlir::ModuleOp   module,
+                                                   mlir::Operation* plan,
+                                                   mlir::OpBuilder& builder)
+{
+    auto* schema = plan->getParentOp();
+    if (!schema || schema->getName().getStringRef() != "dsdl.schema")
+    {
+        return plan->emitOpError("must be nested under dsdl.schema");
+    }
+    const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
+    if (!schemaSym)
+    {
+        return schema->emitOpError("missing required sym_name attribute");
+    }
+    const auto        sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
+    const std::string section     = sectionAttr ? sectionAttr.getValue().str() : "";
+
+    if (plan->getNumRegions() == 0 || plan->getRegion(0).empty())
+    {
+        return mlir::success();
+    }
+
+    for (mlir::Operation& op : plan->getRegion(0).front())
+    {
+        if (op.getName().getStringRef() != "dsdl.io")
+        {
+            continue;
+        }
+        const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
+        const auto kind     = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
+        if (kind != "field")
+        {
+            continue;
+        }
+        const auto arrayKindAttr = op.getAttrOfType<mlir::StringAttr>("array_kind");
+        const auto arrayKind     = arrayKindAttr ? arrayKindAttr.getValue() : llvm::StringRef("none");
+        const bool variableArray = (arrayKind == "variable_inclusive" || arrayKind == "variable_exclusive");
+        if (!variableArray)
+        {
+            continue;
+        }
+        const std::int64_t prefixBits = nonNegative(intAttrOrDefault(&op, "array_length_prefix_bits", /*fallback=*/0));
+        if (prefixBits <= 0 || prefixBits > 64)
+        {
+            return op.emitOpError("invalid array-length prefix width");
+        }
+        const std::int64_t stepIndex  = nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
+        const std::string  symbolStem = "__llvmdsdl_plan_array_length_prefix__" + schemaSym.getValue().str() +
+                                       sectionSuffix(section) + "__" + std::to_string(stepIndex);
+        const std::string serName   = symbolStem + "__ser";
+        const std::string deserName = symbolStem + "__deser";
+        op.setAttr("lowered_ser_array_length_prefix_helper", builder.getStringAttr(serName));
+        op.setAttr("lowered_deser_array_length_prefix_helper", builder.getStringAttr(deserName));
+
+        const bool          fullWidth = (prefixBits == 64);
+        const std::uint64_t mask =
+            fullWidth ? UINT64_MAX : ((UINT64_C(1) << static_cast<unsigned>(prefixBits)) - UINT64_C(1));
+        const auto maskSigned = fullWidth ? INT64_C(-1) : static_cast<std::int64_t>(mask);
+
+        if (!module.lookupSymbol<mlir::func::FuncOp>(serName))
+        {
+            mlir::OpBuilder::InsertionGuard g(builder);
+            builder.setInsertionPointToEnd(&module.getBodyRegion().front());
+            const mlir::Location loc    = op.getLoc();
+            auto                 i64Ty  = builder.getIntegerType(64);
+            auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i64Ty});
+            auto                 fn     = builder.create<mlir::func::FuncOp>(loc, serName, fnType);
+            fn->setAttr("llvmdsdl.array_length_prefix_helper", builder.getUnitAttr());
+            fn->setAttr("llvmdsdl.array_length_prefix_helper_kind", builder.getStringAttr("serialize"));
+            fn->setAttr("llvmdsdl.schema_sym", schemaSym);
+            if (sectionAttr)
+            {
+                fn->setAttr("llvmdsdl.section", sectionAttr);
+            }
+            auto* entry = fn.addEntryBlock();
+            builder.setInsertionPointToStart(entry);
+            auto value = entry->getArgument(0);
+            if (fullWidth)
+            {
+                builder.create<mlir::func::ReturnOp>(loc, value);
+            }
+            else
+            {
+                auto maskConst = builder.create<mlir::arith::ConstantIntOp>(loc, maskSigned, 64);
+                auto result    = builder.create<mlir::arith::AndIOp>(loc, value, maskConst).getResult();
+                builder.create<mlir::func::ReturnOp>(loc, result);
+            }
+        }
+
+        if (!module.lookupSymbol<mlir::func::FuncOp>(deserName))
+        {
+            mlir::OpBuilder::InsertionGuard g(builder);
+            builder.setInsertionPointToEnd(&module.getBodyRegion().front());
+            const mlir::Location loc    = op.getLoc();
+            auto                 i64Ty  = builder.getIntegerType(64);
+            auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i64Ty});
+            auto                 fn     = builder.create<mlir::func::FuncOp>(loc, deserName, fnType);
+            fn->setAttr("llvmdsdl.array_length_prefix_helper", builder.getUnitAttr());
+            fn->setAttr("llvmdsdl.array_length_prefix_helper_kind", builder.getStringAttr("deserialize"));
+            fn->setAttr("llvmdsdl.schema_sym", schemaSym);
+            if (sectionAttr)
+            {
+                fn->setAttr("llvmdsdl.section", sectionAttr);
+            }
+            auto* entry = fn.addEntryBlock();
+            builder.setInsertionPointToStart(entry);
+            auto value = entry->getArgument(0);
+            if (fullWidth)
+            {
+                builder.create<mlir::func::ReturnOp>(loc, value);
+            }
+            else
+            {
+                auto maskConst = builder.create<mlir::arith::ConstantIntOp>(loc, maskSigned, 64);
+                auto result    = builder.create<mlir::arith::AndIOp>(loc, value, maskConst).getResult();
+                builder.create<mlir::func::ReturnOp>(loc, result);
+            }
+        }
+    }
+
+    return mlir::success();
+}
+
+mlir::LogicalResult createUnionTagIoHelpers(mlir::ModuleOp module, mlir::Operation* plan, mlir::OpBuilder& builder)
+{
+    if (!plan->hasAttr("is_union"))
+    {
+        return mlir::success();
+    }
+
+    auto* schema = plan->getParentOp();
+    if (!schema || schema->getName().getStringRef() != "dsdl.schema")
+    {
+        return plan->emitOpError("must be nested under dsdl.schema");
+    }
+    const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
+    if (!schemaSym)
+    {
+        return schema->emitOpError("missing required sym_name attribute");
+    }
+    const auto         sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
+    const std::string  section     = sectionAttr ? sectionAttr.getValue().str() : "";
+    const std::int64_t tagBits     = nonNegative(intAttrOrDefault(plan, "union_tag_bits", /*fallback=*/0));
+    if (tagBits <= 0 || tagBits > 64)
+    {
+        return plan->emitOpError("invalid union tag width");
+    }
+
+    const std::string symbolStem = "__llvmdsdl_plan_union_tag__" + schemaSym.getValue().str() + sectionSuffix(section);
+    const std::string serName    = symbolStem + "__ser";
+    const std::string deserName  = symbolStem + "__deser";
+    plan->setAttr(kLoweredSerUnionTagHelperAttr, builder.getStringAttr(serName));
+    plan->setAttr(kLoweredDeserUnionTagHelperAttr, builder.getStringAttr(deserName));
+
+    const bool          fullWidth = (tagBits == 64);
+    const std::uint64_t mask = fullWidth ? UINT64_MAX : ((UINT64_C(1) << static_cast<unsigned>(tagBits)) - UINT64_C(1));
+    const auto          maskSigned = fullWidth ? INT64_C(-1) : static_cast<std::int64_t>(mask);
+
+    if (!module.lookupSymbol<mlir::func::FuncOp>(serName))
+    {
+        mlir::OpBuilder::InsertionGuard g(builder);
+        builder.setInsertionPointToEnd(&module.getBodyRegion().front());
+        const mlir::Location loc    = plan->getLoc();
+        auto                 i64Ty  = builder.getIntegerType(64);
+        auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i64Ty});
+        auto                 fn     = builder.create<mlir::func::FuncOp>(loc, serName, fnType);
+        fn->setAttr("llvmdsdl.union_tag_helper", builder.getUnitAttr());
+        fn->setAttr("llvmdsdl.union_tag_helper_kind", builder.getStringAttr("serialize"));
+        fn->setAttr("llvmdsdl.schema_sym", schemaSym);
+        if (sectionAttr)
+        {
+            fn->setAttr("llvmdsdl.section", sectionAttr);
+        }
+        auto* entry = fn.addEntryBlock();
+        builder.setInsertionPointToStart(entry);
+        auto value = entry->getArgument(0);
+        if (fullWidth)
+        {
+            builder.create<mlir::func::ReturnOp>(loc, value);
+        }
+        else
+        {
+            auto maskConst = builder.create<mlir::arith::ConstantIntOp>(loc, maskSigned, 64);
+            auto result    = builder.create<mlir::arith::AndIOp>(loc, value, maskConst).getResult();
+            builder.create<mlir::func::ReturnOp>(loc, result);
+        }
+    }
+
+    if (!module.lookupSymbol<mlir::func::FuncOp>(deserName))
+    {
+        mlir::OpBuilder::InsertionGuard g(builder);
+        builder.setInsertionPointToEnd(&module.getBodyRegion().front());
+        const mlir::Location loc    = plan->getLoc();
+        auto                 i64Ty  = builder.getIntegerType(64);
+        auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty}, mlir::TypeRange{i64Ty});
+        auto                 fn     = builder.create<mlir::func::FuncOp>(loc, deserName, fnType);
+        fn->setAttr("llvmdsdl.union_tag_helper", builder.getUnitAttr());
+        fn->setAttr("llvmdsdl.union_tag_helper_kind", builder.getStringAttr("deserialize"));
+        fn->setAttr("llvmdsdl.schema_sym", schemaSym);
+        if (sectionAttr)
+        {
+            fn->setAttr("llvmdsdl.section", sectionAttr);
+        }
+        auto* entry = fn.addEntryBlock();
+        builder.setInsertionPointToStart(entry);
+        auto value = entry->getArgument(0);
+        if (fullWidth)
+        {
+            builder.create<mlir::func::ReturnOp>(loc, value);
+        }
+        else
+        {
+            auto maskConst = builder.create<mlir::arith::ConstantIntOp>(loc, maskSigned, 64);
+            auto result    = builder.create<mlir::arith::AndIOp>(loc, value, maskConst).getResult();
+            builder.create<mlir::func::ReturnOp>(loc, result);
+        }
+    }
+
+    return mlir::success();
+}
+
+mlir::LogicalResult createDelimiterHeaderValidationHelpers(mlir::ModuleOp   module,
+                                                           mlir::Operation* plan,
+                                                           mlir::OpBuilder& builder)
+{
+    auto* schema = plan->getParentOp();
+    if (!schema || schema->getName().getStringRef() != "dsdl.schema")
+    {
+        return plan->emitOpError("must be nested under dsdl.schema");
+    }
+    const auto schemaSym = schema->getAttrOfType<mlir::StringAttr>("sym_name");
+    if (!schemaSym)
+    {
+        return schema->emitOpError("missing required sym_name attribute");
+    }
+    const auto        sectionAttr = plan->getAttrOfType<mlir::StringAttr>("section");
+    const std::string section     = sectionAttr ? sectionAttr.getValue().str() : "";
+
+    if (plan->getNumRegions() == 0 || plan->getRegion(0).empty())
+    {
+        return mlir::success();
+    }
+
+    for (mlir::Operation& op : plan->getRegion(0).front())
+    {
+        if (op.getName().getStringRef() != "dsdl.io")
+        {
+            continue;
+        }
+        const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
+        const auto kind     = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
+        if (kind != "field")
+        {
+            continue;
+        }
+        const auto scalarAttr = op.getAttrOfType<mlir::StringAttr>("scalar_category");
+        const auto scalar     = scalarAttr ? scalarAttr.getValue() : llvm::StringRef("unsigned");
+        if (scalar != "composite")
+        {
+            continue;
+        }
+        const auto sealedAttr      = op.getAttrOfType<mlir::BoolAttr>("composite_sealed");
+        const bool compositeSealed = sealedAttr ? sealedAttr.getValue() : true;
+        if (compositeSealed)
+        {
+            continue;
+        }
+        const std::int64_t stepIndex  = nonNegative(intAttrOrDefault(&op, "step_index", /*fallback=*/0));
+        const std::string  symbolName = "__llvmdsdl_plan_validate_delimiter_header__" + schemaSym.getValue().str() +
+                                       sectionSuffix(section) + "__" + std::to_string(stepIndex);
+        op.setAttr("lowered_delimiter_validate_helper", builder.getStringAttr(symbolName));
+
+        if (module.lookupSymbol<mlir::func::FuncOp>(symbolName))
+        {
+            continue;
+        }
+
+        mlir::OpBuilder::InsertionGuard g(builder);
+        builder.setInsertionPointToEnd(&module.getBodyRegion().front());
+
+        const mlir::Location loc    = op.getLoc();
+        auto                 i64Ty  = builder.getIntegerType(64);
+        auto                 i8Ty   = builder.getIntegerType(8);
+        auto                 fnType = builder.getFunctionType(mlir::TypeRange{i64Ty, i64Ty}, mlir::TypeRange{i8Ty});
+        auto                 fn     = builder.create<mlir::func::FuncOp>(loc, symbolName, fnType);
+        fn->setAttr("llvmdsdl.delimiter_header_validate", builder.getUnitAttr());
+        fn->setAttr("llvmdsdl.schema_sym", schemaSym);
+        if (sectionAttr)
+        {
+            fn->setAttr("llvmdsdl.section", sectionAttr);
+        }
+
+        auto* entry = fn.addEntryBlock();
+        builder.setInsertionPointToStart(entry);
+        auto headerBytes    = entry->getArgument(0);
+        auto remainingBytes = entry->getArgument(1);
+        auto zeroConst      = builder.create<mlir::arith::ConstantIntOp>(loc, 0, 64);
+        auto isNegative =
+            builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::slt, headerBytes, zeroConst);
+        auto tooLarge =
+            builder.create<mlir::arith::CmpIOp>(loc, mlir::arith::CmpIPredicate::ugt, headerBytes, remainingBytes);
+        auto invalid = builder.create<mlir::arith::OrIOp>(loc, isNegative, tooLarge);
+        auto status  = builder.create<mlir::scf::IfOp>(loc, mlir::TypeRange{i8Ty}, invalid, true);
+        {
+            mlir::OpBuilder thenBuilder = status.getThenBodyBuilder();
+            auto            fail        = thenBuilder.create<mlir::arith::ConstantIntOp>(loc, -12, 8).getResult();
+            thenBuilder.create<mlir::scf::YieldOp>(loc, fail);
+        }
+        {
+            mlir::OpBuilder elseBuilder = status.getElseBodyBuilder();
+            auto            ok          = elseBuilder.create<mlir::arith::ConstantIntOp>(loc, 0, 8).getResult();
+            elseBuilder.create<mlir::scf::YieldOp>(loc, ok);
+        }
+        builder.create<mlir::func::ReturnOp>(loc, status.getResults());
+    }
+
+    return mlir::success();
 }
 
 struct LowerDSDLSerializationPass
-    : public mlir::PassWrapper<LowerDSDLSerializationPass,
-                               mlir::OperationPass<mlir::ModuleOp>> {
-  llvm::StringRef getArgument() const final { return "lower-dsdl-serialization"; }
-  llvm::StringRef getDescription() const final {
-    return "Lower DSDL serialization-plan ops into canonical control-flow form";
-  }
-  void getDependentDialects(mlir::DialectRegistry &registry) const override {
-    registry.insert<mlir::arith::ArithDialect, mlir::func::FuncDialect,
-                    mlir::scf::SCFDialect>();
-  }
+    : public mlir::PassWrapper<LowerDSDLSerializationPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    llvm::StringRef getArgument() const final
+    {
+        return "lower-dsdl-serialization";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Lower DSDL serialization-plan ops into canonical control-flow form";
+    }
+    void getDependentDialects(mlir::DialectRegistry& registry) const override
+    {
+        registry.insert<mlir::arith::ArithDialect, mlir::func::FuncDialect, mlir::scf::SCFDialect>();
+    }
 
-  void runOnOperation() override {
-    auto module = getOperation();
-    mlir::OpBuilder builder(module.getContext());
-    std::vector<mlir::Operation *> plans;
-    bool sawPlan = false;
+    void runOnOperation() override
+    {
+        auto                          module = getOperation();
+        mlir::OpBuilder               builder(module.getContext());
+        std::vector<mlir::Operation*> plans;
+        bool                          sawPlan = false;
 
-    for (mlir::Operation &op : module.getBodyRegion().front()) {
-      if (op.getName().getStringRef() != "dsdl.schema") {
-        continue;
-      }
-      if (op.getNumRegions() == 0 || op.getRegion(0).empty()) {
-        op.emitOpError("must contain a non-empty body region");
-        signalPassFailure();
-        return;
-      }
+        for (mlir::Operation& op : module.getBodyRegion().front())
+        {
+            if (op.getName().getStringRef() != "dsdl.schema")
+            {
+                continue;
+            }
+            if (op.getNumRegions() == 0 || op.getRegion(0).empty())
+            {
+                op.emitOpError("must contain a non-empty body region");
+                signalPassFailure();
+                return;
+            }
 
-      for (mlir::Operation &child : op.getRegion(0).front()) {
-        if (child.getName().getStringRef() != "dsdl.serialization_plan") {
-          continue;
+            for (mlir::Operation& child : op.getRegion(0).front())
+            {
+                if (child.getName().getStringRef() != "dsdl.serialization_plan")
+                {
+                    continue;
+                }
+                if (mlir::failed(canonicalizePlan(&child, builder)))
+                {
+                    signalPassFailure();
+                    return;
+                }
+                sawPlan = true;
+                plans.push_back(&child);
+            }
         }
-        if (mlir::failed(canonicalizePlan(&child, builder))) {
-          signalPassFailure();
-          return;
+
+        if (sawPlan)
+        {
+            stampLoweredContractAttributes(module, builder);
         }
-        sawPlan = true;
-        plans.push_back(&child);
-      }
-    }
 
-    if (sawPlan) {
-      stampLoweredContractAttributes(module, builder);
+        for (mlir::Operation* plan : plans)
+        {
+            if (mlir::failed(createPlanCapacityCheckFunction(module, plan, builder)))
+            {
+                signalPassFailure();
+                return;
+            }
+            if (mlir::failed(createUnionTagValidationFunction(module, plan, builder)))
+            {
+                signalPassFailure();
+                return;
+            }
+            if (mlir::failed(createScalarUnsignedFieldHelpers(module, plan, builder)))
+            {
+                signalPassFailure();
+                return;
+            }
+            if (mlir::failed(createScalarSignedFieldHelpers(module, plan, builder)))
+            {
+                signalPassFailure();
+                return;
+            }
+            if (mlir::failed(createScalarFloatFieldHelpers(module, plan, builder)))
+            {
+                signalPassFailure();
+                return;
+            }
+            if (mlir::failed(createUnionTagIoHelpers(module, plan, builder)))
+            {
+                signalPassFailure();
+                return;
+            }
+            if (mlir::failed(createArrayLengthValidationHelpers(module, plan, builder)))
+            {
+                signalPassFailure();
+                return;
+            }
+            if (mlir::failed(createArrayLengthPrefixHelpers(module, plan, builder)))
+            {
+                signalPassFailure();
+                return;
+            }
+            if (mlir::failed(createDelimiterHeaderValidationHelpers(module, plan, builder)))
+            {
+                signalPassFailure();
+                return;
+            }
+        }
     }
-
-    for (mlir::Operation *plan : plans) {
-      if (mlir::failed(createPlanCapacityCheckFunction(module, plan, builder))) {
-        signalPassFailure();
-        return;
-      }
-      if (mlir::failed(createUnionTagValidationFunction(module, plan, builder))) {
-        signalPassFailure();
-        return;
-      }
-      if (mlir::failed(createScalarUnsignedFieldHelpers(module, plan, builder))) {
-        signalPassFailure();
-        return;
-      }
-      if (mlir::failed(createScalarSignedFieldHelpers(module, plan, builder))) {
-        signalPassFailure();
-        return;
-      }
-      if (mlir::failed(createScalarFloatFieldHelpers(module, plan, builder))) {
-        signalPassFailure();
-        return;
-      }
-      if (mlir::failed(createUnionTagIoHelpers(module, plan, builder))) {
-        signalPassFailure();
-        return;
-      }
-      if (mlir::failed(createArrayLengthValidationHelpers(module, plan, builder))) {
-        signalPassFailure();
-        return;
-      }
-      if (mlir::failed(createArrayLengthPrefixHelpers(module, plan, builder))) {
-        signalPassFailure();
-        return;
-      }
-      if (mlir::failed(
-              createDelimiterHeaderValidationHelpers(module, plan, builder))) {
-        signalPassFailure();
-        return;
-      }
-    }
-  }
 };
 
-} // namespace
+}  // namespace
 
-std::unique_ptr<mlir::Pass> createLowerDSDLSerializationPass() {
-  return std::make_unique<LowerDSDLSerializationPass>();
+std::unique_ptr<mlir::Pass> createLowerDSDLSerializationPass()
+{
+    return std::make_unique<LowerDSDLSerializationPass>();
 }
 
-void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager &pm) {
-  auto &funcPM = pm.nest<mlir::func::FuncOp>();
-  funcPM.addPass(mlir::createCanonicalizerPass());
-  funcPM.addPass(mlir::createCSEPass());
+void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm)
+{
+    auto& funcPM = pm.nest<mlir::func::FuncOp>();
+    funcPM.addPass(mlir::createCanonicalizerPass());
+    funcPM.addPass(mlir::createCSEPass());
 }
 
-void registerDSDLPasses() {
-  static bool once = false;
-  if (once) {
-    return;
-  }
-  once = true;
-  static mlir::PassRegistration<LowerDSDLSerializationPass> reg;
-  static mlir::PassPipelineRegistration<> optimizeLoweredSerDesPipeline(
-      "optimize-dsdl-lowered-serdes",
-      "Apply semantics-preserving canonicalization and CSE to lowered DSDL SerDes IR",
-      [](mlir::OpPassManager &pm) { addOptimizeLoweredSerDesPipeline(pm); });
-  registerDSDLConvertPasses();
+void registerDSDLPasses()
+{
+    static bool once = false;
+    if (once)
+    {
+        return;
+    }
+    once = true;
+    static mlir::PassRegistration<LowerDSDLSerializationPass> reg;
+    static mlir::PassPipelineRegistration<>
+        optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",
+                                      "Apply semantics-preserving canonicalization and CSE to lowered DSDL SerDes IR",
+                                      [](mlir::OpPassManager& pm) { addOptimizeLoweredSerDesPipeline(pm); });
+    registerDSDLConvertPasses();
 }
 
-} // namespace llvmdsdl
+}  // namespace llvmdsdl

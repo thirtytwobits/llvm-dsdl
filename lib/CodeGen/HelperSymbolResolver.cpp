@@ -1,77 +1,93 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Resolves optional helper symbol names from lowered section facts.
+///
+/// These helpers guard against absent lowering metadata and provide stable symbol lookup behavior for emitters.
+///
+//===----------------------------------------------------------------------===//
+
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
 
-namespace llvmdsdl {
+namespace llvmdsdl
+{
 
-std::string resolveSectionCapacityCheckHelperSymbol(
-    const LoweredSectionFacts *const sectionFacts) {
-  if (sectionFacts == nullptr) {
-    return {};
-  }
-  return sectionFacts->capacityCheckHelper;
+std::string resolveSectionCapacityCheckHelperSymbol(const LoweredSectionFacts* const sectionFacts)
+{
+    if (sectionFacts == nullptr)
+    {
+        return {};
+    }
+    return sectionFacts->capacityCheckHelper;
 }
 
-std::string resolveSectionUnionTagValidateHelperSymbol(
-    const LoweredSectionFacts *const sectionFacts) {
-  if (sectionFacts == nullptr) {
-    return {};
-  }
-  return sectionFacts->unionTagValidateHelper;
+std::string resolveSectionUnionTagValidateHelperSymbol(const LoweredSectionFacts* const sectionFacts)
+{
+    if (sectionFacts == nullptr)
+    {
+        return {};
+    }
+    return sectionFacts->unionTagValidateHelper;
 }
 
-std::string resolveSectionUnionTagMaskHelperSymbol(
-    const LoweredSectionFacts *const sectionFacts,
-    const HelperBindingDirection direction) {
-  if (sectionFacts == nullptr) {
-    return {};
-  }
-  if (direction == HelperBindingDirection::Serialize) {
-    return sectionFacts->serUnionTagHelper;
-  }
-  return sectionFacts->deserUnionTagHelper;
+std::string resolveSectionUnionTagMaskHelperSymbol(const LoweredSectionFacts* const sectionFacts,
+                                                   const HelperBindingDirection     direction)
+{
+    if (sectionFacts == nullptr)
+    {
+        return {};
+    }
+    if (direction == HelperBindingDirection::Serialize)
+    {
+        return sectionFacts->serUnionTagHelper;
+    }
+    return sectionFacts->deserUnionTagHelper;
 }
 
-std::string resolveScalarHelperSymbol(const SemanticFieldType &type,
-                                      const LoweredFieldFacts *const fieldFacts,
-                                      const HelperBindingDirection direction) {
-  const auto descriptor = buildScalarHelperDescriptor(
-      type, ScalarHelperSymbols{
-                fieldFacts ? fieldFacts->serUnsignedHelper : std::string{},
-                fieldFacts ? fieldFacts->deserUnsignedHelper : std::string{},
-                fieldFacts ? fieldFacts->serSignedHelper : std::string{},
-                fieldFacts ? fieldFacts->deserSignedHelper : std::string{},
-                fieldFacts ? fieldFacts->serFloatHelper : std::string{},
-                fieldFacts ? fieldFacts->deserFloatHelper : std::string{}});
-  if (!descriptor) {
-    return {};
-  }
-  return (direction == HelperBindingDirection::Serialize)
-             ? descriptor->serSymbol
-             : descriptor->deserSymbol;
+std::string resolveScalarHelperSymbol(const SemanticFieldType&       type,
+                                      const LoweredFieldFacts* const fieldFacts,
+                                      const HelperBindingDirection   direction)
+{
+    const auto descriptor =
+        buildScalarHelperDescriptor(type,
+                                    ScalarHelperSymbols{fieldFacts ? fieldFacts->serUnsignedHelper : std::string{},
+                                                        fieldFacts ? fieldFacts->deserUnsignedHelper : std::string{},
+                                                        fieldFacts ? fieldFacts->serSignedHelper : std::string{},
+                                                        fieldFacts ? fieldFacts->deserSignedHelper : std::string{},
+                                                        fieldFacts ? fieldFacts->serFloatHelper : std::string{},
+                                                        fieldFacts ? fieldFacts->deserFloatHelper : std::string{}});
+    if (!descriptor)
+    {
+        return {};
+    }
+    return (direction == HelperBindingDirection::Serialize) ? descriptor->serSymbol : descriptor->deserSymbol;
 }
 
-std::optional<ArrayLengthHelperDescriptor>
-resolveArrayLengthHelperDescriptor(const SemanticFieldType &type,
-                                   const LoweredFieldFacts *const fieldFacts,
-                                   const std::optional<std::uint32_t>
-                                       prefixBitsOverride,
-                                   const HelperBindingDirection direction) {
-  return buildArrayLengthHelperDescriptor(
-      type, prefixBitsOverride,
-      (direction == HelperBindingDirection::Serialize)
-          ? (fieldFacts ? fieldFacts->serArrayLengthPrefixHelper : std::string{})
-          : (fieldFacts ? fieldFacts->deserArrayLengthPrefixHelper
-                        : std::string{}),
-      fieldFacts ? fieldFacts->arrayLengthValidateHelper : std::string{});
+std::optional<ArrayLengthHelperDescriptor> resolveArrayLengthHelperDescriptor(
+    const SemanticFieldType&           type,
+    const LoweredFieldFacts* const     fieldFacts,
+    const std::optional<std::uint32_t> prefixBitsOverride,
+    const HelperBindingDirection       direction)
+{
+    return buildArrayLengthHelperDescriptor(type,
+                                            prefixBitsOverride,
+                                            (direction == HelperBindingDirection::Serialize)
+                                                ? (fieldFacts ? fieldFacts->serArrayLengthPrefixHelper : std::string{})
+                                                : (fieldFacts ? fieldFacts->deserArrayLengthPrefixHelper
+                                                              : std::string{}),
+                                            fieldFacts ? fieldFacts->arrayLengthValidateHelper : std::string{});
 }
 
-std::string resolveDelimiterValidateHelperSymbol(
-    const SemanticFieldType &type, const LoweredFieldFacts *const fieldFacts) {
-  const auto descriptor = buildDelimiterValidateHelperDescriptor(
-      type, fieldFacts ? fieldFacts->delimiterValidateHelper : std::string{});
-  if (!descriptor) {
-    return {};
-  }
-  return descriptor->symbol;
+std::string resolveDelimiterValidateHelperSymbol(const SemanticFieldType&       type,
+                                                 const LoweredFieldFacts* const fieldFacts)
+{
+    const auto descriptor =
+        buildDelimiterValidateHelperDescriptor(type, fieldFacts ? fieldFacts->delimiterValidateHelper : std::string{});
+    if (!descriptor)
+    {
+        return {};
+    }
+    return descriptor->symbol;
 }
 
-} // namespace llvmdsdl
+}  // namespace llvmdsdl

@@ -1,3 +1,10 @@
+#===----------------------------------------------------------------------===#
+##
+## @file
+## CMake declarations for generating and exposing DSDL dialect IR headers.
+##
+#===----------------------------------------------------------------------===#
+
 set(LLVM_TARGET_DEFINITIONS DSDLOps.td)
 mlir_tablegen(DSDLOps.h.inc -gen-op-decls)
 mlir_tablegen(DSDLOps.cpp.inc -gen-op-defs)

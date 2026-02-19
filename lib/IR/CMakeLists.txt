@@ -1,3 +1,12 @@
+#===----------------------------------------------------------------------===#
+##
+## @file
+## Build rules for the DSDL MLIR dialect library.
+##
+## This target compiles generated dialect artifacts and links the MLIR dialect infrastructure dependencies.
+##
+#===----------------------------------------------------------------------===#
+
 add_library(llvmdsdlIR
   DSDLDialect.cpp
   DSDLOps.cpp

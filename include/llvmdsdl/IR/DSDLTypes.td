@@ -1,3 +1,9 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// TableGen type definitions for the DSDL MLIR dialect.
+///
+//===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_IR_DSDLTYPES_TD
 #define LLVMDSDL_IR_DSDLTYPES_TD
 

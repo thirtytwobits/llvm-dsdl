@@ -262,18 +262,25 @@ Current:
   `portable|fast`), with dedicated `rust-runtime-specialization` integration
   labels/workflows, C/Rust parity gates, and semantic-diff gates ensuring
   generated type semantics do not drift.
-- TypeScript generation (`dsdlc ts`) has started as the first non-C-like target
-  track, with lowered-schema validation, generated runtime support
-  (`dsdl_runtime.ts`), and initial runtime-backed per-type SerDes entrypoints
-  for supported fixed-size scalar section families.
+- TypeScript generation (`dsdlc ts`) is now a first-class non-C-like target
+  track with lowered-schema validation, shared lowered render-order planning,
+  generated runtime support (`dsdl_runtime.ts`), and runtime-backed per-type
+  SerDes entrypoints across core semantic families.
 - TypeScript integration coverage includes full-`uavcan` generation/determinism/
-  typecheck/consumer-smoke gates (`llvmdsdl-uavcan-ts-generation`,
-  `llvmdsdl-uavcan-ts-determinism`, `llvmdsdl-uavcan-ts-typecheck`,
-  `llvmdsdl-uavcan-ts-consumer-smoke` when `tsc` is available), root-module
-  export contract validation (`llvmdsdl-uavcan-ts-index-contract`), and fixture
-  C<->TypeScript runtime parity smoke (`llvmdsdl-fixtures-c-ts-runtime-parity`),
-  plus TypeScript fixed-array runtime smoke
-  (`llvmdsdl-ts-runtime-fixed-array-smoke`).
+  typecheck/consumer-smoke/index-contract/runtime-execution gates
+  (`llvmdsdl-uavcan-ts-generation`,
+  `llvmdsdl-uavcan-ts-determinism`,
+  `llvmdsdl-uavcan-ts-typecheck`,
+  `llvmdsdl-uavcan-ts-consumer-smoke`,
+  `llvmdsdl-uavcan-ts-index-contract`,
+  `llvmdsdl-uavcan-ts-runtime-execution-smoke`), fallback-signature hardening
+  (`llvmdsdl-fixtures-ts-generation-hardening`), invariant-based C<->TS parity
+  (`llvmdsdl-c-ts-parity`, `llvmdsdl-signed-narrow-c-ts-parity`, optimized
+  variants), and broad runtime/parity fixture lanes.
+- TypeScript strict+compat migration coverage is integrated via:
+  `llvmdsdl-ts-compat-generation`,
+  `llvmdsdl-ts-compat-runtime`, and
+  `llvmdsdl-fixtures-c-ts-compat-parity`.
 
 Target trajectory:
 
@@ -294,3 +301,13 @@ At this stage, backend-specific behavior is intentionally limited to:
 Wire-semantics behavior (scalar normalization, array prefix/validation, union tag
 helpers, delimiter checks, capacity checks, section-plan ordering) is expected to
 be sourced from lowered MLIR contracts rather than backend-local fallback logic.
+
+### 4.2 Strict vs Compat Semantics
+
+- `--strict` is spec-first mode (default): enforce current Cyphal DSDL
+  semantics implemented by this compiler.
+- `--compat-mode` is migration mode: compatibility with legacy/non-conformant
+  trees that relied on permissive historical behavior (for example malformed
+  array-capacity bounds that are clamped/defaulted in compat mode).
+- Compat mode must emit deterministic warnings for downgraded diagnostics, and
+  the expected migration path is resolving warnings and returning to `--strict`.

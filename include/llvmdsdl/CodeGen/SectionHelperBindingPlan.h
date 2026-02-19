@@ -1,3 +1,9 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Helper-binding planning declarations shared by language backends.
+///
+//===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_CODEGEN_SECTION_HELPER_BINDING_PLAN_H
 #define LLVMDSDL_CODEGEN_SECTION_HELPER_BINDING_PLAN_H
 
@@ -9,52 +15,104 @@
 #include <string>
 #include <vector>
 
-namespace llvmdsdl {
+namespace llvmdsdl
+{
 
-enum class HelperBindingDirection {
-  Serialize,
-  Deserialize,
+/// @file
+/// @brief Helper binding plans for section serialize/deserialize bodies.
+
+/// @brief Direction for helper binding resolution.
+enum class HelperBindingDirection
+{
+
+    /// @brief Serialize helper bindings.
+    Serialize,
+
+    /// @brief Deserialize helper bindings.
+    Deserialize,
 };
 
-struct UnionTagMaskBindingDescriptor final {
-  std::string symbol;
-  std::uint32_t bits{0};
+/// @brief Descriptor for union-tag mask helper binding.
+struct UnionTagMaskBindingDescriptor final
+{
+    /// @brief Helper symbol name.
+    std::string symbol;
+
+    /// @brief Union tag width in bits.
+    std::uint32_t bits{0};
 };
 
-struct ScalarBindingDescriptor final {
-  std::string symbol;
-  ScalarHelperDescriptor descriptor;
+/// @brief Descriptor for scalar helper binding.
+struct ScalarBindingDescriptor final
+{
+    /// @brief Helper symbol name.
+    std::string symbol;
+
+    /// @brief Scalar helper descriptor.
+    ScalarHelperDescriptor descriptor;
 };
 
-struct ArrayPrefixBindingDescriptor final {
-  std::string symbol;
-  std::uint32_t bits{0};
+/// @brief Descriptor for array-prefix helper binding.
+struct ArrayPrefixBindingDescriptor final
+{
+    /// @brief Helper symbol name.
+    std::string symbol;
+
+    /// @brief Prefix width in bits.
+    std::uint32_t bits{0};
 };
 
-struct ArrayValidateBindingDescriptor final {
-  std::string symbol;
-  std::int64_t capacity{0};
+/// @brief Descriptor for array-length validation helper binding.
+struct ArrayValidateBindingDescriptor final
+{
+    /// @brief Helper symbol name.
+    std::string symbol;
+
+    /// @brief Maximum allowed element count.
+    std::int64_t capacity{0};
 };
 
-struct DelimiterValidateBindingDescriptor final {
-  std::string symbol;
+/// @brief Descriptor for delimiter validation helper binding.
+struct DelimiterValidateBindingDescriptor final
+{
+    /// @brief Helper symbol name.
+    std::string symbol;
 };
 
-struct SectionHelperBindingPlan final {
-  std::optional<CapacityCheckHelperDescriptor> capacityCheck;
-  std::optional<UnionTagValidateHelperDescriptor> unionTagValidate;
-  std::optional<UnionTagMaskBindingDescriptor> unionTagMask;
-  std::vector<ScalarBindingDescriptor> scalarBindings;
-  std::vector<ArrayPrefixBindingDescriptor> arrayPrefixBindings;
-  std::vector<ArrayValidateBindingDescriptor> arrayValidateBindings;
-  std::vector<DelimiterValidateBindingDescriptor> delimiterValidateBindings;
+/// @brief Complete helper-binding plan for one section and direction.
+struct SectionHelperBindingPlan final
+{
+    /// @brief Optional capacity-check helper binding.
+    std::optional<CapacityCheckHelperDescriptor> capacityCheck;
+
+    /// @brief Optional union-tag validation helper binding.
+    std::optional<UnionTagValidateHelperDescriptor> unionTagValidate;
+
+    /// @brief Optional union-tag mask helper binding.
+    std::optional<UnionTagMaskBindingDescriptor> unionTagMask;
+
+    /// @brief Scalar helper bindings.
+    std::vector<ScalarBindingDescriptor> scalarBindings;
+
+    /// @brief Array-prefix helper bindings.
+    std::vector<ArrayPrefixBindingDescriptor> arrayPrefixBindings;
+
+    /// @brief Array-validation helper bindings.
+    std::vector<ArrayValidateBindingDescriptor> arrayValidateBindings;
+
+    /// @brief Delimiter-validation helper bindings.
+    std::vector<DelimiterValidateBindingDescriptor> delimiterValidateBindings;
 };
 
-SectionHelperBindingPlan
-buildSectionHelperBindingPlan(const SemanticSection &section,
-                              const LoweredSectionFacts *sectionFacts,
-                              HelperBindingDirection direction);
+/// @brief Builds helper-binding plan for a section and direction.
+/// @param[in] section Semantic section.
+/// @param[in] sectionFacts Lowered section metadata.
+/// @param[in] direction Serialize/deserialize direction.
+/// @return Section helper-binding plan.
+SectionHelperBindingPlan buildSectionHelperBindingPlan(const SemanticSection&     section,
+                                                       const LoweredSectionFacts* sectionFacts,
+                                                       HelperBindingDirection     direction);
 
-} // namespace llvmdsdl
+}  // namespace llvmdsdl
 
-#endif // LLVMDSDL_CODEGEN_SECTION_HELPER_BINDING_PLAN_H
+#endif  // LLVMDSDL_CODEGEN_SECTION_HELPER_BINDING_PLAN_H

@@ -1,3 +1,9 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Abstract syntax tree declarations representing parsed DSDL definitions.
+///
+//===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_FRONTEND_AST_H
 #define LLVMDSDL_FRONTEND_AST_H
 
@@ -12,185 +18,400 @@
 #include <variant>
 #include <vector>
 
-namespace llvmdsdl {
+namespace llvmdsdl
+{
 
-enum class CastMode {
-  Saturated,
-  Truncated,
+/// @file
+/// @brief Frontend abstract syntax tree types for parsed DSDL definitions.
+
+/// @brief Cast behavior requested by scalar type expressions.
+enum class CastMode
+{
+
+    /// @brief Saturating cast semantics.
+    Saturated,
+
+    /// @brief Truncating cast semantics.
+    Truncated,
 };
 
-enum class PrimitiveKind {
-  Bool,
-  Byte,
-  Utf8,
-  UnsignedInt,
-  SignedInt,
-  Float,
+/// @brief Primitive scalar families supported by DSDL syntax.
+enum class PrimitiveKind
+{
+
+    /// @brief Boolean primitive.
+    Bool,
+
+    /// @brief Byte primitive.
+    Byte,
+
+    /// @brief UTF-8 code unit primitive.
+    Utf8,
+
+    /// @brief Unsigned integer primitive family.
+    UnsignedInt,
+
+    /// @brief Signed integer primitive family.
+    SignedInt,
+
+    /// @brief Floating-point primitive family.
+    Float,
 };
 
-enum class ArrayKind {
-  None,
-  Fixed,
-  VariableInclusive,
-  VariableExclusive,
+/// @brief Array modifier attached to a scalar type expression.
+enum class ArrayKind
+{
+
+    /// @brief Scalar (non-array) type.
+    None,
+
+    /// @brief Fixed-size array (`[N]`).
+    Fixed,
+
+    /// @brief Variable-size inclusive array (`[<=N]`).
+    VariableInclusive,
+
+    /// @brief Variable-size exclusive array (`[<N]`).
+    VariableExclusive,
 };
 
 struct TypeExprAST;
 struct ExprAST;
 
-struct PrimitiveTypeExprAST {
-  PrimitiveKind kind{PrimitiveKind::Bool};
-  CastMode castMode{CastMode::Saturated};
-  std::uint32_t bitLength{1};
+/// @brief Primitive scalar type expression.
+struct PrimitiveTypeExprAST
+{
+    /// @brief Primitive scalar family.
+    PrimitiveKind kind{PrimitiveKind::Bool};
+
+    /// @brief Requested cast mode.
+    CastMode castMode{CastMode::Saturated};
+
+    /// @brief Scalar bit length.
+    std::uint32_t bitLength{1};
 };
 
-struct VoidTypeExprAST {
-  std::uint32_t bitLength{1};
+/// @brief Explicit padding type expression (`voidN`).
+struct VoidTypeExprAST
+{
+    /// @brief Padding width in bits.
+    std::uint32_t bitLength{1};
 };
 
-struct VersionedTypeExprAST {
-  std::vector<std::string> nameComponents;
-  std::uint32_t major{0};
-  std::uint32_t minor{0};
+/// @brief Versioned reference to another DSDL type.
+struct VersionedTypeExprAST
+{
+    /// @brief Qualified name components.
+    std::vector<std::string> nameComponents;
+
+    /// @brief Major version.
+    std::uint32_t major{0};
+
+    /// @brief Minor version.
+    std::uint32_t minor{0};
 };
 
-struct TypeExprAST {
-  SourceLocation location;
-  std::variant<PrimitiveTypeExprAST, VoidTypeExprAST, VersionedTypeExprAST>
-      scalar;
-  ArrayKind arrayKind{ArrayKind::None};
-  std::shared_ptr<ExprAST> arrayCapacity;
+/// @brief Parsed type expression.
+struct TypeExprAST
+{
+    /// @brief Source location for the expression.
+    SourceLocation location;
 
-  [[nodiscard]] bool isVoid() const;
-  [[nodiscard]] std::string str() const;
+    /// @brief Scalar variant payload.
+    std::variant<PrimitiveTypeExprAST, VoidTypeExprAST, VersionedTypeExprAST> scalar;
+
+    /// @brief Array modifier.
+    ArrayKind arrayKind{ArrayKind::None};
+
+    /// @brief Optional array capacity expression.
+    std::shared_ptr<ExprAST> arrayCapacity;
+
+    /// @brief Returns true when this type is a void/padding expression.
+    /// @return True for @ref VoidTypeExprAST scalar variant.
+    [[nodiscard]] bool isVoid() const;
+
+    /// @brief Returns a normalized textual representation.
+    /// @return Human-readable type expression text.
+    [[nodiscard]] std::string str() const;
 };
 
-enum class UnaryOp {
-  Plus,
-  Minus,
-  LogicalNot,
+/// @brief Unary operators in constant expressions.
+enum class UnaryOp
+{
+
+    /// @brief Unary `+`.
+    Plus,
+
+    /// @brief Unary `-`.
+    Minus,
+
+    /// @brief Logical negation `!`.
+    LogicalNot,
 };
 
-enum class BinaryOp {
-  Attribute,
-  Pow,
-  Mul,
-  Div,
-  Mod,
-  Add,
-  Sub,
-  BitOr,
-  BitXor,
-  BitAnd,
-  Eq,
-  Ne,
-  Le,
-  Ge,
-  Lt,
-  Gt,
-  LogicalOr,
-  LogicalAnd,
+/// @brief Binary operators in constant expressions.
+enum class BinaryOp
+{
+
+    /// @brief Attribute access operator (`.`).
+    Attribute,
+
+    /// @brief Exponentiation (`**`).
+    Pow,
+
+    /// @brief Multiplication (`*`).
+    Mul,
+
+    /// @brief Division (`/`).
+    Div,
+
+    /// @brief Modulus (`%`).
+    Mod,
+
+    /// @brief Addition (`+`).
+    Add,
+
+    /// @brief Subtraction (`-`).
+    Sub,
+
+    /// @brief Bitwise OR (`|`).
+    BitOr,
+
+    /// @brief Bitwise XOR (`^`).
+    BitXor,
+
+    /// @brief Bitwise AND (`&`).
+    BitAnd,
+
+    /// @brief Equality (`==`).
+    Eq,
+
+    /// @brief Inequality (`!=`).
+    Ne,
+
+    /// @brief Less-than-or-equal (`<=`).
+    Le,
+
+    /// @brief Greater-than-or-equal (`>=`).
+    Ge,
+
+    /// @brief Less-than (`<`).
+    Lt,
+
+    /// @brief Greater-than (`>`).
+    Gt,
+
+    /// @brief Logical OR (`||`).
+    LogicalOr,
+
+    /// @brief Logical AND (`&&`).
+    LogicalAnd,
 };
 
-struct ExprAST {
-  struct Identifier {
-    std::string name;
-  };
+/// @brief Parsed constant-expression node.
+struct ExprAST
+{
+    /// @brief Identifier expression payload.
+    struct Identifier
+    {
+        /// @brief Symbol name.
+        std::string name;
+    };
 
-  struct Unary {
-    UnaryOp op;
-    std::shared_ptr<ExprAST> operand;
-  };
+    /// @brief Unary expression payload.
+    struct Unary
+    {
+        /// @brief Unary operator.
+        UnaryOp op;
 
-  struct Binary {
-    BinaryOp op;
-    std::shared_ptr<ExprAST> lhs;
-    std::shared_ptr<ExprAST> rhs;
-  };
+        /// @brief Operand expression.
+        std::shared_ptr<ExprAST> operand;
+    };
 
-  struct SetLiteral {
-    std::vector<std::shared_ptr<ExprAST>> elements;
-  };
+    /// @brief Binary expression payload.
+    struct Binary
+    {
+        /// @brief Binary operator.
+        BinaryOp op;
 
-  struct TypeLiteral {
+        /// @brief Left-hand operand.
+        std::shared_ptr<ExprAST> lhs;
+
+        /// @brief Right-hand operand.
+        std::shared_ptr<ExprAST> rhs;
+    };
+
+    /// @brief Set literal payload.
+    struct SetLiteral
+    {
+        /// @brief Set elements.
+        std::vector<std::shared_ptr<ExprAST>> elements;
+    };
+
+    /// @brief Type literal payload.
+    struct TypeLiteral
+    {
+        /// @brief Embedded type expression.
+        TypeExprAST type;
+    };
+
+    /// @brief Source location for this expression node.
+    SourceLocation location;
+
+    /// @brief Expression payload variant.
+    std::variant<bool, Rational, std::string, Identifier, Unary, Binary, SetLiteral, TypeLiteral> value;
+
+    /// @brief Returns a normalized textual representation.
+    /// @return Human-readable expression text.
+    [[nodiscard]] std::string str() const;
+};
+
+/// @brief Supported `@` directives.
+enum class DirectiveKind
+{
+
+    /// @brief `@union`.
+    Union,
+
+    /// @brief `@extent`.
+    Extent,
+
+    /// @brief `@sealed`.
+    Sealed,
+
+    /// @brief `@deprecated`.
+    Deprecated,
+
+    /// @brief `@assert`.
+    Assert,
+
+    /// @brief `@print`.
+    Print,
+
+    /// @brief Unrecognized directive.
+    Unknown,
+};
+
+/// @brief Constant declaration statement.
+struct ConstantDeclAST
+{
+    /// @brief Statement source location.
+    SourceLocation location;
+
+    /// @brief Declared type expression.
     TypeExprAST type;
-  };
 
-  SourceLocation location;
-  std::variant<bool, Rational, std::string, Identifier, Unary, Binary,
-               SetLiteral, TypeLiteral>
-      value;
+    /// @brief Constant symbol name.
+    std::string name;
 
-  [[nodiscard]] std::string str() const;
+    /// @brief Value expression.
+    std::shared_ptr<ExprAST> value;
 };
 
-enum class DirectiveKind {
-  Union,
-  Extent,
-  Sealed,
-  Deprecated,
-  Assert,
-  Print,
-  Unknown,
+/// @brief Field declaration statement.
+struct FieldDeclAST
+{
+    /// @brief Statement source location.
+    SourceLocation location;
+
+    /// @brief Field type expression.
+    TypeExprAST type;
+
+    /// @brief Field name.
+    std::string name;
+
+    /// @brief True when the field represents padding.
+    bool isPadding{false};
 };
 
-struct ConstantDeclAST {
-  SourceLocation location;
-  TypeExprAST type;
-  std::string name;
-  std::shared_ptr<ExprAST> value;
+/// @brief Directive statement.
+struct DirectiveAST
+{
+    /// @brief Statement source location.
+    SourceLocation location;
+
+    /// @brief Parsed directive kind.
+    DirectiveKind kind{DirectiveKind::Unknown};
+
+    /// @brief Raw directive spelling (without `@`).
+    std::string rawName;
+
+    /// @brief Optional directive expression payload.
+    std::shared_ptr<ExprAST> expression;
 };
 
-struct FieldDeclAST {
-  SourceLocation location;
-  TypeExprAST type;
-  std::string name;
-  bool isPadding{false};
+/// @brief Marker separating service request and response sections.
+struct ServiceResponseMarkerAST
+{
+    /// @brief Marker source location.
+    SourceLocation location;
 };
 
-struct DirectiveAST {
-  SourceLocation location;
-  DirectiveKind kind{DirectiveKind::Unknown};
-  std::string rawName;
-  std::shared_ptr<ExprAST> expression;
+/// @brief Union of all supported top-level statements.
+using StatementAST = std::variant<ConstantDeclAST, FieldDeclAST, DirectiveAST, ServiceResponseMarkerAST>;
+
+/// @brief Top-level parsed definition.
+struct DefinitionAST
+{
+    /// @brief Definition source location.
+    SourceLocation location;
+
+    /// @brief Statements in source order.
+    std::vector<StatementAST> statements;
+
+    /// @brief Returns true when the definition is a service.
+    /// @return True when a service response marker is present.
+    [[nodiscard]] bool isService() const;
 };
 
-struct ServiceResponseMarkerAST {
-  SourceLocation location;
+/// @brief Definition discovered on disk with resolved metadata.
+struct DiscoveredDefinition
+{
+    /// @brief Source file path.
+    std::string filePath;
+
+    /// @brief Owning root namespace directory.
+    std::string rootNamespacePath;
+
+    /// @brief Fully qualified type name.
+    std::string fullName;
+
+    /// @brief Short type name.
+    std::string shortName;
+
+    /// @brief Namespace path components.
+    std::vector<std::string> namespaceComponents;
+
+    /// @brief Major version.
+    std::uint32_t majorVersion{0};
+
+    /// @brief Minor version.
+    std::uint32_t minorVersion{0};
+
+    /// @brief Optional fixed port-id.
+    std::optional<std::uint32_t> fixedPortId;
+
+    /// @brief Full source text.
+    std::string text;
 };
 
-using StatementAST =
-    std::variant<ConstantDeclAST, FieldDeclAST, DirectiveAST,
-                 ServiceResponseMarkerAST>;
+/// @brief Parsed definition bundle: discovery metadata plus AST.
+struct ParsedDefinition
+{
+    /// @brief Discovery metadata.
+    DiscoveredDefinition info;
 
-struct DefinitionAST {
-  SourceLocation location;
-  std::vector<StatementAST> statements;
-
-  [[nodiscard]] bool isService() const;
+    /// @brief Parsed AST.
+    DefinitionAST ast;
 };
 
-struct DiscoveredDefinition {
-  std::string filePath;
-  std::string rootNamespacePath;
-  std::string fullName;
-  std::string shortName;
-  std::vector<std::string> namespaceComponents;
-  std::uint32_t majorVersion{0};
-  std::uint32_t minorVersion{0};
-  std::optional<std::uint32_t> fixedPortId;
-  std::string text;
+/// @brief Collection of parsed definitions.
+struct ASTModule
+{
+    /// @brief Parsed definitions in module scope.
+    std::vector<ParsedDefinition> definitions;
 };
 
-struct ParsedDefinition {
-  DiscoveredDefinition info;
-  DefinitionAST ast;
-};
+}  // namespace llvmdsdl
 
-struct ASTModule {
-  std::vector<ParsedDefinition> definitions;
-};
-
-} // namespace llvmdsdl
-
-#endif // LLVMDSDL_FRONTEND_AST_H
+#endif  // LLVMDSDL_FRONTEND_AST_H

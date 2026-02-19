@@ -1,3 +1,9 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Generated-type include declarations for the DSDL MLIR dialect.
+///
+//===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_IR_DSDLTYPES_H
 #define LLVMDSDL_IR_DSDLTYPES_H
 
@@ -5,7 +11,10 @@
 
 #include "mlir/IR/Types.h"
 
+/// @file
+/// @brief Generated DSDL type declarations.
+
 #define GET_TYPEDEF_CLASSES
 #include "llvmdsdl/IR/DSDLTypes.h.inc"
 
-#endif // LLVMDSDL_IR_DSDLTYPES_H
+#endif  // LLVMDSDL_IR_DSDLTYPES_H

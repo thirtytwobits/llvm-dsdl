@@ -32,7 +32,7 @@ It currently provides:
   - A generated package/module layout (`package.json`, `index.ts`, namespace `*.ts` files).
   - Per-type TypeScript interface/type declarations, DSDL metadata constants, and generated runtime SerDes entrypoints.
   - A generated TypeScript runtime helper module (`dsdl_runtime.ts`) for bit-level read/write primitives.
-  - MLIR schema/plan metadata validation before emission (experimental non-C-like target).
+  - MLIR schema/plan metadata validation before emission.
 - Strict-mode-first semantics (`--strict` is default).
 
 ## Ambitions
@@ -175,15 +175,23 @@ TypeScript non-C-like target workflow (runs tests labeled `ts`):
 cmake --workflow --preset ts
 ```
 
-This lane runs `llvmdsdl-uavcan-ts-generation`,
-`llvmdsdl-uavcan-ts-determinism`, and, when `tsc` is available in `PATH`, also
-runs `llvmdsdl-uavcan-ts-typecheck` (`tsc --noEmit` on generated output) and
-`llvmdsdl-uavcan-ts-consumer-smoke` (consumer import/typecheck smoke module).
-It also runs `llvmdsdl-uavcan-ts-index-contract` to validate root `index.ts`
-alias inventory/uniqueness contract shape, plus
-`llvmdsdl-fixtures-c-ts-runtime-parity` when `tsc`, `node`, and a C compiler are
-available, and `llvmdsdl-ts-runtime-fixed-array-smoke` when `tsc` + `node` are
-available.
+This lane runs the full TypeScript gate set, including strict and compat
+generation/runtime checks, full-`uavcan` generation/determinism/typecheck/
+consumer/index-contract/runtime-execution gates, fixture/runtime semantic-family
+smoke/parity lanes, and invariant-based C<->TS parity lanes (signed-narrow and
+optimized variants included).
+
+TypeScript completion workflow preset (same `ts` label, named for CI/demo use):
+
+```bash
+cmake --workflow --preset ts-complete
+```
+
+Homebrew LLVM variant:
+
+```bash
+cmake --workflow --preset ts-complete-homebrew
+```
 
 Demo artifact workflow (creates `build/<preset>/demo-2026-02-16/` with
 generated outputs, full-`uavcan` MLIR + lowered MLIR snapshots, selected test
@@ -296,6 +304,42 @@ Run only TypeScript fixed-array runtime smoke:
 
 ```bash
 ctest --test-dir build -R llvmdsdl-ts-runtime-fixed-array-smoke --output-on-failure
+```
+
+Run only TypeScript variable-array runtime smoke:
+
+```bash
+ctest --test-dir build -R llvmdsdl-ts-runtime-variable-array-smoke --output-on-failure
+```
+
+Run only fixture C<->TypeScript variable-array parity smoke:
+
+```bash
+ctest --test-dir build -R llvmdsdl-fixtures-c-ts-variable-array-parity --output-on-failure
+```
+
+Run only TypeScript bigint runtime smoke:
+
+```bash
+ctest --test-dir build -R llvmdsdl-ts-runtime-bigint-smoke --output-on-failure
+```
+
+Run only fixture C<->TypeScript bigint parity smoke:
+
+```bash
+ctest --test-dir build -R llvmdsdl-fixtures-c-ts-bigint-parity --output-on-failure
+```
+
+Run only TypeScript union runtime smoke:
+
+```bash
+ctest --test-dir build -R llvmdsdl-ts-runtime-union-smoke --output-on-failure
+```
+
+Run only fixture C<->TypeScript union parity smoke:
+
+```bash
+ctest --test-dir build -R llvmdsdl-fixtures-c-ts-union-parity --output-on-failure
 ```
 
 Run the full Go differential ring workflow:
@@ -497,7 +541,11 @@ Notes:
 
 Optional:
 
-- `--compat-mode`: relax strictness for compatibility behavior.
+- `--compat-mode`: compatibility mode for legacy/non-conformant DSDL trees.
+  "Compatibility with what?": historical OpenCyphal-style permissive behavior
+  (for example malformed array-capacity bounds that older trees may rely on).
+  Strict mode is spec-first: Cyphal DSDL semantics as implemented by this
+  compiler.
 - `--optimize-lowered-serdes`: enable optional semantics-preserving MLIR
   optimization on lowered SerDes IR before backend emission.
 - No additional C mode flags are required: `dsdlc c` always emits headers and
@@ -602,7 +650,7 @@ Current behavior:
 - `deserialize(&mut self, &[u8]) -> Result<usize, i8>` (ergonomic path), and
 - `deserialize_with_consumed(&mut self, &[u8]) -> (i8, usize)` (C-like parity path that reports consumed bytes on error too).
 
-### TypeScript module generation (experimental non-C-like target)
+### TypeScript module generation (non-C-like target)
 
 ```bash
 ./build/tools/dsdlc/dsdlc ts \
@@ -614,33 +662,35 @@ Current behavior:
 
 Current behavior:
 
-- Emits `package.json`, `index.ts`, and one namespace-mirrored `*.ts` type file
-  per DSDL definition.
+- Emits `package.json`, `index.ts`, one namespace-mirrored `*.ts` file per DSDL
+  definition, and shared runtime module `dsdl_runtime.ts`.
 - `index.ts` exports each generated definition module under a collision-safe
   namespace alias.
-- Generates interface/type declarations and DSDL metadata constants
-  (`DSDL_FULL_NAME`, version major/minor).
-- Emits generated runtime support module `dsdl_runtime.ts` and per-type
-  `serialize*` / `deserialize*` helpers for currently supported lowered section
-  families.
-- Validates lowered MLIR schema coverage before emission, aligned with the
-  existing backends.
-- Integration coverage includes generated TypeScript compile validation via
-  `tsc --noEmit` when `tsc` is available.
-- Integration coverage includes deterministic-output validation across repeated
-  `dsdlc ts` runs.
-- Integration coverage includes a consumer smoke compile that imports generated
-  namespace aliases from `index.ts`.
-- Integration coverage includes a root `index.ts` export-contract check
-  (alias uniqueness and one-to-one module inventory coverage).
-- Integration coverage includes fixture-level C<->TypeScript runtime SerDes
-  parity smoke (`llvmdsdl-fixtures-c-ts-runtime-parity`) for a representative
-  fixed-size scalar type path.
-- Integration coverage includes a synthetic TypeScript runtime fixed-array smoke
-  (`llvmdsdl-ts-runtime-fixed-array-smoke`) that validates runtime-backed
-  serialize/deserialize for a representative fixed-length scalar array type.
-- Runtime SerDes support is intentionally incremental; unsupported section
-  families emit explicit TypeScript runtime stubs that throw.
+- Generates interface/type declarations, DSDL metadata constants
+  (`DSDL_FULL_NAME`, version major/minor), and runtime-backed
+  `serialize*`/`deserialize*` helpers.
+- Uses lowered-contract validation (`collectLoweredFactsFromMlir`) and shared
+  lowered render-order planning for runtime section emission.
+- Hard-fails generation if required lowered runtime planning metadata is
+  missing/inconsistent.
+- Integration gates verify no fallback runtime stub signatures in generated
+  fixture and full-`uavcan` TypeScript output.
+- Integration coverage includes:
+  - full-`uavcan` generation/determinism/typecheck/consumer-smoke/index-contract/runtime-execution gates
+  - runtime smoke lanes across scalar/array/union/composite/delimited/service/padding/truncated-decode families
+  - C<->TS parity lanes including invariant-based random+direct checks, signed-narrow cast-mode checks, and optimized-lowering variants
+  - compat-mode lanes:
+    - `llvmdsdl-ts-compat-generation`
+    - `llvmdsdl-ts-compat-runtime`
+    - `llvmdsdl-fixtures-c-ts-compat-parity`
+
+Strict vs compat usage:
+
+- `--strict` (default): spec-first mode for current Cyphal DSDL semantics.
+- `--compat-mode`: migration mode for legacy/non-conformant trees that relied
+  on permissive behavior. Expected diagnostics are deterministic compat warnings
+  (for example array-capacity clamp/default behavior), and migration target is
+  returning to `--strict`.
 
 ## Reproducible Full `uavcan` Generation Check
 
@@ -668,6 +718,8 @@ Current milestone supports generating all types under:
 with strict mode enabled and no `dsdl_runtime_stub_*` references in generated
 headers, strict C++23 generation (`std` + `pmr` profiles), plus strict Rust
 crate generation in `std`, `no-std-alloc`, and runtime-specialized (`fast`)
-modes, plus experimental TypeScript generation with compile (`tsc --noEmit`),
-determinism, consumer-smoke, index-contract, and fixture C<->TypeScript runtime
-parity-smoke validation gates, plus a TypeScript runtime fixed-array smoke gate.
+modes, plus TypeScript generation with compile (`tsc --noEmit`), determinism,
+consumer-smoke, index-contract, runtime execution, strict/compat generation
+gates, and fixture/runtime parity validation gates (including compat parity,
+signed-narrow parity, optimized parity, variable-array/bigint/union/composite/
+service/delimited families).

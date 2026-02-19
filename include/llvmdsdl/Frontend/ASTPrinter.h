@@ -1,3 +1,9 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// AST pretty-printing declarations for debugging and diagnostics.
+///
+//===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_FRONTEND_AST_PRINTER_H
 #define LLVMDSDL_FRONTEND_AST_PRINTER_H
 
@@ -5,10 +11,17 @@
 
 #include <string>
 
-namespace llvmdsdl {
+namespace llvmdsdl
+{
 
-std::string printAST(const ASTModule &module);
+/// @file
+/// @brief AST pretty-printer entry points.
 
-} // namespace llvmdsdl
+/// @brief Produces a human-readable representation of an AST module.
+/// @param[in] module Parsed AST module.
+/// @return Pretty-printed AST text.
+std::string printAST(const ASTModule& module);
 
-#endif // LLVMDSDL_FRONTEND_AST_PRINTER_H
+}  // namespace llvmdsdl
+
+#endif  // LLVMDSDL_FRONTEND_AST_PRINTER_H

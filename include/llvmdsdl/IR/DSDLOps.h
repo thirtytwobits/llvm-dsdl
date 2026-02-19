@@ -1,3 +1,9 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Generated-operation include declarations for the DSDL MLIR dialect.
+///
+//===----------------------------------------------------------------------===//
 #ifndef LLVMDSDL_IR_DSDLOPS_H
 #define LLVMDSDL_IR_DSDLOPS_H
 
@@ -10,7 +16,10 @@
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
+/// @file
+/// @brief Generated DSDL operation class declarations.
+
 #define GET_OP_CLASSES
 #include "llvmdsdl/IR/DSDLOps.h.inc"
 
-#endif // LLVMDSDL_IR_DSDLOPS_H
+#endif  // LLVMDSDL_IR_DSDLOPS_H

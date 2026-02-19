@@ -1,3 +1,12 @@
+#===----------------------------------------------------------------------===#
+##
+## @file
+## Build rules for the frontend parsing and discovery library.
+##
+## The frontend target provides lexing, parsing, discovery, and AST rendering capabilities to later pipeline stages.
+##
+#===----------------------------------------------------------------------===#
+
 add_library(llvmdsdlFrontend
   Discovery.cpp
   Lexer.cpp

@@ -11,6 +11,7 @@ add_executable(llvmdsdl-unit-tests
   SectionHelperBindingPlanTests.cpp
   SerDesStatementPlanTests.cpp
   HelperBindingRenderTests.cpp
+  TsLoweredPlanTests.cpp
   HelperSymbolResolverTests.cpp
   WireLayoutFactsTests.cpp
   TypeStorageTests.cpp

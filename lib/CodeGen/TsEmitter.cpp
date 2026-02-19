@@ -1,7 +1,18 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Implements TypeScript backend code emission from lowered DSDL modules.
+///
+/// This file emits TypeScript models, codec entry points, and runtime wiring from lowering contracts.
+///
+//===----------------------------------------------------------------------===//
+
 #include "llvmdsdl/CodeGen/TsEmitter.h"
 
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/TsLoweredPlan.h"
 
+#include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -15,974 +26,2154 @@
 #include <unordered_map>
 #include <vector>
 
-namespace llvmdsdl {
-namespace {
+namespace llvmdsdl
+{
+namespace
+{
 
-bool isTsKeyword(const std::string &name) {
-  static const std::set<std::string> kKeywords = {
-      "break", "case",     "catch",   "class",    "const", "continue",
-      "debugger", "default", "delete", "do",       "else",  "enum",
-      "export", "extends",  "false",   "finally",  "for",   "function",
-      "if",     "import",   "in",      "instanceof", "new",   "null",
-      "return", "super",    "switch",  "this",     "throw", "true",
-      "try",    "typeof",   "var",     "void",     "while", "with",
-      "as",     "implements", "interface", "let",   "package", "private",
-      "protected", "public", "static",  "yield",    "any",   "boolean",
-      "number", "string",   "symbol",  "type",     "from",  "of"};
-  return kKeywords.contains(name);
+bool isTsKeyword(const std::string& name)
+{
+    static const std::set<std::string> kKeywords =
+        {"break", "case",       "catch",     "class",      "const",   "continue", "debugger",  "default", "delete",
+         "do",    "else",       "enum",      "export",     "extends", "false",    "finally",   "for",     "function",
+         "if",    "import",     "in",        "instanceof", "new",     "null",     "return",    "super",   "switch",
+         "this",  "throw",      "true",      "try",        "typeof",  "var",      "void",      "while",   "with",
+         "as",    "implements", "interface", "let",        "package", "private",  "protected", "public",  "static",
+         "yield", "any",        "boolean",   "number",     "string",  "symbol",   "type",      "from",    "of"};
+    return kKeywords.contains(name);
 }
 
-std::string sanitizeTsIdent(std::string name) {
-  if (name.empty()) {
-    return "_";
-  }
-  for (char &c : name) {
-    if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_')) {
-      c = '_';
+std::string sanitizeTsIdent(std::string name)
+{
+    if (name.empty())
+    {
+        return "_";
     }
-  }
-  if (std::isdigit(static_cast<unsigned char>(name.front()))) {
-    name.insert(name.begin(), '_');
-  }
-  if (isTsKeyword(name)) {
-    name += "_";
-  }
-  return name;
+    for (char& c : name)
+    {
+        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
+        {
+            c = '_';
+        }
+    }
+    if (std::isdigit(static_cast<unsigned char>(name.front())))
+    {
+        name.insert(name.begin(), '_');
+    }
+    if (isTsKeyword(name))
+    {
+        name += "_";
+    }
+    return name;
 }
 
-std::string toSnakeCase(const std::string &in) {
-  std::string out;
-  out.reserve(in.size() + 8);
-
-  bool prevUnderscore = false;
-  for (std::size_t i = 0; i < in.size(); ++i) {
-    const char c = in[i];
-    const char prev = (i > 0) ? in[i - 1] : '\0';
-    const char next = (i + 1 < in.size()) ? in[i + 1] : '\0';
-    if (!std::isalnum(static_cast<unsigned char>(c))) {
-      if (!out.empty() && !prevUnderscore) {
-        out.push_back('_');
-        prevUnderscore = true;
-      }
-      continue;
-    }
-
-    if (std::isupper(static_cast<unsigned char>(c))) {
-      const bool boundary =
-          std::islower(static_cast<unsigned char>(prev)) ||
-          (std::isupper(static_cast<unsigned char>(prev)) &&
-           std::islower(static_cast<unsigned char>(next)));
-      if (!out.empty() && !prevUnderscore && boundary) {
-        out.push_back('_');
-      }
-      out.push_back(
-          static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-      prevUnderscore = false;
-    } else {
-      out.push_back(c);
-      prevUnderscore = (c == '_');
-    }
-  }
-
-  if (out.empty()) {
-    out = "_";
-  }
-  if (std::isdigit(static_cast<unsigned char>(out.front()))) {
-    out.insert(out.begin(), '_');
-  }
-  return sanitizeTsIdent(out);
-}
-
-std::string toPascalCase(const std::string &in) {
-  std::string out;
-  out.reserve(in.size() + 8);
-
-  bool upperNext = true;
-  for (char c : in) {
-    if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_')) {
-      upperNext = true;
-      continue;
-    }
-    if (c == '_') {
-      upperNext = true;
-      continue;
-    }
-    if (upperNext) {
-      out.push_back(
-          static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
-      upperNext = false;
-    } else {
-      out.push_back(c);
-    }
-  }
-
-  if (out.empty()) {
-    out = "X";
-  }
-  return sanitizeTsIdent(out);
-}
-
-std::string toUpperSnake(const std::string &in) {
-  auto out = toSnakeCase(in);
-  for (char &c : out) {
-    c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-  }
-  return out;
-}
-
-std::string tsConstValue(const Value &value) {
-  if (const auto *b = std::get_if<bool>(&value.data)) {
-    return *b ? "true" : "false";
-  }
-  if (const auto *r = std::get_if<Rational>(&value.data)) {
-    if (r->isInteger()) {
-      return std::to_string(r->asInteger().value());
-    }
-    std::ostringstream out;
-    out << "(" << r->numerator() << " / " << r->denominator() << ")";
-    return out.str();
-  }
-  if (const auto *s = std::get_if<std::string>(&value.data)) {
-    std::string escaped;
-    escaped.reserve(s->size() + 2);
-    escaped.push_back('"');
-    for (char c : *s) {
-      if (c == '\\' || c == '"') {
-        escaped.push_back('\\');
-      }
-      escaped.push_back(c);
-    }
-    escaped.push_back('"');
-    return escaped;
-  }
-  return value.str();
-}
-
-llvm::Error writeFile(const std::filesystem::path &p, llvm::StringRef content) {
-  std::error_code ec;
-  llvm::raw_fd_ostream os(p.string(), ec, llvm::sys::fs::OF_Text);
-  if (ec) {
-    return llvm::createStringError(ec, "failed to open %s", p.string().c_str());
-  }
-  os << content;
-  os.close();
-  return llvm::Error::success();
-}
-
-void emitLine(std::ostringstream &out, const int indent, const std::string &line) {
-  out << std::string(static_cast<std::size_t>(indent) * 2U, ' ') << line << '\n';
-}
-
-class EmitterContext final {
-public:
-  explicit EmitterContext(const SemanticModule &semantic) {
-    for (const auto &def : semantic.definitions) {
-      byKey_.emplace(
-          loweredTypeKey(def.info.fullName, def.info.majorVersion,
-                         def.info.minorVersion),
-          &def);
-    }
-  }
-
-  const SemanticDefinition *find(const SemanticTypeRef &ref) const {
-    const auto it =
-        byKey_.find(loweredTypeKey(ref.fullName, ref.majorVersion, ref.minorVersion));
-    if (it == byKey_.end()) {
-      return nullptr;
-    }
-    return it->second;
-  }
-
-  std::string namespacePath(const DiscoveredDefinition &info) const {
+std::string toSnakeCase(const std::string& in)
+{
     std::string out;
-    for (const auto &component : info.namespaceComponents) {
-      if (!out.empty()) {
-        out += "/";
-      }
-      out += toSnakeCase(component);
+    out.reserve(in.size() + 8);
+
+    bool prevUnderscore = false;
+    for (std::size_t i = 0; i < in.size(); ++i)
+    {
+        const char c    = in[i];
+        const char prev = (i > 0) ? in[i - 1] : '\0';
+        const char next = (i + 1 < in.size()) ? in[i + 1] : '\0';
+        if (!std::isalnum(static_cast<unsigned char>(c)))
+        {
+            if (!out.empty() && !prevUnderscore)
+            {
+                out.push_back('_');
+                prevUnderscore = true;
+            }
+            continue;
+        }
+
+        if (std::isupper(static_cast<unsigned char>(c)))
+        {
+            const bool boundary =
+                std::islower(static_cast<unsigned char>(prev)) ||
+                (std::isupper(static_cast<unsigned char>(prev)) && std::islower(static_cast<unsigned char>(next)));
+            if (!out.empty() && !prevUnderscore && boundary)
+            {
+                out.push_back('_');
+            }
+            out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+            prevUnderscore = false;
+        }
+        else
+        {
+            out.push_back(c);
+            prevUnderscore = (c == '_');
+        }
+    }
+
+    if (out.empty())
+    {
+        out = "_";
+    }
+    if (std::isdigit(static_cast<unsigned char>(out.front())))
+    {
+        out.insert(out.begin(), '_');
+    }
+    return sanitizeTsIdent(out);
+}
+
+std::string toPascalCase(const std::string& in)
+{
+    std::string out;
+    out.reserve(in.size() + 8);
+
+    bool upperNext = true;
+    for (char c : in)
+    {
+        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
+        {
+            upperNext = true;
+            continue;
+        }
+        if (c == '_')
+        {
+            upperNext = true;
+            continue;
+        }
+        if (upperNext)
+        {
+            out.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+            upperNext = false;
+        }
+        else
+        {
+            out.push_back(c);
+        }
+    }
+
+    if (out.empty())
+    {
+        out = "X";
+    }
+    return sanitizeTsIdent(out);
+}
+
+std::string toUpperSnake(const std::string& in)
+{
+    auto out = toSnakeCase(in);
+    for (char& c : out)
+    {
+        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     }
     return out;
-  }
+}
 
-  std::string typeName(const DiscoveredDefinition &info) const {
-    return toPascalCase(info.shortName) + "_" +
-           std::to_string(info.majorVersion) + "_" +
-           std::to_string(info.minorVersion);
-  }
+std::string tsConstValue(const Value& value)
+{
+    if (const auto* b = std::get_if<bool>(&value.data))
+    {
+        return *b ? "true" : "false";
+    }
+    if (const auto* r = std::get_if<Rational>(&value.data))
+    {
+        if (r->isInteger())
+        {
+            return std::to_string(r->asInteger().value());
+        }
+        std::ostringstream out;
+        out << "(" << r->numerator() << " / " << r->denominator() << ")";
+        return out.str();
+    }
+    if (const auto* s = std::get_if<std::string>(&value.data))
+    {
+        std::string escaped;
+        escaped.reserve(s->size() + 2);
+        escaped.push_back('"');
+        for (char c : *s)
+        {
+            if (c == '\\' || c == '"')
+            {
+                escaped.push_back('\\');
+            }
+            escaped.push_back(c);
+        }
+        escaped.push_back('"');
+        return escaped;
+    }
+    return value.str();
+}
 
-  std::string typeName(const SemanticTypeRef &ref) const {
-    if (const auto *def = find(ref)) {
-      return typeName(def->info);
+llvm::Error writeFile(const std::filesystem::path& p, llvm::StringRef content)
+{
+    std::error_code      ec;
+    llvm::raw_fd_ostream os(p.string(), ec, llvm::sys::fs::OF_Text);
+    if (ec)
+    {
+        return llvm::createStringError(ec, "failed to open %s", p.string().c_str());
+    }
+    os << content;
+    os.close();
+    return llvm::Error::success();
+}
+
+void emitLine(std::ostringstream& out, const int indent, const std::string& line)
+{
+    out << std::string(static_cast<std::size_t>(indent) * 2U, ' ') << line << '\n';
+}
+
+class EmitterContext final
+{
+public:
+    explicit EmitterContext(const SemanticModule& semantic)
+    {
+        for (const auto& def : semantic.definitions)
+        {
+            byKey_.emplace(loweredTypeKey(def.info.fullName, def.info.majorVersion, def.info.minorVersion), &def);
+        }
     }
 
-    DiscoveredDefinition tmp;
-    tmp.shortName = ref.shortName;
-    tmp.majorVersion = ref.majorVersion;
-    tmp.minorVersion = ref.minorVersion;
-    return typeName(tmp);
-  }
-
-  std::string fileStem(const DiscoveredDefinition &info) const {
-    return toSnakeCase(info.shortName) + "_" +
-           std::to_string(info.majorVersion) + "_" +
-           std::to_string(info.minorVersion);
-  }
-
-  std::filesystem::path relativeFilePath(const DiscoveredDefinition &info) const {
-    std::filesystem::path rel;
-    const auto nsPath = namespacePath(info);
-    if (!nsPath.empty()) {
-      rel /= nsPath;
-    }
-    rel /= fileStem(info) + ".ts";
-    return rel;
-  }
-
-  std::filesystem::path relativeFilePath(const SemanticTypeRef &ref) const {
-    if (const auto *def = find(ref)) {
-      return relativeFilePath(def->info);
+    const SemanticDefinition* find(const SemanticTypeRef& ref) const
+    {
+        const auto it = byKey_.find(loweredTypeKey(ref.fullName, ref.majorVersion, ref.minorVersion));
+        if (it == byKey_.end())
+        {
+            return nullptr;
+        }
+        return it->second;
     }
 
-    std::filesystem::path rel;
-    for (const auto &component : ref.namespaceComponents) {
-      rel /= toSnakeCase(component);
+    std::string namespacePath(const DiscoveredDefinition& info) const
+    {
+        std::string out;
+        for (const auto& component : info.namespaceComponents)
+        {
+            if (!out.empty())
+            {
+                out += "/";
+            }
+            out += toSnakeCase(component);
+        }
+        return out;
     }
-    rel /= toSnakeCase(ref.shortName) + "_" + std::to_string(ref.majorVersion) +
-           "_" + std::to_string(ref.minorVersion) + ".ts";
-    return rel;
-  }
+
+    std::string typeName(const DiscoveredDefinition& info) const
+    {
+        return toPascalCase(info.shortName) + "_" + std::to_string(info.majorVersion) + "_" +
+               std::to_string(info.minorVersion);
+    }
+
+    std::string typeName(const SemanticTypeRef& ref) const
+    {
+        if (const auto* def = find(ref))
+        {
+            return typeName(def->info);
+        }
+
+        DiscoveredDefinition tmp;
+        tmp.shortName    = ref.shortName;
+        tmp.majorVersion = ref.majorVersion;
+        tmp.minorVersion = ref.minorVersion;
+        return typeName(tmp);
+    }
+
+    std::string fileStem(const DiscoveredDefinition& info) const
+    {
+        return toSnakeCase(info.shortName) + "_" + std::to_string(info.majorVersion) + "_" +
+               std::to_string(info.minorVersion);
+    }
+
+    std::filesystem::path relativeFilePath(const DiscoveredDefinition& info) const
+    {
+        std::filesystem::path rel;
+        const auto            nsPath = namespacePath(info);
+        if (!nsPath.empty())
+        {
+            rel /= nsPath;
+        }
+        rel /= fileStem(info) + ".ts";
+        return rel;
+    }
+
+    std::filesystem::path relativeFilePath(const SemanticTypeRef& ref) const
+    {
+        if (const auto* def = find(ref))
+        {
+            return relativeFilePath(def->info);
+        }
+
+        std::filesystem::path rel;
+        for (const auto& component : ref.namespaceComponents)
+        {
+            rel /= toSnakeCase(component);
+        }
+        rel /= toSnakeCase(ref.shortName) + "_" + std::to_string(ref.majorVersion) + "_" +
+               std::to_string(ref.minorVersion) + ".ts";
+        return rel;
+    }
 
 private:
-  std::unordered_map<std::string, const SemanticDefinition *> byKey_;
+    std::unordered_map<std::string, const SemanticDefinition*> byKey_;
 };
 
-std::string tsFieldBaseType(const SemanticFieldType &type,
-                            const EmitterContext &ctx) {
-  switch (type.scalarCategory) {
-  case SemanticScalarCategory::Bool:
-    return "boolean";
-  case SemanticScalarCategory::Utf8:
-    return "string";
-  case SemanticScalarCategory::Byte:
-  case SemanticScalarCategory::UnsignedInt:
-  case SemanticScalarCategory::SignedInt:
-  case SemanticScalarCategory::Float:
-  case SemanticScalarCategory::Void:
-    return "number";
-  case SemanticScalarCategory::Composite:
-    if (type.compositeType) {
-      return ctx.typeName(*type.compositeType);
-    }
-    return "unknown";
-  }
-  return "unknown";
-}
-
-std::string tsFieldType(const SemanticFieldType &type, const EmitterContext &ctx) {
-  const auto base = tsFieldBaseType(type, ctx);
-  if (type.arrayKind == ArrayKind::None) {
-    return base;
-  }
-  return "Array<" + base + ">";
-}
-
-std::string relativeImportPath(const std::filesystem::path &fromFile,
-                               const std::filesystem::path &toFile) {
-  const auto fromDir = fromFile.parent_path();
-  auto rel = toFile.lexically_relative(fromDir);
-  std::string importPath = rel.generic_string();
-  if (importPath.size() >= 3 && importPath.ends_with(".ts")) {
-    importPath.resize(importPath.size() - 3);
-  }
-  if (!importPath.empty() && importPath.front() != '.') {
-    importPath = "./" + importPath;
-  }
-  return importPath;
-}
-
-std::string moduleAliasFromPath(const std::string &modulePath) {
-  std::string alias;
-  alias.reserve(modulePath.size() + 8);
-  for (char c : modulePath) {
-    if (std::isalnum(static_cast<unsigned char>(c)) || c == '_') {
-      alias.push_back(
-          static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-    } else {
-      alias.push_back('_');
-    }
-  }
-  return sanitizeTsIdent(alias.empty() ? "module" : alias);
-}
-
-struct ImportSpec final {
-  std::string modulePath;
-  std::string typeName;
-};
-
-enum class TsRuntimeFieldKind {
-  Bool,
-  Unsigned,
-  Signed,
-};
-
-struct TsRuntimeFieldPlan final {
-  std::string fieldName;
-  TsRuntimeFieldKind kind{TsRuntimeFieldKind::Unsigned};
-  CastMode castMode{CastMode::Saturated};
-  std::int64_t bitLength{0};
-  std::int64_t bitOffset{0};
-  bool isArray{false};
-  std::int64_t arrayCapacity{0};
-};
-
-struct TsRuntimeSectionPlan final {
-  std::vector<TsRuntimeFieldPlan> fields;
-  std::int64_t totalBits{0};
-};
-
-std::optional<TsRuntimeSectionPlan>
-buildTsRuntimeSectionPlan(const SemanticSection &section) {
-  if (section.isUnion || !section.fixedSize) {
-    return std::nullopt;
-  }
-
-  TsRuntimeSectionPlan plan;
-  std::int64_t bitOffset = 0;
-  for (const auto &field : section.fields) {
-    const auto fieldBits = static_cast<std::int64_t>(field.resolvedType.bitLength);
-    if (fieldBits < 0) {
-      return std::nullopt;
-    }
-
-    if (field.isPadding) {
-      bitOffset += fieldBits;
-      continue;
-    }
-
-    bool isArray = false;
-    std::int64_t arrayCapacity = 1;
-    if (field.resolvedType.arrayKind == ArrayKind::None) {
-      // Scalar field (non-array).
-    } else if (field.resolvedType.arrayKind == ArrayKind::Fixed) {
-      if (field.resolvedType.arrayCapacity <= 0) {
-        return std::nullopt;
-      }
-      isArray = true;
-      arrayCapacity = field.resolvedType.arrayCapacity;
-    } else {
-      // Variable arrays are not yet covered by this runtime path.
-      return std::nullopt;
-    }
-
-    TsRuntimeFieldKind kind = TsRuntimeFieldKind::Unsigned;
-    switch (field.resolvedType.scalarCategory) {
+std::string tsFieldBaseType(const SemanticFieldType& type, const EmitterContext& ctx)
+{
+    switch (type.scalarCategory)
+    {
     case SemanticScalarCategory::Bool:
-      if (fieldBits != 1) {
-        return std::nullopt;
-      }
-      kind = TsRuntimeFieldKind::Bool;
-      break;
+        return "boolean";
     case SemanticScalarCategory::Byte:
-    case SemanticScalarCategory::UnsignedInt:
-      kind = TsRuntimeFieldKind::Unsigned;
-      break;
-    case SemanticScalarCategory::SignedInt:
-      kind = TsRuntimeFieldKind::Signed;
-      break;
     case SemanticScalarCategory::Utf8:
+        return "number";
+    case SemanticScalarCategory::UnsignedInt:
+    case SemanticScalarCategory::SignedInt:
+        if (type.bitLength > 53U)
+        {
+            return "bigint";
+        }
+        return "number";
     case SemanticScalarCategory::Float:
     case SemanticScalarCategory::Void:
+        return "number";
     case SemanticScalarCategory::Composite:
-      return std::nullopt;
+        if (type.compositeType)
+        {
+            return ctx.typeName(*type.compositeType);
+        }
+        return "unknown";
     }
-
-    if (fieldBits <= 0 || fieldBits > 32) {
-      return std::nullopt;
-    }
-
-    TsRuntimeFieldPlan fieldPlan;
-    fieldPlan.fieldName = sanitizeTsIdent(toSnakeCase(field.name));
-    fieldPlan.kind = kind;
-    fieldPlan.castMode = field.resolvedType.castMode;
-    fieldPlan.bitLength = fieldBits;
-    fieldPlan.bitOffset = bitOffset;
-    fieldPlan.isArray = isArray;
-    fieldPlan.arrayCapacity = arrayCapacity;
-    plan.fields.push_back(fieldPlan);
-
-    bitOffset += fieldBits * arrayCapacity;
-  }
-
-  plan.totalBits = bitOffset;
-  return plan;
+    return "unknown";
 }
 
-std::vector<ImportSpec>
-collectCompositeImports(const SemanticSection &section,
-                        const DiscoveredDefinition &owner,
-                        const EmitterContext &ctx) {
-  std::map<std::string, std::set<std::string>> importsByModule;
-  const auto ownerPath = ctx.relativeFilePath(owner);
-
-  for (const auto &field : section.fields) {
-    if (field.isPadding || !field.resolvedType.compositeType) {
-      continue;
+std::string tsFieldType(const SemanticFieldType& type, const EmitterContext& ctx)
+{
+    const auto base = tsFieldBaseType(type, ctx);
+    if (type.arrayKind == ArrayKind::None)
+    {
+        return base;
     }
-    const auto &ref = *field.resolvedType.compositeType;
-    const auto targetPath = ctx.relativeFilePath(ref);
-    if (targetPath == ownerPath) {
-      continue;
-    }
-    const auto modulePath = relativeImportPath(ownerPath, targetPath);
-    importsByModule[modulePath].insert(ctx.typeName(ref));
-  }
-
-  std::vector<ImportSpec> out;
-  for (const auto &[modulePath, names] : importsByModule) {
-    for (const auto &name : names) {
-      out.push_back({modulePath, name});
-    }
-  }
-  return out;
+    return "Array<" + base + ">";
 }
 
-void emitSectionConstants(std::ostringstream &out, const std::string &prefix,
-                          const SemanticSection &section) {
-  for (const auto &constant : section.constants) {
-    const auto constName = toUpperSnake(prefix) + "_" + toUpperSnake(constant.name);
-    emitLine(out, 0,
-             "export const " + constName + " = " + tsConstValue(constant.value) + ";");
-  }
-}
-
-void emitStructSectionType(std::ostringstream &out, const std::string &typeName,
-                           const SemanticSection &section,
-                           const EmitterContext &ctx) {
-  emitLine(out, 0, "export interface " + typeName + " {");
-  for (const auto &field : section.fields) {
-    if (field.isPadding) {
-      continue;
+std::string relativeImportPath(const std::filesystem::path& fromFile, const std::filesystem::path& toFile)
+{
+    const auto  fromDir    = fromFile.parent_path();
+    auto        rel        = toFile.lexically_relative(fromDir);
+    std::string importPath = rel.generic_string();
+    if (importPath.size() >= 3 && importPath.ends_with(".ts"))
+    {
+        importPath.resize(importPath.size() - 3);
     }
-    const auto fieldName = sanitizeTsIdent(toSnakeCase(field.name));
-    emitLine(out, 1,
-             fieldName + ": " + tsFieldType(field.resolvedType, ctx) + ";");
-  }
-  emitLine(out, 0, "}");
-}
-
-void emitUnionSectionType(std::ostringstream &out, const std::string &typeName,
-                          const SemanticSection &section,
-                          const EmitterContext &ctx) {
-  std::vector<const SemanticField *> options;
-  for (const auto &field : section.fields) {
-    if (!field.isPadding) {
-      options.push_back(&field);
+    if (!importPath.empty() && importPath.front() != '.')
+    {
+        importPath = "./" + importPath;
     }
-  }
-
-  if (options.empty()) {
-    emitLine(out, 0, "export type " + typeName + " = { _tag: number };");
-    return;
-  }
-
-  emitLine(out, 0, "export type " + typeName + " =");
-  for (std::size_t i = 0; i < options.size(); ++i) {
-    const auto *field = options[i];
-    const auto fieldName = sanitizeTsIdent(toSnakeCase(field->name));
-    std::ostringstream variant;
-    variant << "{ _tag: " << field->unionOptionIndex << "; " << fieldName << ": "
-            << tsFieldType(field->resolvedType, ctx) << "; }";
-    const auto prefix = i == 0 ? "  | " : "  | ";
-    emitLine(out, 0,
-             prefix + variant.str() + (i + 1 == options.size() ? ";" : ""));
-  }
+    return importPath;
 }
 
-void emitSectionType(std::ostringstream &out, const std::string &typeName,
-                     const SemanticSection &section, const EmitterContext &ctx) {
-  if (section.isUnion) {
-    emitUnionSectionType(out, typeName, section, ctx);
-  } else {
-    emitStructSectionType(out, typeName, section, ctx);
-  }
-}
-
-std::string tsRuntimeSerializeFn(const std::string &typeName) {
-  return "serialize" + typeName;
-}
-
-std::string tsRuntimeDeserializeFn(const std::string &typeName) {
-  return "deserialize" + typeName;
-}
-
-void emitTsRuntimeUnsupportedStubs(std::ostringstream &out,
-                                   const std::string &typeName) {
-  const auto serializeFn = tsRuntimeSerializeFn(typeName);
-  const auto deserializeFn = tsRuntimeDeserializeFn(typeName);
-  emitLine(out, 0, "export function " + serializeFn + "(_value: " + typeName +
-                       "): Uint8Array {");
-  emitLine(out, 1,
-           "throw new Error(\"TypeScript runtime path is not yet available for this DSDL type\");");
-  emitLine(out, 0, "}");
-  emitLine(out, 0, "");
-  emitLine(out, 0, "export function " + deserializeFn +
-                       "(_bytes: Uint8Array): { value: " + typeName +
-                       "; consumed: number } {");
-  emitLine(out, 1,
-           "throw new Error(\"TypeScript runtime path is not yet available for this DSDL type\");");
-  emitLine(out, 0, "}");
-}
-
-void emitTsRuntimeFunctions(std::ostringstream &out, const std::string &typeName,
-                            const TsRuntimeSectionPlan &plan) {
-  const auto serializeFn = tsRuntimeSerializeFn(typeName);
-  const auto deserializeFn = tsRuntimeDeserializeFn(typeName);
-  const auto byteLength = (plan.totalBits + 7) / 8;
-
-  emitLine(out, 0, "export function " + serializeFn + "(value: " + typeName +
-                       "): Uint8Array {");
-  emitLine(out, 1, "const out = new Uint8Array(" + std::to_string(byteLength) + ");");
-  for (const auto &field : plan.fields) {
-    const auto off = std::to_string(field.bitOffset);
-    const auto bits = std::to_string(field.bitLength);
-    const auto saturating = field.castMode == CastMode::Saturated ? "true" : "false";
-
-    if (!field.isArray) {
-      if (field.kind == TsRuntimeFieldKind::Bool) {
-        emitLine(out, 1, "dsdlRuntime.setBit(out, " + off + ", value." +
-                             field.fieldName + ");");
-      } else if (field.kind == TsRuntimeFieldKind::Unsigned) {
-        emitLine(out, 1, "dsdlRuntime.writeUnsigned(out, " + off + ", " + bits +
-                             ", value." + field.fieldName + ", " + saturating + ");");
-      } else {
-        emitLine(out, 1, "dsdlRuntime.writeSigned(out, " + off + ", " + bits +
-                             ", value." + field.fieldName + ", " + saturating + ");");
-      }
-    } else {
-      const auto cap = std::to_string(field.arrayCapacity);
-      const auto fieldArr = field.fieldName + "Array";
-      emitLine(out, 1, "const " + fieldArr + " = value." + field.fieldName + ";");
-      emitLine(out, 1, "if (!Array.isArray(" + fieldArr + ") || " + fieldArr +
-                           ".length !== " + cap + ") {");
-      emitLine(out, 2, "throw new Error(\"field '" + field.fieldName +
-                           "' expects exactly " + cap + " elements\");");
-      emitLine(out, 1, "}");
-      emitLine(out, 1,
-               "for (let i = 0; i < " + cap + "; ++i) {");
-      const auto elemOff = off + " + (i * " + bits + ")";
-      if (field.kind == TsRuntimeFieldKind::Bool) {
-        emitLine(out, 2, "dsdlRuntime.setBit(out, " + elemOff + ", " + fieldArr +
-                             "[i]);");
-      } else if (field.kind == TsRuntimeFieldKind::Unsigned) {
-        emitLine(out, 2, "dsdlRuntime.writeUnsigned(out, " + elemOff + ", " + bits +
-                             ", " + fieldArr + "[i], " + saturating + ");");
-      } else {
-        emitLine(out, 2, "dsdlRuntime.writeSigned(out, " + elemOff + ", " + bits +
-                             ", " + fieldArr + "[i], " + saturating + ");");
-      }
-      emitLine(out, 1, "}");
+std::string moduleAliasFromPath(const std::string& modulePath)
+{
+    std::string alias;
+    alias.reserve(modulePath.size() + 8);
+    for (char c : modulePath)
+    {
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_')
+        {
+            alias.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        }
+        else
+        {
+            alias.push_back('_');
+        }
     }
-  }
-  emitLine(out, 1, "return out;");
-  emitLine(out, 0, "}");
-  emitLine(out, 0, "");
-
-  emitLine(out, 0, "export function " + deserializeFn +
-                       "(bytes: Uint8Array): { value: " + typeName +
-                       "; consumed: number } {");
-  emitLine(out, 1, "const value = {} as " + typeName + ";");
-  for (const auto &field : plan.fields) {
-    const auto off = std::to_string(field.bitOffset);
-    const auto bits = std::to_string(field.bitLength);
-    if (!field.isArray) {
-      if (field.kind == TsRuntimeFieldKind::Bool) {
-        emitLine(out, 1, "value." + field.fieldName + " = dsdlRuntime.getBit(bytes, " +
-                             off + ");");
-      } else if (field.kind == TsRuntimeFieldKind::Unsigned) {
-        emitLine(out, 1, "value." + field.fieldName +
-                             " = dsdlRuntime.readUnsigned(bytes, " + off + ", " +
-                             bits + ");");
-      } else {
-        emitLine(out, 1, "value." + field.fieldName +
-                             " = dsdlRuntime.readSigned(bytes, " + off + ", " +
-                             bits + ");");
-      }
-      continue;
-    }
-
-    const auto cap = std::to_string(field.arrayCapacity);
-    const auto elemOff = off + " + (i * " + bits + ")";
-    const auto fieldArr = field.fieldName + "Array";
-    const auto arrayElemType =
-        field.kind == TsRuntimeFieldKind::Bool ? "boolean" : "number";
-    emitLine(out, 1, "const " + fieldArr + ": Array<" + arrayElemType +
-                         "> = new Array(" + cap + ");");
-    emitLine(out, 1, "for (let i = 0; i < " + cap + "; ++i) {");
-    if (field.kind == TsRuntimeFieldKind::Bool) {
-      emitLine(out, 2, fieldArr + "[i] = dsdlRuntime.getBit(bytes, " + elemOff + ");");
-    } else if (field.kind == TsRuntimeFieldKind::Unsigned) {
-      emitLine(out, 2, fieldArr + "[i] = dsdlRuntime.readUnsigned(bytes, " + elemOff +
-                           ", " + bits + ");");
-    } else {
-      emitLine(out, 2, fieldArr + "[i] = dsdlRuntime.readSigned(bytes, " + elemOff +
-                           ", " + bits + ");");
-    }
-    emitLine(out, 1, "}");
-    emitLine(out, 1, "value." + field.fieldName + " = " + fieldArr + ";");
-  }
-  emitLine(out, 1,
-           "const consumed = Math.min(bytes.length, dsdlRuntime.byteLengthForBits(" +
-               std::to_string(plan.totalBits) + "));");
-  emitLine(out, 1, "return { value, consumed };");
-  emitLine(out, 0, "}");
+    return sanitizeTsIdent(alias.empty() ? "module" : alias);
 }
 
-std::string renderDefinitionFile(const SemanticDefinition &def,
-                                 const EmitterContext &ctx) {
-  std::ostringstream out;
-  emitLine(out, 0, "// Generated by llvmdsdl (TypeScript experimental backend).");
+struct ImportSpec final
+{
+    std::string modulePath;
+    std::string typeName;
+};
 
-  const auto requestRuntimePlan = buildTsRuntimeSectionPlan(def.request);
-  std::optional<TsRuntimeSectionPlan> responseRuntimePlan;
-  if (def.response) {
-    responseRuntimePlan = buildTsRuntimeSectionPlan(*def.response);
-  }
-  const bool hasSupportedRuntimePlan =
-      requestRuntimePlan.has_value() || responseRuntimePlan.has_value();
+enum class TsRuntimeFieldKind
+{
+    Padding,
+    Bool,
+    Unsigned,
+    Signed,
+    Float,
+    Composite,
+};
 
-  std::map<std::string, std::set<std::string>> importsByModule;
-  for (const auto &imp : collectCompositeImports(def.request, def.info, ctx)) {
-    importsByModule[imp.modulePath].insert(imp.typeName);
-  }
-  if (def.response) {
-    for (const auto &imp : collectCompositeImports(*def.response, def.info, ctx)) {
-      importsByModule[imp.modulePath].insert(imp.typeName);
+enum class TsRuntimeArrayKind
+{
+    None,
+    Fixed,
+    Variable,
+};
+
+struct TsRuntimeFieldPlan final
+{
+    std::string                    fieldName;
+    TsRuntimeFieldKind             kind{TsRuntimeFieldKind::Unsigned};
+    CastMode                       castMode{CastMode::Saturated};
+    std::int64_t                   bitLength{0};
+    std::int64_t                   alignmentBits{1};
+    bool                           useBigInt{false};
+    std::optional<SemanticTypeRef> compositeType;
+    std::string                    compositeTypeName;
+    bool                           compositeSealed{true};
+    std::int64_t                   compositePayloadMaxBits{0};
+    std::uint32_t                  unionOptionIndex{0};
+    TsRuntimeArrayKind             arrayKind{TsRuntimeArrayKind::None};
+    std::int64_t                   arrayCapacity{0};
+    std::int64_t                   arrayLengthPrefixBits{0};
+};
+
+struct TsRuntimeSectionPlan final
+{
+    bool                            isUnion{false};
+    std::int64_t                    unionTagBits{0};
+    std::vector<TsRuntimeFieldPlan> fields;
+    std::int64_t                    maxBits{0};
+};
+
+llvm::Expected<TsRuntimeSectionPlan> buildTsRuntimeSectionPlan(const SemanticSection&           section,
+                                                               const EmitterContext&            ctx,
+                                                               const LoweredSectionFacts* const sectionFacts)
+{
+    TsRuntimeSectionPlan plan;
+    plan.isUnion                        = section.isUnion;
+    std::int64_t                maxBits = 0;
+    std::optional<std::int64_t> unionTagBits;
+    std::set<std::uint32_t>     unionOptionIndexes;
+    auto                        orderedStepsOrErr = buildTsOrderedFieldSteps(section, sectionFacts);
+    if (!orderedStepsOrErr)
+    {
+        return orderedStepsOrErr.takeError();
     }
-  }
+    const auto& orderedSteps = *orderedStepsOrErr;
+    for (const auto& orderedStep : orderedSteps)
+    {
+        if (orderedStep.field == nullptr)
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "lowered TypeScript section plan contains null field");
+        }
+        const auto&  field     = *orderedStep.field;
+        std::int64_t fieldBits = static_cast<std::int64_t>(field.resolvedType.bitLength);
+        if (fieldBits < 0)
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "field '%s' has invalid negative bit length",
+                                           field.name.c_str());
+        }
 
-  if (hasSupportedRuntimePlan) {
-    const auto ownerPath = ctx.relativeFilePath(def.info);
-    const auto runtimePath =
-        relativeImportPath(ownerPath, std::filesystem::path("dsdl_runtime.ts"));
+        TsRuntimeArrayKind arrayKind             = TsRuntimeArrayKind::None;
+        std::int64_t       arrayCapacity         = 0;
+        std::int64_t       arrayLengthPrefixBits = 0;
+        if (field.resolvedType.arrayKind == ArrayKind::None)
+        {
+            // Scalar field (non-array).
+            arrayKind = TsRuntimeArrayKind::None;
+        }
+        else if (field.resolvedType.arrayKind == ArrayKind::Fixed)
+        {
+            if (field.resolvedType.arrayCapacity <= 0)
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "field '%s' has invalid fixed-array capacity",
+                                               field.name.c_str());
+            }
+            arrayKind     = TsRuntimeArrayKind::Fixed;
+            arrayCapacity = field.resolvedType.arrayCapacity;
+        }
+        else if (field.resolvedType.arrayKind == ArrayKind::VariableInclusive ||
+                 field.resolvedType.arrayKind == ArrayKind::VariableExclusive)
+        {
+            const auto prefixBits = orderedStep.arrayLengthPrefixBits
+                                        ? static_cast<std::int64_t>(*orderedStep.arrayLengthPrefixBits)
+                                        : field.resolvedType.arrayLengthPrefixBits;
+            if (field.resolvedType.arrayCapacity < 0 || prefixBits <= 0)
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "field '%s' has invalid variable-array capacity or prefix width",
+                                               field.name.c_str());
+            }
+            arrayKind             = TsRuntimeArrayKind::Variable;
+            arrayCapacity         = field.resolvedType.arrayCapacity;
+            arrayLengthPrefixBits = prefixBits;
+        }
+        else
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "field '%s' has unsupported array kind",
+                                           field.name.c_str());
+        }
+
+        TsRuntimeFieldKind kind = TsRuntimeFieldKind::Unsigned;
+        switch (field.resolvedType.scalarCategory)
+        {
+        case SemanticScalarCategory::Bool:
+            if (fieldBits != 1)
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "field '%s' bool bit length must be 1",
+                                               field.name.c_str());
+            }
+            kind = TsRuntimeFieldKind::Bool;
+            break;
+        case SemanticScalarCategory::Byte:
+        case SemanticScalarCategory::Utf8:
+        case SemanticScalarCategory::UnsignedInt:
+            kind = TsRuntimeFieldKind::Unsigned;
+            break;
+        case SemanticScalarCategory::SignedInt:
+            kind = TsRuntimeFieldKind::Signed;
+            break;
+        case SemanticScalarCategory::Float:
+            if (fieldBits != 16 && fieldBits != 32 && fieldBits != 64)
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "field '%s' has unsupported float bit length %lld",
+                                               field.name.c_str(),
+                                               static_cast<long long>(fieldBits));
+            }
+            kind = TsRuntimeFieldKind::Float;
+            break;
+        case SemanticScalarCategory::Composite:
+            if (!field.resolvedType.compositeType)
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "field '%s' is composite but missing target type metadata",
+                                               field.name.c_str());
+            }
+            if (fieldBits <= 0)
+            {
+                fieldBits = field.resolvedType.compositeExtentBits;
+            }
+            if (fieldBits <= 0)
+            {
+                fieldBits = field.resolvedType.bitLengthSet.max();
+            }
+            kind = TsRuntimeFieldKind::Composite;
+            break;
+        case SemanticScalarCategory::Void:
+            if (arrayKind != TsRuntimeArrayKind::None)
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "padding field '%s' cannot be an array",
+                                               field.name.c_str());
+            }
+            kind = TsRuntimeFieldKind::Padding;
+            break;
+        }
+
+        if (kind == TsRuntimeFieldKind::Composite)
+        {
+            if (fieldBits < 0)
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "composite field '%s' has invalid bit-length metadata",
+                                               field.name.c_str());
+            }
+        }
+        else if (kind == TsRuntimeFieldKind::Padding)
+        {
+            if (fieldBits < 0)
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "padding field '%s' has invalid bit-length metadata",
+                                               field.name.c_str());
+            }
+        }
+        else
+        {
+            if (fieldBits <= 0 || fieldBits > 64)
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "field '%s' has unsupported scalar bit length %lld",
+                                               field.name.c_str(),
+                                               static_cast<long long>(fieldBits));
+            }
+        }
+
+        if (plan.isUnion && kind == TsRuntimeFieldKind::Padding)
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "union section cannot contain padding runtime fields");
+        }
+
+        TsRuntimeFieldPlan fieldPlan;
+        fieldPlan.fieldName     = sanitizeTsIdent(toSnakeCase(field.name));
+        fieldPlan.kind          = kind;
+        fieldPlan.castMode      = field.resolvedType.castMode;
+        fieldPlan.bitLength     = fieldBits;
+        fieldPlan.alignmentBits = std::max<std::int64_t>(1, field.resolvedType.alignmentBits);
+        fieldPlan.useBigInt =
+            (kind == TsRuntimeFieldKind::Unsigned || kind == TsRuntimeFieldKind::Signed) && (fieldBits > 53);
+        fieldPlan.compositeType = field.resolvedType.compositeType;
+        if (fieldPlan.compositeType)
+        {
+            fieldPlan.compositeTypeName = ctx.typeName(*fieldPlan.compositeType);
+        }
+        fieldPlan.compositeSealed         = field.resolvedType.compositeSealed;
+        fieldPlan.compositePayloadMaxBits = field.resolvedType.bitLengthSet.max();
+        if (fieldPlan.compositePayloadMaxBits < 0)
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "composite field '%s' has invalid payload max bits",
+                                           field.name.c_str());
+        }
+        fieldPlan.unionOptionIndex      = field.unionOptionIndex;
+        fieldPlan.arrayKind             = arrayKind;
+        fieldPlan.arrayCapacity         = arrayCapacity;
+        fieldPlan.arrayLengthPrefixBits = arrayLengthPrefixBits;
+        plan.fields.push_back(fieldPlan);
+
+        if (plan.isUnion)
+        {
+            const auto tagBits = static_cast<std::int64_t>(field.unionTagBits);
+            if (tagBits <= 0 || tagBits > 53)
+            {
+                // Runtime union dispatch currently uses number-backed tags.
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "union field '%s' has invalid union-tag width %lld",
+                                               field.name.c_str(),
+                                               static_cast<long long>(tagBits));
+            }
+            if (unionTagBits && *unionTagBits != tagBits)
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "union section has inconsistent union-tag widths");
+            }
+            unionTagBits = tagBits;
+            unionOptionIndexes.insert(field.unionOptionIndex);
+        }
+
+        if (arrayKind == TsRuntimeArrayKind::None)
+        {
+            maxBits += fieldBits;
+        }
+        else if (arrayKind == TsRuntimeArrayKind::Fixed)
+        {
+            maxBits += fieldBits * arrayCapacity;
+        }
+        else
+        {
+            maxBits += arrayLengthPrefixBits + (fieldBits * arrayCapacity);
+        }
+    }
+
+    if (plan.isUnion)
+    {
+        if (plan.fields.empty() || !unionTagBits || unionOptionIndexes.size() != plan.fields.size())
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "union runtime plan metadata is incomplete or inconsistent");
+        }
+        std::sort(plan.fields.begin(),
+                  plan.fields.end(),
+                  [](const TsRuntimeFieldPlan& lhs, const TsRuntimeFieldPlan& rhs) {
+                      return lhs.unionOptionIndex < rhs.unionOptionIndex;
+                  });
+        plan.unionTagBits          = *unionTagBits;
+        std::int64_t maxOptionBits = 0;
+        for (const auto& fieldPlan : plan.fields)
+        {
+            std::int64_t optionBits = fieldPlan.bitLength;
+            if (fieldPlan.arrayKind == TsRuntimeArrayKind::Fixed)
+            {
+                optionBits = fieldPlan.bitLength * fieldPlan.arrayCapacity;
+            }
+            else if (fieldPlan.arrayKind == TsRuntimeArrayKind::Variable)
+            {
+                optionBits = fieldPlan.arrayLengthPrefixBits + (fieldPlan.bitLength * fieldPlan.arrayCapacity);
+            }
+            maxOptionBits = std::max(maxOptionBits, optionBits);
+        }
+        const auto fallbackMaxBits = plan.unionTagBits + maxOptionBits;
+        plan.maxBits               = std::max(section.maxBitLength, fallbackMaxBits);
+    }
+    else
+    {
+        plan.maxBits = std::max(section.maxBitLength, maxBits);
+    }
+    return plan;
+}
+
+std::vector<ImportSpec> collectCompositeImports(const SemanticSection&      section,
+                                                const DiscoveredDefinition& owner,
+                                                const EmitterContext&       ctx)
+{
+    std::map<std::string, std::set<std::string>> importsByModule;
+    const auto                                   ownerPath = ctx.relativeFilePath(owner);
+
+    for (const auto& field : section.fields)
+    {
+        if (field.isPadding || !field.resolvedType.compositeType)
+        {
+            continue;
+        }
+        const auto& ref        = *field.resolvedType.compositeType;
+        const auto  targetPath = ctx.relativeFilePath(ref);
+        if (targetPath == ownerPath)
+        {
+            continue;
+        }
+        const auto modulePath = relativeImportPath(ownerPath, targetPath);
+        importsByModule[modulePath].insert(ctx.typeName(ref));
+    }
+
+    std::vector<ImportSpec> out;
+    for (const auto& [modulePath, names] : importsByModule)
+    {
+        for (const auto& name : names)
+        {
+            out.push_back({modulePath, name});
+        }
+    }
+    return out;
+}
+
+void emitSectionConstants(std::ostringstream& out, const std::string& prefix, const SemanticSection& section)
+{
+    for (const auto& constant : section.constants)
+    {
+        const auto constName = toUpperSnake(prefix) + "_" + toUpperSnake(constant.name);
+        emitLine(out, 0, "export const " + constName + " = " + tsConstValue(constant.value) + ";");
+    }
+}
+
+void emitStructSectionType(std::ostringstream&    out,
+                           const std::string&     typeName,
+                           const SemanticSection& section,
+                           const EmitterContext&  ctx)
+{
+    emitLine(out, 0, "export interface " + typeName + " {");
+    for (const auto& field : section.fields)
+    {
+        if (field.isPadding)
+        {
+            continue;
+        }
+        const auto fieldName = sanitizeTsIdent(toSnakeCase(field.name));
+        emitLine(out, 1, fieldName + ": " + tsFieldType(field.resolvedType, ctx) + ";");
+    }
+    emitLine(out, 0, "}");
+}
+
+void emitUnionSectionType(std::ostringstream&    out,
+                          const std::string&     typeName,
+                          const SemanticSection& section,
+                          const EmitterContext&  ctx)
+{
+    std::vector<const SemanticField*> options;
+    for (const auto& field : section.fields)
+    {
+        if (!field.isPadding)
+        {
+            options.push_back(&field);
+        }
+    }
+
+    if (options.empty())
+    {
+        emitLine(out, 0, "export type " + typeName + " = { _tag: number };");
+        return;
+    }
+
+    emitLine(out, 0, "export type " + typeName + " =");
+    for (std::size_t i = 0; i < options.size(); ++i)
+    {
+        const auto*        field     = options[i];
+        const auto         fieldName = sanitizeTsIdent(toSnakeCase(field->name));
+        std::ostringstream variant;
+        variant << "{ _tag: " << field->unionOptionIndex << "; " << fieldName << ": "
+                << tsFieldType(field->resolvedType, ctx) << "; }";
+        const auto prefix = i == 0 ? "  | " : "  | ";
+        emitLine(out, 0, prefix + variant.str() + (i + 1 == options.size() ? ";" : ""));
+    }
+}
+
+void emitSectionType(std::ostringstream&    out,
+                     const std::string&     typeName,
+                     const SemanticSection& section,
+                     const EmitterContext&  ctx)
+{
+    if (section.isUnion)
+    {
+        emitUnionSectionType(out, typeName, section, ctx);
+    }
+    else
+    {
+        emitStructSectionType(out, typeName, section, ctx);
+    }
+}
+
+std::string tsRuntimeSerializeFn(const std::string& typeName)
+{
+    return "serialize" + typeName;
+}
+
+std::string tsRuntimeDeserializeFn(const std::string& typeName)
+{
+    return "deserialize" + typeName;
+}
+
+void emitTsRuntimeSerializeCompositeValue(std::ostringstream&       out,
+                                          int                       indent,
+                                          const TsRuntimeFieldPlan& field,
+                                          const std::string&        valueExpr)
+{
+    const auto nestedVar = field.fieldName + "Bytes";
+    emitLine(out,
+             indent,
+             "const " + nestedVar + " = " + tsRuntimeSerializeFn(field.compositeTypeName) + "(" + valueExpr + ");");
+    if (field.compositeSealed)
+    {
+        emitLine(out,
+                 indent,
+                 "dsdlRuntime.copyBits(out, offsetBits, " + nestedVar + ", 0, " + std::to_string(field.bitLength) +
+                     ");");
+        emitLine(out, indent, "offsetBits += " + std::to_string(field.bitLength) + ";");
+        return;
+    }
+
+    const auto sizeVar         = field.fieldName + "SizeBytes";
+    const auto remainingVar    = field.fieldName + "RemainingBytes";
+    const auto maxPayloadBytes = std::to_string((field.compositePayloadMaxBits + 7) / 8);
+    emitLine(out, indent, "const " + sizeVar + " = " + nestedVar + ".length;");
+    emitLine(out, indent, "if (" + sizeVar + " > " + maxPayloadBytes + ") {");
+    emitLine(out,
+             indent + 1,
+             "throw new Error(\"encoded payload for composite field '" + field.fieldName +
+                 "' exceeds max payload bytes " + maxPayloadBytes + "\");");
+    emitLine(out, indent, "}");
+    emitLine(out,
+             indent,
+             "const " + remainingVar + " = out.length - Math.min(Math.trunc(offsetBits / 8), out.length);");
+    emitLine(out, indent, "if (" + sizeVar + " > " + remainingVar + ") {");
+    emitLine(out,
+             indent + 1,
+             "throw new Error(\"encoded payload for composite field '" + field.fieldName +
+                 "' exceeds remaining buffer space\");");
+    emitLine(out, indent, "}");
+    emitLine(out, indent, "dsdlRuntime.writeUnsigned(out, offsetBits, 32, " + sizeVar + ", false);");
+    emitLine(out, indent, "offsetBits += 32;");
+    emitLine(out, indent, "dsdlRuntime.copyBits(out, offsetBits, " + nestedVar + ", 0, " + sizeVar + " * 8);");
+    emitLine(out, indent, "offsetBits += " + sizeVar + " * 8;");
+}
+
+void emitTsRuntimeDeserializeCompositeValue(std::ostringstream&       out,
+                                            int                       indent,
+                                            const TsRuntimeFieldPlan& field,
+                                            const std::string&        targetExpr)
+{
+    if (field.compositeSealed)
+    {
+        const auto nestedVar = field.fieldName + "Bytes";
+        emitLine(out,
+                 indent,
+                 "const " + nestedVar + " = dsdlRuntime.extractBits(bytes, offsetBits, " +
+                     std::to_string(field.bitLength) + ");");
+        emitLine(out,
+                 indent,
+                 targetExpr + " = " + tsRuntimeDeserializeFn(field.compositeTypeName) + "(" + nestedVar + ").value;");
+        emitLine(out, indent, "offsetBits += " + std::to_string(field.bitLength) + ";");
+        return;
+    }
+
+    const auto sizeVar      = field.fieldName + "SizeBytes";
+    const auto remainingVar = field.fieldName + "RemainingBytes";
+    const auto startVar     = field.fieldName + "StartByte";
+    const auto endVar       = field.fieldName + "EndByte";
+    const auto nestedVar    = field.fieldName + "Bytes";
+    emitLine(out, indent, "const " + sizeVar + " = Math.trunc(dsdlRuntime.readUnsigned(bytes, offsetBits, 32));");
+    emitLine(out, indent, "offsetBits += 32;");
+    emitLine(out,
+             indent,
+             "const " + remainingVar + " = bytes.length - Math.min(Math.trunc(offsetBits / 8), bytes.length);");
+    emitLine(out, indent, "if (" + sizeVar + " < 0 || " + sizeVar + " > " + remainingVar + ") {");
+    emitLine(out,
+             indent + 1,
+             "throw new Error(\"decoded payload size for composite field '" + field.fieldName +
+                 "' exceeds remaining buffer space\");");
+    emitLine(out, indent, "}");
+    emitLine(out, indent, "const " + startVar + " = Math.min(Math.trunc(offsetBits / 8), bytes.length);");
+    emitLine(out, indent, "const " + endVar + " = Math.min(" + startVar + " + " + sizeVar + ", bytes.length);");
+    emitLine(out, indent, "const " + nestedVar + " = bytes.subarray(" + startVar + ", " + endVar + ");");
+    emitLine(out,
+             indent,
+             targetExpr + " = " + tsRuntimeDeserializeFn(field.compositeTypeName) + "(" + nestedVar + ").value;");
+    emitLine(out, indent, "offsetBits += " + sizeVar + " * 8;");
+}
+
+void emitTsRuntimeAlignSerialize(std::ostringstream& out,
+                                 int                 indent,
+                                 std::int64_t        alignmentBits,
+                                 const std::string&  prefix)
+{
+    if (alignmentBits <= 1)
+    {
+        return;
+    }
+    const auto alignedVar = prefix + "AlignedOffsetBits";
+    const auto bitVar     = prefix + "AlignBit";
+    emitLine(out,
+             indent,
+             "const " + alignedVar + " = Math.trunc((offsetBits + " + std::to_string(alignmentBits - 1) + ") / " +
+                 std::to_string(alignmentBits) + ") * " + std::to_string(alignmentBits) + ";");
+    emitLine(out,
+             indent,
+             "for (let " + bitVar + " = offsetBits; " + bitVar + " < " + alignedVar + "; ++" + bitVar + ") {");
+    emitLine(out, indent + 1, "dsdlRuntime.setBit(out, " + bitVar + ", false);");
+    emitLine(out, indent, "}");
+    emitLine(out, indent, "offsetBits = " + alignedVar + ";");
+}
+
+void emitTsRuntimeAlignDeserialize(std::ostringstream& out, int indent, std::int64_t alignmentBits)
+{
+    if (alignmentBits <= 1)
+    {
+        return;
+    }
+    emitLine(out,
+             indent,
+             "offsetBits = Math.trunc((offsetBits + " + std::to_string(alignmentBits - 1) + ") / " +
+                 std::to_string(alignmentBits) + ") * " + std::to_string(alignmentBits) + ";");
+}
+
+void emitTsRuntimeSerializePadding(std::ostringstream&       out,
+                                   int                       indent,
+                                   const TsRuntimeFieldPlan& field,
+                                   const std::string&        prefix)
+{
+    if (field.bitLength <= 0)
+    {
+        return;
+    }
+    const auto bitVar = prefix + "PaddingBit";
+    emitLine(out,
+             indent,
+             "for (let " + bitVar + " = 0; " + bitVar + " < " + std::to_string(field.bitLength) + "; ++" + bitVar +
+                 ") {");
+    emitLine(out, indent + 1, "dsdlRuntime.setBit(out, offsetBits + " + bitVar + ", false);");
+    emitLine(out, indent, "}");
+    emitLine(out, indent, "offsetBits += " + std::to_string(field.bitLength) + ";");
+}
+
+void emitTsRuntimeDeserializePadding(std::ostringstream& out, int indent, const TsRuntimeFieldPlan& field)
+{
+    if (field.bitLength <= 0)
+    {
+        return;
+    }
+    emitLine(out, indent, "offsetBits += " + std::to_string(field.bitLength) + ";");
+}
+
+void emitTsRuntimeFunctions(std::ostringstream& out, const std::string& typeName, const TsRuntimeSectionPlan& plan)
+{
+    const auto serializeFn   = tsRuntimeSerializeFn(typeName);
+    const auto deserializeFn = tsRuntimeDeserializeFn(typeName);
+    const auto maxByteLength = (plan.maxBits + 7) / 8;
+
+    if (plan.isUnion)
+    {
+        const auto tagBits = std::to_string(plan.unionTagBits);
+        emitLine(out, 0, "export function " + serializeFn + "(value: " + typeName + "): Uint8Array {");
+        emitLine(out, 1, "const out = new Uint8Array(" + std::to_string(maxByteLength) + ");");
+        emitLine(out, 1, "let offsetBits = 0;");
+        emitLine(out, 1, "const tag = Math.trunc((value as { _tag: number })._tag);");
+        emitLine(out, 1, "dsdlRuntime.writeUnsigned(out, offsetBits, " + tagBits + ", tag, false);");
+        emitLine(out, 1, "offsetBits += " + tagBits + ";");
+        emitLine(out, 1, "switch (tag) {");
+        for (const auto& field : plan.fields)
+        {
+            const auto bits       = std::to_string(field.bitLength);
+            const auto optionTag  = std::to_string(field.unionOptionIndex);
+            const auto saturating = field.castMode == CastMode::Saturated ? "true" : "false";
+            const auto cap        = std::to_string(field.arrayCapacity);
+            const auto prefixBits = std::to_string(field.arrayLengthPrefixBits);
+            emitLine(out, 1, "case " + optionTag + ": {");
+            emitLine(out, 2, "const optionValue = (value as Record<string, unknown>)." + field.fieldName + ";");
+            emitLine(out, 2, "if (optionValue === undefined) {");
+            emitLine(out,
+                     3,
+                     "throw new Error(\"union field '" + field.fieldName + "' missing for tag " + optionTag + "\");");
+            emitLine(out, 2, "}");
+            emitTsRuntimeAlignSerialize(out, 2, field.alignmentBits, field.fieldName + "Option");
+            if (field.arrayKind == TsRuntimeArrayKind::None)
+            {
+                if (field.kind == TsRuntimeFieldKind::Padding)
+                {
+                    emitTsRuntimeSerializePadding(out, 2, field, field.fieldName + "Option");
+                }
+                else if (field.kind == TsRuntimeFieldKind::Bool)
+                {
+                    emitLine(out, 2, "dsdlRuntime.setBit(out, offsetBits, !!optionValue);");
+                }
+                else if (field.kind == TsRuntimeFieldKind::Composite)
+                {
+                    emitTsRuntimeSerializeCompositeValue(out, 2, field, "optionValue as " + field.compositeTypeName);
+                }
+                else if (field.kind == TsRuntimeFieldKind::Unsigned)
+                {
+                    emitLine(out,
+                             2,
+                             "dsdlRuntime.writeUnsigned(out, offsetBits, " + bits +
+                                 ", optionValue as number | bigint, " + saturating + ");");
+                }
+                else if (field.kind == TsRuntimeFieldKind::Float)
+                {
+                    emitLine(out, 2, "dsdlRuntime.writeFloat(out, offsetBits, " + bits + ", optionValue as number);");
+                }
+                else
+                {
+                    emitLine(out,
+                             2,
+                             "dsdlRuntime.writeSigned(out, offsetBits, " + bits + ", optionValue as number | bigint, " +
+                                 saturating + ");");
+                }
+                if (field.kind != TsRuntimeFieldKind::Composite && field.kind != TsRuntimeFieldKind::Padding)
+                {
+                    emitLine(out, 2, "offsetBits += " + bits + ";");
+                }
+            }
+            else if (field.arrayKind == TsRuntimeArrayKind::Fixed)
+            {
+                const auto optionArray = field.fieldName + "Array";
+                emitLine(out, 2, "const " + optionArray + " = optionValue;");
+                emitLine(out,
+                         2,
+                         "if (!Array.isArray(" + optionArray + ") || " + optionArray + ".length !== " + cap + ") {");
+                emitLine(out,
+                         3,
+                         "throw new Error(\"union field '" + field.fieldName + "' expects exactly " + cap +
+                             " elements\");");
+                emitLine(out, 2, "}");
+                emitLine(out, 2, "for (let i = 0; i < " + cap + "; ++i) {");
+                if (field.kind == TsRuntimeFieldKind::Bool)
+                {
+                    emitLine(out, 3, "dsdlRuntime.setBit(out, offsetBits, " + optionArray + "[i]);");
+                }
+                else if (field.kind == TsRuntimeFieldKind::Composite)
+                {
+                    emitTsRuntimeSerializeCompositeValue(out,
+                                                         3,
+                                                         field,
+                                                         optionArray + "[i] as " + field.compositeTypeName);
+                }
+                else if (field.kind == TsRuntimeFieldKind::Unsigned)
+                {
+                    emitLine(out,
+                             3,
+                             "dsdlRuntime.writeUnsigned(out, offsetBits, " + bits + ", " + optionArray + "[i], " +
+                                 saturating + ");");
+                }
+                else if (field.kind == TsRuntimeFieldKind::Float)
+                {
+                    emitLine(out, 3, "dsdlRuntime.writeFloat(out, offsetBits, " + bits + ", " + optionArray + "[i]);");
+                }
+                else
+                {
+                    emitLine(out,
+                             3,
+                             "dsdlRuntime.writeSigned(out, offsetBits, " + bits + ", " + optionArray + "[i], " +
+                                 saturating + ");");
+                }
+                if (field.kind != TsRuntimeFieldKind::Composite && field.kind != TsRuntimeFieldKind::Padding)
+                {
+                    emitLine(out, 3, "offsetBits += " + bits + ";");
+                }
+                emitLine(out, 2, "}");
+            }
+            else
+            {
+                const auto optionArray = field.fieldName + "Array";
+                emitLine(out, 2, "const " + optionArray + " = optionValue;");
+                emitLine(out, 2, "if (!Array.isArray(" + optionArray + ")) {");
+                emitLine(out, 3, "throw new Error(\"union field '" + field.fieldName + "' expects an array\");");
+                emitLine(out, 2, "}");
+                emitLine(out, 2, "if (" + optionArray + ".length > " + cap + ") {");
+                emitLine(out,
+                         3,
+                         "throw new Error(\"union field '" + field.fieldName + "' exceeds max length " + cap + "\");");
+                emitLine(out, 2, "}");
+                emitLine(out,
+                         2,
+                         "dsdlRuntime.writeUnsigned(out, offsetBits, " + prefixBits + ", " + optionArray +
+                             ".length, false);");
+                emitLine(out, 2, "offsetBits += " + prefixBits + ";");
+                emitLine(out, 2, "for (let i = 0; i < " + optionArray + ".length; ++i) {");
+                if (field.kind == TsRuntimeFieldKind::Bool)
+                {
+                    emitLine(out, 3, "dsdlRuntime.setBit(out, offsetBits, " + optionArray + "[i]);");
+                }
+                else if (field.kind == TsRuntimeFieldKind::Composite)
+                {
+                    emitTsRuntimeSerializeCompositeValue(out,
+                                                         3,
+                                                         field,
+                                                         optionArray + "[i] as " + field.compositeTypeName);
+                }
+                else if (field.kind == TsRuntimeFieldKind::Unsigned)
+                {
+                    emitLine(out,
+                             3,
+                             "dsdlRuntime.writeUnsigned(out, offsetBits, " + bits + ", " + optionArray + "[i], " +
+                                 saturating + ");");
+                }
+                else if (field.kind == TsRuntimeFieldKind::Float)
+                {
+                    emitLine(out, 3, "dsdlRuntime.writeFloat(out, offsetBits, " + bits + ", " + optionArray + "[i]);");
+                }
+                else
+                {
+                    emitLine(out,
+                             3,
+                             "dsdlRuntime.writeSigned(out, offsetBits, " + bits + ", " + optionArray + "[i], " +
+                                 saturating + ");");
+                }
+                if (field.kind != TsRuntimeFieldKind::Composite && field.kind != TsRuntimeFieldKind::Padding)
+                {
+                    emitLine(out, 3, "offsetBits += " + bits + ";");
+                }
+                emitLine(out, 2, "}");
+            }
+            emitLine(out, 2, "break;");
+            emitLine(out, 1, "}");
+        }
+        emitLine(out, 1, "default:");
+        emitLine(out, 2, "throw new Error(\"invalid union tag \" + tag);");
+        emitLine(out, 1, "}");
+        emitLine(out, 1, "const alignedOffsetBits = dsdlRuntime.byteLengthForBits(offsetBits) * 8;");
+        emitLine(out, 1, "for (let bit = offsetBits; bit < alignedOffsetBits; ++bit) {");
+        emitLine(out, 2, "dsdlRuntime.setBit(out, bit, false);");
+        emitLine(out, 1, "}");
+        emitLine(out, 1, "offsetBits = alignedOffsetBits;");
+        emitLine(out, 1, "const usedBytes = dsdlRuntime.byteLengthForBits(offsetBits);");
+        emitLine(out, 1, "return out.subarray(0, usedBytes);");
+        emitLine(out, 0, "}");
+        emitLine(out, 0, "");
+
+        emitLine(out,
+                 0,
+                 "export function " + deserializeFn + "(bytes: Uint8Array): { value: " + typeName +
+                     "; consumed: number } {");
+        emitLine(out, 1, "let offsetBits = 0;");
+        emitLine(out, 1, "const tag = Math.trunc(dsdlRuntime.readUnsigned(bytes, offsetBits, " + tagBits + "));");
+        emitLine(out, 1, "offsetBits += " + tagBits + ";");
+        emitLine(out, 1, "let value: " + typeName + ";");
+        emitLine(out, 1, "switch (tag) {");
+        for (const auto& field : plan.fields)
+        {
+            const auto bits       = std::to_string(field.bitLength);
+            const auto optionTag  = std::to_string(field.unionOptionIndex);
+            const auto cap        = std::to_string(field.arrayCapacity);
+            const auto prefixBits = std::to_string(field.arrayLengthPrefixBits);
+            const auto arrayElemType =
+                field.kind == TsRuntimeFieldKind::Bool
+                    ? "boolean"
+                    : (field.kind == TsRuntimeFieldKind::Composite ? field.compositeTypeName
+                                                                   : (field.useBigInt ? "bigint" : "number"));
+            emitLine(out, 1, "case " + optionTag + ": {");
+            emitTsRuntimeAlignDeserialize(out, 2, field.alignmentBits);
+            if (field.arrayKind == TsRuntimeArrayKind::None)
+            {
+                if (field.kind == TsRuntimeFieldKind::Padding)
+                {
+                    emitTsRuntimeDeserializePadding(out, 2, field);
+                    emitLine(out, 2, "const optionValue = undefined;");
+                }
+                else if (field.kind == TsRuntimeFieldKind::Bool)
+                {
+                    emitLine(out, 2, "const optionValue = dsdlRuntime.getBit(bytes, offsetBits);");
+                }
+                else if (field.kind == TsRuntimeFieldKind::Composite)
+                {
+                    emitLine(out, 2, "let optionValue: " + field.compositeTypeName + ";");
+                    emitTsRuntimeDeserializeCompositeValue(out, 2, field, "optionValue");
+                }
+                else if (field.kind == TsRuntimeFieldKind::Unsigned)
+                {
+                    const std::string fn = field.useBigInt ? "readUnsignedBigInt" : "readUnsigned";
+                    emitLine(out, 2, "const optionValue = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
+                }
+                else if (field.kind == TsRuntimeFieldKind::Float)
+                {
+                    emitLine(out, 2, "const optionValue = dsdlRuntime.readFloat(bytes, offsetBits, " + bits + ");");
+                }
+                else
+                {
+                    const std::string fn = field.useBigInt ? "readSignedBigInt" : "readSigned";
+                    emitLine(out, 2, "const optionValue = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
+                }
+                if (field.kind != TsRuntimeFieldKind::Composite && field.kind != TsRuntimeFieldKind::Padding)
+                {
+                    emitLine(out, 2, "offsetBits += " + bits + ";");
+                }
+            }
+            else
+            {
+                std::string arrayLenExpr = cap;
+                if (field.arrayKind == TsRuntimeArrayKind::Variable)
+                {
+                    emitLine(out,
+                             2,
+                             "const " + field.fieldName +
+                                 "Length = Math.trunc(dsdlRuntime.readUnsigned(bytes, offsetBits, " + prefixBits +
+                                 "));");
+                    emitLine(out, 2, "offsetBits += " + prefixBits + ";");
+                    emitLine(out,
+                             2,
+                             "if (" + field.fieldName + "Length < 0 || " + field.fieldName + "Length > " + cap + ") {");
+                    emitLine(out,
+                             3,
+                             "throw new Error(\"decoded length for union field '" + field.fieldName +
+                                 "' exceeds max length " + cap + "\");");
+                    emitLine(out, 2, "}");
+                    arrayLenExpr = field.fieldName + "Length";
+                }
+                const auto optionArray = field.fieldName + "Array";
+                emitLine(out,
+                         2,
+                         "const " + optionArray + ": Array<" + arrayElemType + "> = new Array(" + arrayLenExpr + ");");
+                emitLine(out, 2, "for (let i = 0; i < " + arrayLenExpr + "; ++i) {");
+                if (field.kind == TsRuntimeFieldKind::Bool)
+                {
+                    emitLine(out, 3, optionArray + "[i] = dsdlRuntime.getBit(bytes, offsetBits);");
+                }
+                else if (field.kind == TsRuntimeFieldKind::Composite)
+                {
+                    emitTsRuntimeDeserializeCompositeValue(out, 3, field, optionArray + "[i]");
+                }
+                else if (field.kind == TsRuntimeFieldKind::Unsigned)
+                {
+                    const std::string fn = field.useBigInt ? "readUnsignedBigInt" : "readUnsigned";
+                    emitLine(out, 3, optionArray + "[i] = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
+                }
+                else if (field.kind == TsRuntimeFieldKind::Float)
+                {
+                    emitLine(out, 3, optionArray + "[i] = dsdlRuntime.readFloat(bytes, offsetBits, " + bits + ");");
+                }
+                else
+                {
+                    const std::string fn = field.useBigInt ? "readSignedBigInt" : "readSigned";
+                    emitLine(out, 3, optionArray + "[i] = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
+                }
+                if (field.kind != TsRuntimeFieldKind::Composite && field.kind != TsRuntimeFieldKind::Padding)
+                {
+                    emitLine(out, 3, "offsetBits += " + bits + ";");
+                }
+                emitLine(out, 2, "}");
+                emitLine(out, 2, "const optionValue = " + optionArray + ";");
+            }
+            emitLine(out,
+                     2,
+                     "value = { _tag: " + optionTag + ", " + field.fieldName + ": optionValue } as " + typeName + ";");
+            emitLine(out, 2, "break;");
+            emitLine(out, 1, "}");
+        }
+        emitLine(out, 1, "default:");
+        emitLine(out, 2, "throw new Error(\"decoded invalid union tag \" + tag);");
+        emitLine(out, 1, "}");
+        emitLine(out, 1, "offsetBits = dsdlRuntime.byteLengthForBits(offsetBits) * 8;");
+        emitLine(out, 1, "const consumed = Math.min(bytes.length, dsdlRuntime.byteLengthForBits(offsetBits));");
+        emitLine(out, 1, "return { value, consumed };");
+        emitLine(out, 0, "}");
+        return;
+    }
+
+    emitLine(out, 0, "export function " + serializeFn + "(value: " + typeName + "): Uint8Array {");
+    emitLine(out, 1, "const out = new Uint8Array(" + std::to_string(maxByteLength) + ");");
+    emitLine(out, 1, "let offsetBits = 0;");
+    for (const auto& field : plan.fields)
+    {
+        const auto bits       = std::to_string(field.bitLength);
+        const auto saturating = field.castMode == CastMode::Saturated ? "true" : "false";
+        emitTsRuntimeAlignSerialize(out, 1, field.alignmentBits, field.fieldName);
+
+        if (field.arrayKind == TsRuntimeArrayKind::None)
+        {
+            if (field.kind == TsRuntimeFieldKind::Padding)
+            {
+                emitTsRuntimeSerializePadding(out, 1, field, field.fieldName);
+            }
+            else if (field.kind == TsRuntimeFieldKind::Bool)
+            {
+                emitLine(out, 1, "dsdlRuntime.setBit(out, offsetBits, value." + field.fieldName + ");");
+            }
+            else if (field.kind == TsRuntimeFieldKind::Composite)
+            {
+                emitTsRuntimeSerializeCompositeValue(out, 1, field, "value." + field.fieldName);
+            }
+            else if (field.kind == TsRuntimeFieldKind::Unsigned)
+            {
+                emitLine(out,
+                         1,
+                         "dsdlRuntime.writeUnsigned(out, offsetBits, " + bits + ", value." + field.fieldName + ", " +
+                             saturating + ");");
+            }
+            else if (field.kind == TsRuntimeFieldKind::Float)
+            {
+                emitLine(out,
+                         1,
+                         "dsdlRuntime.writeFloat(out, offsetBits, " + bits + ", value." + field.fieldName + ");");
+            }
+            else
+            {
+                emitLine(out,
+                         1,
+                         "dsdlRuntime.writeSigned(out, offsetBits, " + bits + ", value." + field.fieldName + ", " +
+                             saturating + ");");
+            }
+            if (field.kind != TsRuntimeFieldKind::Composite && field.kind != TsRuntimeFieldKind::Padding)
+            {
+                emitLine(out, 1, "offsetBits += " + bits + ";");
+            }
+        }
+        else if (field.arrayKind == TsRuntimeArrayKind::Fixed)
+        {
+            const auto cap      = std::to_string(field.arrayCapacity);
+            const auto fieldArr = field.fieldName + "Array";
+            emitLine(out, 1, "const " + fieldArr + " = value." + field.fieldName + ";");
+            emitLine(out, 1, "if (!Array.isArray(" + fieldArr + ") || " + fieldArr + ".length !== " + cap + ") {");
+            emitLine(out,
+                     2,
+                     "throw new Error(\"field '" + field.fieldName + "' expects exactly " + cap + " elements\");");
+            emitLine(out, 1, "}");
+            emitLine(out, 1, "for (let i = 0; i < " + cap + "; ++i) {");
+            if (field.kind == TsRuntimeFieldKind::Bool)
+            {
+                emitLine(out, 2, "dsdlRuntime.setBit(out, offsetBits, " + fieldArr + "[i]);");
+            }
+            else if (field.kind == TsRuntimeFieldKind::Composite)
+            {
+                emitTsRuntimeSerializeCompositeValue(out, 2, field, fieldArr + "[i]");
+            }
+            else if (field.kind == TsRuntimeFieldKind::Unsigned)
+            {
+                emitLine(out,
+                         2,
+                         "dsdlRuntime.writeUnsigned(out, offsetBits, " + bits + ", " + fieldArr + "[i], " + saturating +
+                             ");");
+            }
+            else if (field.kind == TsRuntimeFieldKind::Float)
+            {
+                emitLine(out, 2, "dsdlRuntime.writeFloat(out, offsetBits, " + bits + ", " + fieldArr + "[i]);");
+            }
+            else
+            {
+                emitLine(out,
+                         2,
+                         "dsdlRuntime.writeSigned(out, offsetBits, " + bits + ", " + fieldArr + "[i], " + saturating +
+                             ");");
+            }
+            if (field.kind != TsRuntimeFieldKind::Composite && field.kind != TsRuntimeFieldKind::Padding)
+            {
+                emitLine(out, 2, "offsetBits += " + bits + ";");
+            }
+            emitLine(out, 1, "}");
+        }
+        else
+        {
+            const auto cap        = std::to_string(field.arrayCapacity);
+            const auto prefixBits = std::to_string(field.arrayLengthPrefixBits);
+            const auto fieldArr   = field.fieldName + "Array";
+            emitLine(out, 1, "const " + fieldArr + " = value." + field.fieldName + ";");
+            emitLine(out, 1, "if (!Array.isArray(" + fieldArr + ")) {");
+            emitLine(out, 2, "throw new Error(\"field '" + field.fieldName + "' expects an array\");");
+            emitLine(out, 1, "}");
+            emitLine(out, 1, "if (" + fieldArr + ".length > " + cap + ") {");
+            emitLine(out, 2, "throw new Error(\"field '" + field.fieldName + "' exceeds max length " + cap + "\");");
+            emitLine(out, 1, "}");
+            emitLine(out,
+                     1,
+                     "dsdlRuntime.writeUnsigned(out, offsetBits, " + prefixBits + ", " + fieldArr + ".length, false);");
+            emitLine(out, 1, "offsetBits += " + prefixBits + ";");
+            emitLine(out, 1, "for (let i = 0; i < " + fieldArr + ".length; ++i) {");
+            if (field.kind == TsRuntimeFieldKind::Bool)
+            {
+                emitLine(out, 2, "dsdlRuntime.setBit(out, offsetBits, " + fieldArr + "[i]);");
+            }
+            else if (field.kind == TsRuntimeFieldKind::Composite)
+            {
+                emitTsRuntimeSerializeCompositeValue(out, 2, field, fieldArr + "[i]");
+            }
+            else if (field.kind == TsRuntimeFieldKind::Unsigned)
+            {
+                emitLine(out,
+                         2,
+                         "dsdlRuntime.writeUnsigned(out, offsetBits, " + bits + ", " + fieldArr + "[i], " + saturating +
+                             ");");
+            }
+            else if (field.kind == TsRuntimeFieldKind::Float)
+            {
+                emitLine(out, 2, "dsdlRuntime.writeFloat(out, offsetBits, " + bits + ", " + fieldArr + "[i]);");
+            }
+            else
+            {
+                emitLine(out,
+                         2,
+                         "dsdlRuntime.writeSigned(out, offsetBits, " + bits + ", " + fieldArr + "[i], " + saturating +
+                             ");");
+            }
+            if (field.kind != TsRuntimeFieldKind::Composite && field.kind != TsRuntimeFieldKind::Padding)
+            {
+                emitLine(out, 2, "offsetBits += " + bits + ";");
+            }
+            emitLine(out, 1, "}");
+        }
+    }
+    emitLine(out, 1, "const usedBytes = dsdlRuntime.byteLengthForBits(offsetBits);");
+    emitLine(out, 1, "return out.subarray(0, usedBytes);");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+
+    emitLine(out,
+             0,
+             "export function " + deserializeFn + "(bytes: Uint8Array): { value: " + typeName +
+                 "; consumed: number } {");
+    emitLine(out, 1, "const value = {} as " + typeName + ";");
+    emitLine(out, 1, "let offsetBits = 0;");
+    for (const auto& field : plan.fields)
+    {
+        const auto bits = std::to_string(field.bitLength);
+        emitTsRuntimeAlignDeserialize(out, 1, field.alignmentBits);
+        if (field.arrayKind == TsRuntimeArrayKind::None)
+        {
+            if (field.kind == TsRuntimeFieldKind::Padding)
+            {
+                emitTsRuntimeDeserializePadding(out, 1, field);
+            }
+            else if (field.kind == TsRuntimeFieldKind::Bool)
+            {
+                emitLine(out, 1, "value." + field.fieldName + " = dsdlRuntime.getBit(bytes, offsetBits);");
+            }
+            else if (field.kind == TsRuntimeFieldKind::Composite)
+            {
+                emitTsRuntimeDeserializeCompositeValue(out, 1, field, "value." + field.fieldName);
+            }
+            else if (field.kind == TsRuntimeFieldKind::Unsigned)
+            {
+                const std::string fn = field.useBigInt ? "readUnsignedBigInt" : "readUnsigned";
+                emitLine(out,
+                         1,
+                         "value." + field.fieldName + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
+            }
+            else if (field.kind == TsRuntimeFieldKind::Float)
+            {
+                emitLine(out,
+                         1,
+                         "value." + field.fieldName + " = dsdlRuntime.readFloat(bytes, offsetBits, " + bits + ");");
+            }
+            else
+            {
+                const std::string fn = field.useBigInt ? "readSignedBigInt" : "readSigned";
+                emitLine(out,
+                         1,
+                         "value." + field.fieldName + " = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
+            }
+            if (field.kind != TsRuntimeFieldKind::Composite && field.kind != TsRuntimeFieldKind::Padding)
+            {
+                emitLine(out, 1, "offsetBits += " + bits + ";");
+            }
+            continue;
+        }
+
+        if (field.arrayKind == TsRuntimeArrayKind::Fixed)
+        {
+            const auto cap      = std::to_string(field.arrayCapacity);
+            const auto fieldArr = field.fieldName + "Array";
+            const auto arrayElemType =
+                field.kind == TsRuntimeFieldKind::Bool
+                    ? "boolean"
+                    : (field.kind == TsRuntimeFieldKind::Composite ? field.compositeTypeName
+                                                                   : (field.useBigInt ? "bigint" : "number"));
+            emitLine(out, 1, "const " + fieldArr + ": Array<" + arrayElemType + "> = new Array(" + cap + ");");
+            emitLine(out, 1, "for (let i = 0; i < " + cap + "; ++i) {");
+            if (field.kind == TsRuntimeFieldKind::Bool)
+            {
+                emitLine(out, 2, fieldArr + "[i] = dsdlRuntime.getBit(bytes, offsetBits);");
+            }
+            else if (field.kind == TsRuntimeFieldKind::Composite)
+            {
+                emitTsRuntimeDeserializeCompositeValue(out, 2, field, fieldArr + "[i]");
+            }
+            else if (field.kind == TsRuntimeFieldKind::Unsigned)
+            {
+                const std::string fn = field.useBigInt ? "readUnsignedBigInt" : "readUnsigned";
+                emitLine(out, 2, fieldArr + "[i] = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
+            }
+            else if (field.kind == TsRuntimeFieldKind::Float)
+            {
+                emitLine(out, 2, fieldArr + "[i] = dsdlRuntime.readFloat(bytes, offsetBits, " + bits + ");");
+            }
+            else
+            {
+                const std::string fn = field.useBigInt ? "readSignedBigInt" : "readSigned";
+                emitLine(out, 2, fieldArr + "[i] = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
+            }
+            if (field.kind != TsRuntimeFieldKind::Composite && field.kind != TsRuntimeFieldKind::Padding)
+            {
+                emitLine(out, 2, "offsetBits += " + bits + ";");
+            }
+            emitLine(out, 1, "}");
+            emitLine(out, 1, "value." + field.fieldName + " = " + fieldArr + ";");
+        }
+        else
+        {
+            const auto cap        = std::to_string(field.arrayCapacity);
+            const auto prefixBits = std::to_string(field.arrayLengthPrefixBits);
+            const auto fieldArr   = field.fieldName + "Array";
+            const auto arrayElemType =
+                field.kind == TsRuntimeFieldKind::Bool
+                    ? "boolean"
+                    : (field.kind == TsRuntimeFieldKind::Composite ? field.compositeTypeName
+                                                                   : (field.useBigInt ? "bigint" : "number"));
+            emitLine(out,
+                     1,
+                     "const " + field.fieldName + "Length = Math.trunc(dsdlRuntime.readUnsigned(bytes, offsetBits, " +
+                         prefixBits + "));");
+            emitLine(out, 1, "offsetBits += " + prefixBits + ";");
+            emitLine(out, 1, "if (" + field.fieldName + "Length < 0 || " + field.fieldName + "Length > " + cap + ") {");
+            emitLine(out,
+                     2,
+                     "throw new Error(\"decoded length for field '" + field.fieldName + "' exceeds max length " + cap +
+                         "\");");
+            emitLine(out, 1, "}");
+            emitLine(out,
+                     1,
+                     "const " + fieldArr + ": Array<" + arrayElemType + "> = new Array(" + field.fieldName +
+                         "Length);");
+            emitLine(out, 1, "for (let i = 0; i < " + field.fieldName + "Length; ++i) {");
+            if (field.kind == TsRuntimeFieldKind::Bool)
+            {
+                emitLine(out, 2, fieldArr + "[i] = dsdlRuntime.getBit(bytes, offsetBits);");
+            }
+            else if (field.kind == TsRuntimeFieldKind::Composite)
+            {
+                emitTsRuntimeDeserializeCompositeValue(out, 2, field, fieldArr + "[i]");
+            }
+            else if (field.kind == TsRuntimeFieldKind::Unsigned)
+            {
+                const std::string fn = field.useBigInt ? "readUnsignedBigInt" : "readUnsigned";
+                emitLine(out, 2, fieldArr + "[i] = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
+            }
+            else if (field.kind == TsRuntimeFieldKind::Float)
+            {
+                emitLine(out, 2, fieldArr + "[i] = dsdlRuntime.readFloat(bytes, offsetBits, " + bits + ");");
+            }
+            else
+            {
+                const std::string fn = field.useBigInt ? "readSignedBigInt" : "readSigned";
+                emitLine(out, 2, fieldArr + "[i] = dsdlRuntime." + fn + "(bytes, offsetBits, " + bits + ");");
+            }
+            if (field.kind != TsRuntimeFieldKind::Composite && field.kind != TsRuntimeFieldKind::Padding)
+            {
+                emitLine(out, 2, "offsetBits += " + bits + ";");
+            }
+            emitLine(out, 1, "}");
+            emitLine(out, 1, "value." + field.fieldName + " = " + fieldArr + ";");
+        }
+    }
+    emitLine(out, 1, "const consumed = Math.min(bytes.length, dsdlRuntime.byteLengthForBits(offsetBits));");
+    emitLine(out, 1, "return { value, consumed };");
+    emitLine(out, 0, "}");
+}
+
+const LoweredSectionFacts* findLoweredSectionFacts(const LoweredFactsMap&    loweredFacts,
+                                                   const SemanticDefinition& def,
+                                                   llvm::StringRef           sectionKey)
+{
+    const auto defIt =
+        loweredFacts.find(loweredTypeKey(def.info.fullName, def.info.majorVersion, def.info.minorVersion));
+    if (defIt == loweredFacts.end())
+    {
+        return nullptr;
+    }
+    const auto sectionIt = defIt->second.find(sectionKey.str());
+    if (sectionIt == defIt->second.end())
+    {
+        return nullptr;
+    }
+    return &sectionIt->second;
+}
+
+llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
+                                                 const EmitterContext&     ctx,
+                                                 const LoweredFactsMap&    loweredFacts)
+{
+    std::ostringstream out;
+    emitLine(out, 0, "// Generated by llvmdsdl (TypeScript backend).");
+
+    const llvm::StringRef requestSectionKey = def.isService ? "request" : "";
+    auto                  requestRuntimePlan =
+        buildTsRuntimeSectionPlan(def.request, ctx, findLoweredSectionFacts(loweredFacts, def, requestSectionKey));
+    if (!requestRuntimePlan)
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "failed to build TypeScript request runtime plan for '%s': %s",
+                                       def.info.fullName.c_str(),
+                                       llvm::toString(requestRuntimePlan.takeError()).c_str());
+    }
+    std::optional<TsRuntimeSectionPlan> responseRuntimePlanStorage;
+    const TsRuntimeSectionPlan*         responseRuntimePlan = nullptr;
+    if (def.response)
+    {
+        auto responsePlanOrErr =
+            buildTsRuntimeSectionPlan(*def.response, ctx, findLoweredSectionFacts(loweredFacts, def, "response"));
+        if (!responsePlanOrErr)
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "failed to build TypeScript response runtime plan for '%s': %s",
+                                           def.info.fullName.c_str(),
+                                           llvm::toString(responsePlanOrErr.takeError()).c_str());
+        }
+        responseRuntimePlanStorage = std::move(*responsePlanOrErr);
+        responseRuntimePlan        = &(*responseRuntimePlanStorage);
+    }
+
+    std::map<std::string, std::set<std::string>> importsByModule;
+    for (const auto& imp : collectCompositeImports(def.request, def.info, ctx))
+    {
+        importsByModule[imp.modulePath].insert(imp.typeName);
+    }
+    if (def.response)
+    {
+        for (const auto& imp : collectCompositeImports(*def.response, def.info, ctx))
+        {
+            importsByModule[imp.modulePath].insert(imp.typeName);
+        }
+    }
+
+    const auto                                   ownerPath = ctx.relativeFilePath(def.info);
+    std::map<std::string, std::set<std::string>> runtimeImportsByModule;
+    const auto addRuntimeImportsForPlan = [&](const TsRuntimeSectionPlan* const plan) {
+        if (plan == nullptr)
+        {
+            return;
+        }
+        for (const auto& field : plan->fields)
+        {
+            if (field.kind != TsRuntimeFieldKind::Composite || !field.compositeType)
+            {
+                continue;
+            }
+            const auto targetPath = ctx.relativeFilePath(*field.compositeType);
+            if (targetPath == ownerPath)
+            {
+                continue;
+            }
+            const auto modulePath = relativeImportPath(ownerPath, targetPath);
+            runtimeImportsByModule[modulePath].insert(tsRuntimeSerializeFn(field.compositeTypeName));
+            runtimeImportsByModule[modulePath].insert(tsRuntimeDeserializeFn(field.compositeTypeName));
+        }
+    };
+    addRuntimeImportsForPlan(&(*requestRuntimePlan));
+    addRuntimeImportsForPlan(responseRuntimePlan);
+
+    const auto runtimePath = relativeImportPath(ownerPath, std::filesystem::path("dsdl_runtime.ts"));
     emitLine(out, 0, "import * as dsdlRuntime from \"" + runtimePath + "\";");
-  }
+    emitLine(out, 0, "");
 
-  for (const auto &[modulePath, names] : importsByModule) {
-    std::string importNames;
-    for (const auto &name : names) {
-      if (!importNames.empty()) {
-        importNames += ", ";
-      }
-      importNames += name;
+    for (const auto& [modulePath, names] : runtimeImportsByModule)
+    {
+        std::string importNames;
+        for (const auto& name : names)
+        {
+            if (!importNames.empty())
+            {
+                importNames += ", ";
+            }
+            importNames += name;
+        }
+        emitLine(out, 0, "import { " + importNames + " } from \"" + modulePath + "\";");
     }
-    emitLine(out, 0,
-             "import type { " + importNames + " } from \"" + modulePath + "\";");
-  }
-  if (!importsByModule.empty()) {
-    emitLine(out, 0, "");
-  }
 
-  const auto baseType = ctx.typeName(def.info);
-  emitLine(out, 0, "export const DSDL_FULL_NAME = \"" + def.info.fullName + "\";");
-  emitLine(out, 0,
-           "export const DSDL_VERSION_MAJOR = " +
-               std::to_string(def.info.majorVersion) + ";");
-  emitLine(out, 0,
-           "export const DSDL_VERSION_MINOR = " +
-               std::to_string(def.info.minorVersion) + ";");
-  emitLine(out, 0, "");
-
-  if (!def.isService) {
-    emitSectionType(out, baseType, def.request, ctx);
-    emitLine(out, 0, "");
-    emitSectionConstants(out, baseType, def.request);
-    emitLine(out, 0, "");
-    if (requestRuntimePlan) {
-      emitTsRuntimeFunctions(out, baseType, *requestRuntimePlan);
-    } else {
-      emitTsRuntimeUnsupportedStubs(out, baseType);
+    for (const auto& [modulePath, names] : importsByModule)
+    {
+        std::string importNames;
+        for (const auto& name : names)
+        {
+            if (!importNames.empty())
+            {
+                importNames += ", ";
+            }
+            importNames += name;
+        }
+        emitLine(out, 0, "import type { " + importNames + " } from \"" + modulePath + "\";");
     }
-    return out.str();
-  }
+    const auto baseType = ctx.typeName(def.info);
+    emitLine(out, 0, "export const DSDL_FULL_NAME = \"" + def.info.fullName + "\";");
+    emitLine(out, 0, "export const DSDL_VERSION_MAJOR = " + std::to_string(def.info.majorVersion) + ";");
+    emitLine(out, 0, "export const DSDL_VERSION_MINOR = " + std::to_string(def.info.minorVersion) + ";");
+    emitLine(out, 0, "");
 
-  const auto reqType = baseType + "_Request";
-  const auto respType = baseType + "_Response";
+    if (!def.isService)
+    {
+        emitSectionType(out, baseType, def.request, ctx);
+        emitLine(out, 0, "");
+        emitSectionConstants(out, baseType, def.request);
+        emitLine(out, 0, "");
+        emitTsRuntimeFunctions(out, baseType, *requestRuntimePlan);
+        return out.str();
+    }
 
-  emitSectionType(out, reqType, def.request, ctx);
-  emitLine(out, 0, "");
-  emitSectionConstants(out, reqType, def.request);
-  emitLine(out, 0, "");
-  if (requestRuntimePlan) {
+    const auto reqType  = baseType + "_Request";
+    const auto respType = baseType + "_Response";
+
+    emitSectionType(out, reqType, def.request, ctx);
+    emitLine(out, 0, "");
+    emitSectionConstants(out, reqType, def.request);
+    emitLine(out, 0, "");
     emitTsRuntimeFunctions(out, reqType, *requestRuntimePlan);
-  } else {
-    emitTsRuntimeUnsupportedStubs(out, reqType);
-  }
-  emitLine(out, 0, "");
-
-  if (def.response) {
-    emitSectionType(out, respType, *def.response, ctx);
     emitLine(out, 0, "");
-    emitSectionConstants(out, respType, *def.response);
+
+    if (def.response)
+    {
+        emitSectionType(out, respType, *def.response, ctx);
+        emitLine(out, 0, "");
+        emitSectionConstants(out, respType, *def.response);
+        emitLine(out, 0, "");
+        emitTsRuntimeFunctions(out, respType, *responseRuntimePlan);
+        emitLine(out, 0, "");
+    }
+
+    emitLine(out, 0, "export type " + baseType + " = " + reqType + ";");
+    return out.str();
+}
+
+std::string renderPackageJson(const TsEmitOptions& options)
+{
+    std::ostringstream out;
+    out << "{\n";
+    out << "  \"name\": \"" << options.moduleName << "\",\n";
+    out << "  \"version\": \"0.1.0\",\n";
+    out << "  \"type\": \"module\"\n";
+    out << "}\n";
+    return out.str();
+}
+
+std::string renderTsRuntimeModule()
+{
+    std::ostringstream out;
+    emitLine(out, 0, "// Generated by llvmdsdl TypeScript runtime scaffold.");
     emitLine(out, 0, "");
-    if (responseRuntimePlan) {
-      emitTsRuntimeFunctions(out, respType, *responseRuntimePlan);
-    } else {
-      emitTsRuntimeUnsupportedStubs(out, respType);
-    }
+    emitLine(out, 0, "function toBigIntValue(value: number | bigint): bigint {");
+    emitLine(out, 1, "if (typeof value === \"bigint\") {");
+    emitLine(out, 2, "return value;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "if (!Number.isFinite(value)) {");
+    emitLine(out, 2, "return 0n;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "return BigInt(Math.trunc(value));");
+    emitLine(out, 0, "}");
     emitLine(out, 0, "");
-  }
-
-  emitLine(out, 0, "export type " + baseType + " = " + reqType + ";");
-  return out.str();
+    emitLine(out, 0, "function maskBits(lenBits: number): bigint {");
+    emitLine(out, 1, "if (lenBits <= 0) {");
+    emitLine(out, 2, "return 0n;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "return (1n << BigInt(lenBits)) - 1n;");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "export function byteLengthForBits(totalBits: number): number {");
+    emitLine(out, 1, "if (totalBits <= 0) {");
+    emitLine(out, 2, "return 0;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "return Math.floor((totalBits + 7) / 8);");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "function setRawBit(buf: Uint8Array, offBits: number, bit: boolean): void {");
+    emitLine(out, 1, "const byteIndex = Math.floor(offBits / 8);");
+    emitLine(out, 1, "const bitIndex = offBits % 8;");
+    emitLine(out, 1, "if (byteIndex < 0 || byteIndex >= buf.length) {");
+    emitLine(out, 2, "throw new Error(\"serialization buffer too small\");");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "const mask = 1 << bitIndex;");
+    emitLine(out, 1, "if (bit) {");
+    emitLine(out, 2, "buf[byteIndex] = (buf[byteIndex] | mask) & 0xff;");
+    emitLine(out, 1, "} else {");
+    emitLine(out, 2, "buf[byteIndex] = (buf[byteIndex] & (~mask)) & 0xff;");
+    emitLine(out, 1, "}");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "function getRawBit(buf: Uint8Array, offBits: number): boolean {");
+    emitLine(out, 1, "const byteIndex = Math.floor(offBits / 8);");
+    emitLine(out, 1, "const bitIndex = offBits % 8;");
+    emitLine(out, 1, "if (byteIndex < 0 || byteIndex >= buf.length) {");
+    emitLine(out, 2, "return false;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "return ((buf[byteIndex] >> bitIndex) & 1) === 1;");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "function writeUnsignedBits(");
+    emitLine(out, 1, "buf: Uint8Array,");
+    emitLine(out, 1, "offBits: number,");
+    emitLine(out, 1, "lenBits: number,");
+    emitLine(out, 1, "value: bigint");
+    emitLine(out, 0, "): void {");
+    emitLine(out, 1, "for (let i = 0; i < lenBits; ++i) {");
+    emitLine(out, 2, "const bit = ((value >> BigInt(i)) & 1n) === 1n;");
+    emitLine(out, 2, "setRawBit(buf, offBits + i, bit);");
+    emitLine(out, 1, "}");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "function readUnsignedBits(buf: Uint8Array, offBits: number, lenBits: number): bigint {");
+    emitLine(out, 1, "let out = 0n;");
+    emitLine(out, 1, "for (let i = 0; i < lenBits; ++i) {");
+    emitLine(out, 2, "if (getRawBit(buf, offBits + i)) {");
+    emitLine(out, 3, "out |= (1n << BigInt(i));");
+    emitLine(out, 2, "}");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "return out;");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "export function setBit(buf: Uint8Array, offBits: number, value: boolean): void {");
+    emitLine(out, 1, "setRawBit(buf, offBits, !!value);");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "export function getBit(buf: Uint8Array, offBits: number): boolean {");
+    emitLine(out, 1, "return getRawBit(buf, offBits);");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "export function copyBits(");
+    emitLine(out, 1, "dst: Uint8Array,");
+    emitLine(out, 1, "dstOffBits: number,");
+    emitLine(out, 1, "src: Uint8Array,");
+    emitLine(out, 1, "srcOffBits: number,");
+    emitLine(out, 1, "lenBits: number");
+    emitLine(out, 0, "): void {");
+    emitLine(out, 1, "if (lenBits <= 0) {");
+    emitLine(out, 2, "return;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "for (let i = 0; i < lenBits; ++i) {");
+    emitLine(out, 2, "setRawBit(dst, dstOffBits + i, getRawBit(src, srcOffBits + i));");
+    emitLine(out, 1, "}");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "export function extractBits(");
+    emitLine(out, 1, "src: Uint8Array,");
+    emitLine(out, 1, "srcOffBits: number,");
+    emitLine(out, 1, "lenBits: number");
+    emitLine(out, 0, "): Uint8Array {");
+    emitLine(out, 1, "const out = new Uint8Array(byteLengthForBits(lenBits));");
+    emitLine(out, 1, "copyBits(out, 0, src, srcOffBits, lenBits);");
+    emitLine(out, 1, "return out;");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "export function writeUnsigned(");
+    emitLine(out, 1, "buf: Uint8Array,");
+    emitLine(out, 1, "offBits: number,");
+    emitLine(out, 1, "lenBits: number,");
+    emitLine(out, 1, "value: number | bigint,");
+    emitLine(out, 1, "saturating: boolean");
+    emitLine(out, 0, "): void {");
+    emitLine(out, 1, "if (lenBits <= 0) {");
+    emitLine(out, 2, "return;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "const max = maskBits(lenBits);");
+    emitLine(out, 1, "let inValue = toBigIntValue(value);");
+    emitLine(out, 1, "if (saturating) {");
+    emitLine(out, 2, "if (inValue < 0n) {");
+    emitLine(out, 3, "inValue = 0n;");
+    emitLine(out, 2, "} else if (inValue > max) {");
+    emitLine(out, 3, "inValue = max;");
+    emitLine(out, 2, "}");
+    emitLine(out, 1, "} else {");
+    emitLine(out, 2, "inValue = BigInt.asUintN(lenBits, inValue);");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "writeUnsignedBits(buf, offBits, lenBits, inValue);");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "export function writeSigned(");
+    emitLine(out, 1, "buf: Uint8Array,");
+    emitLine(out, 1, "offBits: number,");
+    emitLine(out, 1, "lenBits: number,");
+    emitLine(out, 1, "value: number | bigint,");
+    emitLine(out, 1, "saturating: boolean");
+    emitLine(out, 0, "): void {");
+    emitLine(out, 1, "if (lenBits <= 0) {");
+    emitLine(out, 2, "return;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "let inValue = toBigIntValue(value);");
+    emitLine(out, 1, "if (saturating) {");
+    emitLine(out, 2, "const min = -(1n << BigInt(lenBits - 1));");
+    emitLine(out, 2, "const max = (1n << BigInt(lenBits - 1)) - 1n;");
+    emitLine(out, 2, "if (inValue < min) {");
+    emitLine(out, 3, "inValue = min;");
+    emitLine(out, 2, "} else if (inValue > max) {");
+    emitLine(out, 3, "inValue = max;");
+    emitLine(out, 2, "}");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "writeUnsignedBits(buf, offBits, lenBits, BigInt.asUintN(lenBits, inValue));");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "function float32ToBits(value: number): number {");
+    emitLine(out, 1, "const bytes = new ArrayBuffer(4);");
+    emitLine(out, 1, "const view = new DataView(bytes);");
+    emitLine(out, 1, "view.setFloat32(0, value, true);");
+    emitLine(out, 1, "return view.getUint32(0, true);");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "function bitsToFloat32(bits: number): number {");
+    emitLine(out, 1, "const bytes = new ArrayBuffer(4);");
+    emitLine(out, 1, "const view = new DataView(bytes);");
+    emitLine(out, 1, "view.setUint32(0, bits >>> 0, true);");
+    emitLine(out, 1, "return view.getFloat32(0, true);");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "function float64ToBits(value: number): bigint {");
+    emitLine(out, 1, "const bytes = new ArrayBuffer(8);");
+    emitLine(out, 1, "const view = new DataView(bytes);");
+    emitLine(out, 1, "view.setFloat64(0, value, true);");
+    emitLine(out, 1, "return view.getBigUint64(0, true);");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "function bitsToFloat64(bits: bigint): number {");
+    emitLine(out, 1, "const bytes = new ArrayBuffer(8);");
+    emitLine(out, 1, "const view = new DataView(bytes);");
+    emitLine(out, 1, "view.setBigUint64(0, bits, true);");
+    emitLine(out, 1, "return view.getFloat64(0, true);");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "function float16ToBits(value: number): number {");
+    emitLine(out, 1, "if (Number.isNaN(value)) {");
+    emitLine(out, 2, "return 0x7e00;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "if (value === Infinity) {");
+    emitLine(out, 2, "return 0x7c00;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "if (value === -Infinity) {");
+    emitLine(out, 2, "return 0xfc00;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "const bits = float32ToBits(value);");
+    emitLine(out, 1, "const sign = (bits >>> 16) & 0x8000;");
+    emitLine(out, 1, "let exp = ((bits >>> 23) & 0xff) - 127 + 15;");
+    emitLine(out, 1, "let mant = bits & 0x7fffff;");
+    emitLine(out, 1, "if (exp <= 0) {");
+    emitLine(out, 2, "if (exp < -10) {");
+    emitLine(out, 3, "return sign;");
+    emitLine(out, 2, "}");
+    emitLine(out, 2, "mant = (mant | 0x800000) >>> (1 - exp);");
+    emitLine(out, 2, "if ((mant & 0x1000) !== 0) {");
+    emitLine(out, 3, "mant += 0x2000;");
+    emitLine(out, 2, "}");
+    emitLine(out, 2, "return sign | (mant >>> 13);");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "if (exp >= 0x1f) {");
+    emitLine(out, 2, "return sign | 0x7c00;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "if ((mant & 0x1000) !== 0) {");
+    emitLine(out, 2, "mant += 0x2000;");
+    emitLine(out, 2, "if ((mant & 0x800000) !== 0) {");
+    emitLine(out, 3, "mant = 0;");
+    emitLine(out, 3, "exp += 1;");
+    emitLine(out, 3, "if (exp >= 0x1f) {");
+    emitLine(out, 4, "return sign | 0x7c00;");
+    emitLine(out, 3, "}");
+    emitLine(out, 2, "}");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "return sign | (exp << 10) | (mant >>> 13);");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "function bitsToFloat16(bits: number): number {");
+    emitLine(out, 1, "const sign = (bits & 0x8000) !== 0 ? -1 : 1;");
+    emitLine(out, 1, "const exp = (bits >>> 10) & 0x1f;");
+    emitLine(out, 1, "const mant = bits & 0x03ff;");
+    emitLine(out, 1, "if (exp === 0) {");
+    emitLine(out, 2, "if (mant === 0) {");
+    emitLine(out, 3, "return sign * 0;");
+    emitLine(out, 2, "}");
+    emitLine(out, 2, "return sign * Math.pow(2, -14) * (mant / 1024);");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "if (exp === 0x1f) {");
+    emitLine(out, 2, "return mant === 0 ? sign * Infinity : Number.NaN;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "return sign * Math.pow(2, exp - 15) * (1 + (mant / 1024));");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "export function writeFloat(");
+    emitLine(out, 1, "buf: Uint8Array,");
+    emitLine(out, 1, "offBits: number,");
+    emitLine(out, 1, "lenBits: number,");
+    emitLine(out, 1, "value: number");
+    emitLine(out, 0, "): void {");
+    emitLine(out, 1, "if (lenBits === 16) {");
+    emitLine(out, 2, "writeUnsignedBits(buf, offBits, lenBits, BigInt(float16ToBits(value)));");
+    emitLine(out, 2, "return;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "if (lenBits === 32) {");
+    emitLine(out, 2, "writeUnsignedBits(buf, offBits, lenBits, BigInt(float32ToBits(value)));");
+    emitLine(out, 2, "return;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "if (lenBits === 64) {");
+    emitLine(out, 2, "writeUnsignedBits(buf, offBits, lenBits, float64ToBits(value));");
+    emitLine(out, 2, "return;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "throw new Error(\"unsupported float bit length \" + lenBits);");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "export function readFloat(buf: Uint8Array, offBits: number, lenBits: number): number {");
+    emitLine(out, 1, "if (lenBits === 16) {");
+    emitLine(out, 2, "return bitsToFloat16(Number(readUnsignedBits(buf, offBits, lenBits)));");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "if (lenBits === 32) {");
+    emitLine(out, 2, "return bitsToFloat32(Number(readUnsignedBits(buf, offBits, lenBits)));");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "if (lenBits === 64) {");
+    emitLine(out, 2, "return bitsToFloat64(readUnsignedBits(buf, offBits, lenBits));");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "throw new Error(\"unsupported float bit length \" + lenBits);");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "export function readUnsignedBigInt(");
+    emitLine(out, 1, "buf: Uint8Array,");
+    emitLine(out, 1, "offBits: number,");
+    emitLine(out, 1, "lenBits: number");
+    emitLine(out, 0, "): bigint {");
+    emitLine(out, 1, "if (lenBits <= 0) {");
+    emitLine(out, 2, "return 0n;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "return readUnsignedBits(buf, offBits, lenBits);");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "export function readSignedBigInt(");
+    emitLine(out, 1, "buf: Uint8Array,");
+    emitLine(out, 1, "offBits: number,");
+    emitLine(out, 1, "lenBits: number");
+    emitLine(out, 0, "): bigint {");
+    emitLine(out, 1, "if (lenBits <= 0) {");
+    emitLine(out, 2, "return 0n;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "const raw = readUnsignedBits(buf, offBits, lenBits);");
+    emitLine(out, 1, "const signBit = 1n << BigInt(lenBits - 1);");
+    emitLine(out, 1, "if ((raw & signBit) !== 0n) {");
+    emitLine(out, 2, "return raw - (1n << BigInt(lenBits));");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "return raw;");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "export function readUnsigned(buf: Uint8Array, offBits: number, lenBits: number): number {");
+    emitLine(out, 1, "if (lenBits <= 0) {");
+    emitLine(out, 2, "return 0;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "return Number(readUnsignedBigInt(buf, offBits, lenBits));");
+    emitLine(out, 0, "}");
+    emitLine(out, 0, "");
+    emitLine(out, 0, "export function readSigned(buf: Uint8Array, offBits: number, lenBits: number): number {");
+    emitLine(out, 1, "if (lenBits <= 0) {");
+    emitLine(out, 2, "return 0;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "return Number(readSignedBigInt(buf, offBits, lenBits));");
+    emitLine(out, 0, "}");
+    return out.str();
 }
 
-std::string renderPackageJson(const TsEmitOptions &options) {
-  std::ostringstream out;
-  out << "{\n";
-  out << "  \"name\": \"" << options.moduleName << "\",\n";
-  out << "  \"version\": \"0.1.0\",\n";
-  out << "  \"type\": \"module\"\n";
-  out << "}\n";
-  return out.str();
+}  // namespace
+
+llvm::Error emitTs(const SemanticModule& semantic,
+                   mlir::ModuleOp        module,
+                   const TsEmitOptions&  options,
+                   DiagnosticEngine&     diagnostics)
+{
+    if (options.outDir.empty())
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(), "output directory is required");
+    }
+
+    LoweredFactsMap loweredFacts;
+    if (!collectLoweredFactsFromMlir(semantic,
+                                     module,
+                                     diagnostics,
+                                     "TypeScript",
+                                     &loweredFacts,
+                                     options.optimizeLoweredSerDes))
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "MLIR schema coverage validation failed for TypeScript emission");
+    }
+
+    std::filesystem::path outRoot(options.outDir);
+    std::filesystem::create_directories(outRoot);
+
+    if (options.emitPackageJson)
+    {
+        if (auto err = writeFile(outRoot / "package.json", renderPackageJson(options)))
+        {
+            return err;
+        }
+    }
+    if (auto err = writeFile(outRoot / "dsdl_runtime.ts", renderTsRuntimeModule()))
+    {
+        return err;
+    }
+
+    EmitterContext ctx(semantic);
+
+    std::vector<const SemanticDefinition*> ordered;
+    ordered.reserve(semantic.definitions.size());
+    for (const auto& def : semantic.definitions)
+    {
+        ordered.push_back(&def);
+    }
+    std::sort(ordered.begin(), ordered.end(), [](const auto* lhs, const auto* rhs) {
+        if (lhs->info.fullName != rhs->info.fullName)
+        {
+            return lhs->info.fullName < rhs->info.fullName;
+        }
+        if (lhs->info.majorVersion != rhs->info.majorVersion)
+        {
+            return lhs->info.majorVersion < rhs->info.majorVersion;
+        }
+        return lhs->info.minorVersion < rhs->info.minorVersion;
+    });
+
+    std::vector<std::filesystem::path> generatedRelativePaths;
+    generatedRelativePaths.reserve(ordered.size());
+
+    for (const auto* def : ordered)
+    {
+        const auto relPath = ctx.relativeFilePath(def->info);
+        generatedRelativePaths.push_back(relPath);
+
+        const auto fullPath = outRoot / relPath;
+        std::filesystem::create_directories(fullPath.parent_path());
+        auto rendered = renderDefinitionFile(*def, ctx, loweredFacts);
+        if (!rendered)
+        {
+            return rendered.takeError();
+        }
+
+        if (auto err = writeFile(fullPath, *rendered))
+        {
+            return err;
+        }
+    }
+
+    std::ostringstream index;
+    emitLine(index, 0, "// Generated by llvmdsdl (TypeScript backend).");
+    std::map<std::string, unsigned> aliasUseCount;
+    for (const auto& relPath : generatedRelativePaths)
+    {
+        std::string modulePath = relPath.generic_string();
+        if (modulePath.size() >= 3 && modulePath.ends_with(".ts"))
+        {
+            modulePath.resize(modulePath.size() - 3);
+        }
+        std::string alias    = moduleAliasFromPath(modulePath);
+        unsigned&   useCount = aliasUseCount[alias];
+        if (useCount > 0)
+        {
+            alias += "_" + std::to_string(useCount);
+        }
+        ++useCount;
+
+        emitLine(index, 0, "export * as " + alias + " from \"./" + modulePath + "\";");
+    }
+
+    if (auto err = writeFile(outRoot / "index.ts", index.str()))
+    {
+        return err;
+    }
+
+    return llvm::Error::success();
 }
 
-std::string renderTsRuntimeModule() {
-  std::ostringstream out;
-  emitLine(out, 0, "// Generated by llvmdsdl TypeScript runtime scaffold.");
-  emitLine(out, 0, "");
-  emitLine(out, 0, "function toBigIntValue(value: number | bigint): bigint {");
-  emitLine(out, 1, "if (typeof value === \"bigint\") {");
-  emitLine(out, 2, "return value;");
-  emitLine(out, 1, "}");
-  emitLine(out, 1, "if (!Number.isFinite(value)) {");
-  emitLine(out, 2, "return 0n;");
-  emitLine(out, 1, "}");
-  emitLine(out, 1, "return BigInt(Math.trunc(value));");
-  emitLine(out, 0, "}");
-  emitLine(out, 0, "");
-  emitLine(out, 0, "function maskBits(lenBits: number): bigint {");
-  emitLine(out, 1, "if (lenBits <= 0) {");
-  emitLine(out, 2, "return 0n;");
-  emitLine(out, 1, "}");
-  emitLine(out, 1, "return (1n << BigInt(lenBits)) - 1n;");
-  emitLine(out, 0, "}");
-  emitLine(out, 0, "");
-  emitLine(out, 0, "export function byteLengthForBits(totalBits: number): number {");
-  emitLine(out, 1, "if (totalBits <= 0) {");
-  emitLine(out, 2, "return 0;");
-  emitLine(out, 1, "}");
-  emitLine(out, 1, "return Math.floor((totalBits + 7) / 8);");
-  emitLine(out, 0, "}");
-  emitLine(out, 0, "");
-  emitLine(out, 0, "function setRawBit(buf: Uint8Array, offBits: number, bit: boolean): void {");
-  emitLine(out, 1, "const byteIndex = Math.floor(offBits / 8);");
-  emitLine(out, 1, "const bitIndex = offBits % 8;");
-  emitLine(out, 1, "if (byteIndex < 0 || byteIndex >= buf.length) {");
-  emitLine(out, 2, "throw new Error(\"serialization buffer too small\");");
-  emitLine(out, 1, "}");
-  emitLine(out, 1, "const mask = 1 << bitIndex;");
-  emitLine(out, 1, "if (bit) {");
-  emitLine(out, 2, "buf[byteIndex] = (buf[byteIndex] | mask) & 0xff;");
-  emitLine(out, 1, "} else {");
-  emitLine(out, 2, "buf[byteIndex] = (buf[byteIndex] & (~mask)) & 0xff;");
-  emitLine(out, 1, "}");
-  emitLine(out, 0, "}");
-  emitLine(out, 0, "");
-  emitLine(out, 0, "function getRawBit(buf: Uint8Array, offBits: number): boolean {");
-  emitLine(out, 1, "const byteIndex = Math.floor(offBits / 8);");
-  emitLine(out, 1, "const bitIndex = offBits % 8;");
-  emitLine(out, 1, "if (byteIndex < 0 || byteIndex >= buf.length) {");
-  emitLine(out, 2, "return false;");
-  emitLine(out, 1, "}");
-  emitLine(out, 1, "return ((buf[byteIndex] >> bitIndex) & 1) === 1;");
-  emitLine(out, 0, "}");
-  emitLine(out, 0, "");
-  emitLine(out, 0, "function writeUnsignedBits(");
-  emitLine(out, 1, "buf: Uint8Array,");
-  emitLine(out, 1, "offBits: number,");
-  emitLine(out, 1, "lenBits: number,");
-  emitLine(out, 1, "value: bigint");
-  emitLine(out, 0, "): void {");
-  emitLine(out, 1, "for (let i = 0; i < lenBits; ++i) {");
-  emitLine(out, 2, "const bit = ((value >> BigInt(i)) & 1n) === 1n;");
-  emitLine(out, 2, "setRawBit(buf, offBits + i, bit);");
-  emitLine(out, 1, "}");
-  emitLine(out, 0, "}");
-  emitLine(out, 0, "");
-  emitLine(out, 0, "function readUnsignedBits(buf: Uint8Array, offBits: number, lenBits: number): bigint {");
-  emitLine(out, 1, "let out = 0n;");
-  emitLine(out, 1, "for (let i = 0; i < lenBits; ++i) {");
-  emitLine(out, 2, "if (getRawBit(buf, offBits + i)) {");
-  emitLine(out, 3, "out |= (1n << BigInt(i));");
-  emitLine(out, 2, "}");
-  emitLine(out, 1, "}");
-  emitLine(out, 1, "return out;");
-  emitLine(out, 0, "}");
-  emitLine(out, 0, "");
-  emitLine(out, 0, "export function setBit(buf: Uint8Array, offBits: number, value: boolean): void {");
-  emitLine(out, 1, "setRawBit(buf, offBits, !!value);");
-  emitLine(out, 0, "}");
-  emitLine(out, 0, "");
-  emitLine(out, 0, "export function getBit(buf: Uint8Array, offBits: number): boolean {");
-  emitLine(out, 1, "return getRawBit(buf, offBits);");
-  emitLine(out, 0, "}");
-  emitLine(out, 0, "");
-  emitLine(out, 0, "export function writeUnsigned(");
-  emitLine(out, 1, "buf: Uint8Array,");
-  emitLine(out, 1, "offBits: number,");
-  emitLine(out, 1, "lenBits: number,");
-  emitLine(out, 1, "value: number | bigint,");
-  emitLine(out, 1, "saturating: boolean");
-  emitLine(out, 0, "): void {");
-  emitLine(out, 1, "if (lenBits <= 0) {");
-  emitLine(out, 2, "return;");
-  emitLine(out, 1, "}");
-  emitLine(out, 1, "const max = maskBits(lenBits);");
-  emitLine(out, 1, "let inValue = toBigIntValue(value);");
-  emitLine(out, 1, "if (saturating) {");
-  emitLine(out, 2, "if (inValue < 0n) {");
-  emitLine(out, 3, "inValue = 0n;");
-  emitLine(out, 2, "} else if (inValue > max) {");
-  emitLine(out, 3, "inValue = max;");
-  emitLine(out, 2, "}");
-  emitLine(out, 1, "} else {");
-  emitLine(out, 2, "inValue = BigInt.asUintN(lenBits, inValue);");
-  emitLine(out, 1, "}");
-  emitLine(out, 1, "writeUnsignedBits(buf, offBits, lenBits, inValue);");
-  emitLine(out, 0, "}");
-  emitLine(out, 0, "");
-  emitLine(out, 0, "export function writeSigned(");
-  emitLine(out, 1, "buf: Uint8Array,");
-  emitLine(out, 1, "offBits: number,");
-  emitLine(out, 1, "lenBits: number,");
-  emitLine(out, 1, "value: number | bigint,");
-  emitLine(out, 1, "saturating: boolean");
-  emitLine(out, 0, "): void {");
-  emitLine(out, 1, "if (lenBits <= 0) {");
-  emitLine(out, 2, "return;");
-  emitLine(out, 1, "}");
-  emitLine(out, 1, "let inValue = toBigIntValue(value);");
-  emitLine(out, 1, "if (saturating) {");
-  emitLine(out, 2, "const min = -(1n << BigInt(lenBits - 1));");
-  emitLine(out, 2, "const max = (1n << BigInt(lenBits - 1)) - 1n;");
-  emitLine(out, 2, "if (inValue < min) {");
-  emitLine(out, 3, "inValue = min;");
-  emitLine(out, 2, "} else if (inValue > max) {");
-  emitLine(out, 3, "inValue = max;");
-  emitLine(out, 2, "}");
-  emitLine(out, 1, "}");
-  emitLine(out, 1, "writeUnsignedBits(buf, offBits, lenBits, BigInt.asUintN(lenBits, inValue));");
-  emitLine(out, 0, "}");
-  emitLine(out, 0, "");
-  emitLine(out, 0, "export function readUnsigned(buf: Uint8Array, offBits: number, lenBits: number): number {");
-  emitLine(out, 1, "if (lenBits <= 0) {");
-  emitLine(out, 2, "return 0;");
-  emitLine(out, 1, "}");
-  emitLine(out, 1, "return Number(readUnsignedBits(buf, offBits, lenBits));");
-  emitLine(out, 0, "}");
-  emitLine(out, 0, "");
-  emitLine(out, 0, "export function readSigned(buf: Uint8Array, offBits: number, lenBits: number): number {");
-  emitLine(out, 1, "if (lenBits <= 0) {");
-  emitLine(out, 2, "return 0;");
-  emitLine(out, 1, "}");
-  emitLine(out, 1, "const raw = readUnsignedBits(buf, offBits, lenBits);");
-  emitLine(out, 1, "const signBit = 1n << BigInt(lenBits - 1);");
-  emitLine(out, 1, "if ((raw & signBit) !== 0n) {");
-  emitLine(out, 2, "const signed = raw - (1n << BigInt(lenBits));");
-  emitLine(out, 2, "return Number(signed);");
-  emitLine(out, 1, "}");
-  emitLine(out, 1, "return Number(raw);");
-  emitLine(out, 0, "}");
-  return out.str();
-}
-
-} // namespace
-
-llvm::Error emitTs(const SemanticModule &semantic, mlir::ModuleOp module,
-                   const TsEmitOptions &options,
-                   DiagnosticEngine &diagnostics) {
-  if (options.outDir.empty()) {
-    return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                   "output directory is required");
-  }
-
-  LoweredFactsMap loweredFacts;
-  if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "TypeScript",
-                                   &loweredFacts,
-                                   options.optimizeLoweredSerDes)) {
-    return llvm::createStringError(
-        llvm::inconvertibleErrorCode(),
-        "MLIR schema coverage validation failed for TypeScript emission");
-  }
-
-  std::filesystem::path outRoot(options.outDir);
-  std::filesystem::create_directories(outRoot);
-
-  if (options.emitPackageJson) {
-    if (auto err = writeFile(outRoot / "package.json", renderPackageJson(options))) {
-      return err;
-    }
-  }
-  if (auto err = writeFile(outRoot / "dsdl_runtime.ts", renderTsRuntimeModule())) {
-    return err;
-  }
-
-  EmitterContext ctx(semantic);
-
-  std::vector<const SemanticDefinition *> ordered;
-  ordered.reserve(semantic.definitions.size());
-  for (const auto &def : semantic.definitions) {
-    ordered.push_back(&def);
-  }
-  std::sort(ordered.begin(), ordered.end(), [](const auto *lhs, const auto *rhs) {
-    if (lhs->info.fullName != rhs->info.fullName) {
-      return lhs->info.fullName < rhs->info.fullName;
-    }
-    if (lhs->info.majorVersion != rhs->info.majorVersion) {
-      return lhs->info.majorVersion < rhs->info.majorVersion;
-    }
-    return lhs->info.minorVersion < rhs->info.minorVersion;
-  });
-
-  std::vector<std::filesystem::path> generatedRelativePaths;
-  generatedRelativePaths.reserve(ordered.size());
-
-  for (const auto *def : ordered) {
-    const auto relPath = ctx.relativeFilePath(def->info);
-    generatedRelativePaths.push_back(relPath);
-
-    const auto fullPath = outRoot / relPath;
-    std::filesystem::create_directories(fullPath.parent_path());
-
-    if (auto err = writeFile(fullPath, renderDefinitionFile(*def, ctx))) {
-      return err;
-    }
-  }
-
-  std::ostringstream index;
-  emitLine(index, 0, "// Generated by llvmdsdl (TypeScript experimental backend).");
-  std::map<std::string, unsigned> aliasUseCount;
-  for (const auto &relPath : generatedRelativePaths) {
-    std::string modulePath = relPath.generic_string();
-    if (modulePath.size() >= 3 && modulePath.ends_with(".ts")) {
-      modulePath.resize(modulePath.size() - 3);
-    }
-    std::string alias = moduleAliasFromPath(modulePath);
-    unsigned &useCount = aliasUseCount[alias];
-    if (useCount > 0) {
-      alias += "_" + std::to_string(useCount);
-    }
-    ++useCount;
-
-    emitLine(index, 0,
-             "export * as " + alias + " from \"./" + modulePath + "\";");
-  }
-
-  if (auto err = writeFile(outRoot / "index.ts", index.str())) {
-    return err;
-  }
-
-  return llvm::Error::success();
-}
-
-} // namespace llvmdsdl
+}  // namespace llvmdsdl

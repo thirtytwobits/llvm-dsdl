@@ -1,3 +1,12 @@
+#===----------------------------------------------------------------------===#
+##
+## @file
+## Build rules for shared support utilities.
+##
+## This target packages foundational helpers such as diagnostics, rational arithmetic, and source location formatting.
+##
+#===----------------------------------------------------------------------===#
+
 add_library(llvmdsdlSupport
   Diagnostics.cpp
   Rational.cpp

@@ -1,3 +1,12 @@
+#===----------------------------------------------------------------------===#
+##
+## @file
+## Build rules for semantic-to-MLIR lowering components.
+##
+## The lowering target bridges frontend semantic models into dialect operations used by transformation passes.
+##
+#===----------------------------------------------------------------------===#
+
 add_library(llvmdsdlLowering
   LowerToMLIR.cpp
 )
