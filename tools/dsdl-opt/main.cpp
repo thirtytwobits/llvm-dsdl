@@ -1,3 +1,13 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Entry point for the `dsdl-opt` MLIR pass driver.
+///
+/// This binary registers the DSDL dialect and project pass pipeline, then
+/// delegates command-line execution to `mlir-opt` infrastructure.
+///
+//===----------------------------------------------------------------------===//
+
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/EmitC/IR/EmitC.h>
@@ -10,6 +20,12 @@
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "llvm/Support/InitLLVM.h"
 
+/// @brief Program entry point for `dsdl-opt`.
+///
+/// @param[in] argc Argument count.
+/// @param[in] argv Argument vector.
+/// @return Zero when MLIR optimization driver exits successfully; non-zero on
+///         option parsing or pass pipeline failure.
 int main(int argc, char** argv)
 {
     llvm::InitLLVM y(argc, argv);

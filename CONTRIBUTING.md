@@ -592,4 +592,3 @@ Release sign-off requires all of the following:
    - `README.md`
    - `DEMO.md`
    - `DESIGN.md`
-   - `CANONICAL_PLAN.md`

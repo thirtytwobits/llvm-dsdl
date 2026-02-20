@@ -1,3 +1,14 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Entry point for the `dsdlc` command-line compiler front-end.
+///
+/// This tool parses DSDL definitions, runs semantic analysis, lowers to MLIR,
+/// and dispatches to language backends (C, C++, Rust, Go, TypeScript) or text
+/// output modes (`ast`, `mlir`).
+///
+//===----------------------------------------------------------------------===//
+
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/EmitC/IR/EmitC.h>
@@ -35,23 +46,35 @@
 namespace
 {
 
+/// @brief Checks whether a command token is implemented by `dsdlc`.
+///
+/// @param[in] command Command token from argv.
+/// @return `true` if the command is one of the supported subcommands.
 bool isKnownCommand(llvm::StringRef command)
 {
     return command == "ast" || command == "mlir" || command == "c" || command == "cpp" || command == "rust" ||
            command == "go" || command == "ts";
 }
 
+/// @brief Checks whether a token is a help switch.
+///
+/// @param[in] arg Argument token from argv.
+/// @return `true` when the argument is `--help` or `-h`.
 bool isHelpToken(llvm::StringRef arg)
 {
     return arg == "--help" || arg == "-h";
 }
 
+/// @brief Prints compact usage guidance for invalid CLI invocations.
 void printUsage()
 {
     llvm::errs() << "Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts> --root-namespace-dir <dir> [options]\n"
                  << "Try: dsdlc --help\n";
 }
 
+/// @brief Prints the full help text and optional command-focused details.
+///
+/// @param[in] selectedCommand Optional command name used for focused help.
 void printHelp(const std::string& selectedCommand = "")
 {
     llvm::errs()
@@ -172,6 +195,9 @@ void printHelp(const std::string& selectedCommand = "")
     }
 }
 
+/// @brief Emits collected diagnostics to stderr.
+///
+/// @param[in] diag Diagnostic engine containing accumulated diagnostics.
 void printDiagnostics(const llvmdsdl::DiagnosticEngine& diag)
 {
     for (const auto& d : diag.diagnostics())
@@ -189,6 +215,11 @@ void printDiagnostics(const llvmdsdl::DiagnosticEngine& diag)
     }
 }
 
+/// @brief Resolves a path to an absolute output-root string when possible.
+///
+/// @param[in] root Requested output directory.
+/// @return Absolute path string when resolution succeeds; otherwise the original
+///         input string (or `"stdout"` for empty input).
 std::string resolveOutputRoot(const std::string& root)
 {
     if (root.empty())
@@ -204,6 +235,13 @@ std::string resolveOutputRoot(const std::string& root)
     return root;
 }
 
+/// @brief Counts regular files under a generated output tree.
+///
+/// @details Traversal skips entries that trigger permission or transient
+/// filesystem errors so run-summary reporting remains best-effort.
+///
+/// @param[in] root Output root path.
+/// @return Number of regular files reachable under the output root.
 std::uint64_t countRegularFiles(const std::string& root)
 {
     if (root.empty())
@@ -242,6 +280,12 @@ std::uint64_t countRegularFiles(const std::string& root)
     return count;
 }
 
+/// @brief Prints the post-run command summary.
+///
+/// @param[in] command Executed top-level command.
+/// @param[in] outputRoot Resolved output root description.
+/// @param[in] generatedFiles Number of generated regular files.
+/// @param[in] elapsed Wall-clock execution duration.
 void printRunSummary(llvm::StringRef                           command,
                      llvm::StringRef                           outputRoot,
                      const std::uint64_t                       generatedFiles,
@@ -268,6 +312,12 @@ void printRunSummary(llvm::StringRef                           command,
 
 }  // namespace
 
+/// @brief Program entry point for `dsdlc`.
+///
+/// @param[in] argc Argument count.
+/// @param[in] argv Argument vector.
+/// @return Zero on success, non-zero on CLI, parse, semantic, lowering, or
+///         code-generation failure.
 int main(int argc, char** argv)
 {
     llvm::InitLLVM y(argc, argv);
