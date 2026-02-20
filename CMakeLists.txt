@@ -125,6 +125,7 @@ add_custom_target(check-include-what-you-use
 add_subdirectory(include/llvmdsdl)
 add_subdirectory(lib)
 add_subdirectory(tools)
+add_subdirectory(examples/cyphal_ping_pong)
 
 set(LLVMDSDL_SELF_CONTAINED_TOOL_BUNDLE_DEFAULT OFF)
 if(APPLE)
