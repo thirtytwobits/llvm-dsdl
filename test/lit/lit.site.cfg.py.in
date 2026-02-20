@@ -1,7 +1,7 @@
 import os
-config.test_source_root = r"@CMAKE_CURRENT_SOURCE_DIR@"
-config.test_exec_root = r"@CMAKE_CURRENT_BINARY_DIR@"
-config.dsdlc = "@LLVMDSDL_BINARY_DIR@/tools/dsdlc/dsdlc"
-config.dsdl_opt = "@LLVMDSDL_BINARY_DIR@/tools/dsdl-opt/dsdl-opt"
+config.test_source_root = r"@LLVMDSDL_LIT_TEST_SOURCE_ROOT@"
+config.test_exec_root = r"@LLVMDSDL_LIT_TEST_EXEC_ROOT@"
+config.dsdlc = r"@LLVMDSDL_LIT_DSDLC@"
+config.dsdl_opt = r"@LLVMDSDL_LIT_DSDLOPT@"
 
 lit_config.load_config(config, os.path.join(config.test_source_root, "lit.cfg.py"))

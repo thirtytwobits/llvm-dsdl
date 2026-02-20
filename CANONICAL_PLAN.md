@@ -203,7 +203,7 @@ Completion evidence (February 20, 2026):
 3. Canonical status/runbook updated with semantic-mode clarity and utility target guidance:
    - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/README.md`
 4. Release checklist added and linked:
-   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/RELEASE_CHECKLIST.md`
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/CONTRIBUTING.md` (section 15)
 5. Validation commands:
    - `cmake --build build/dev --target check-format -j1`
    - `cmake --build build/dev --target check-iwyu -j1`

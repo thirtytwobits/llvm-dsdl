@@ -129,7 +129,7 @@ add_subdirectory(examples/cyphal_ping_pong)
 add_subdirectory(examples/cyphal_yakut_register_demo)
 
 set(LLVMDSDL_SELF_CONTAINED_TOOL_BUNDLE_DEFAULT OFF)
-if(APPLE)
+if(APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(LLVMDSDL_SELF_CONTAINED_TOOL_BUNDLE_DEFAULT ON)
 endif()
 

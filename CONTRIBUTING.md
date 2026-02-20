@@ -20,6 +20,7 @@ to let a new contributor go from a clean checkout to a verified build and
 12. Common Development Tasks
 13. Troubleshooting
 14. Commit and PR Expectations
+15. Release Checklist
 
 ## 1. Scope
 
@@ -87,56 +88,29 @@ List available presets:
 cmake --list-presets=all
 ```
 
-### 4.1 Fast dev workflow
+### 4.1 Canonical matrix workflows
 
 ```bash
-cmake --workflow --preset dev
+cmake --workflow --preset matrix-dev-llvm-env
+cmake --workflow --preset matrix-dev-homebrew
+cmake --workflow --preset matrix-ci
 ```
 
-Runs:
+Each matrix workflow runs:
 
-1. `configure` preset `dev`
-2. `build` preset `build-dev`
-3. `test` preset `test-dev` (fast suite; excludes integration-labeled tests)
+1. configure once for one environment preset
+2. `Debug` build + smoke tests (exclude `integration`)
+3. `RelWithDebInfo` build + full test set
+4. `Release` build + smoke tests
 
-### 4.2 Full verification workflow
+Release builds also invoke `bundle-tools-self-contained`.
 
-```bash
-cmake --workflow --preset full
-```
-
-Runs all tests, including integration validation that:
-
-- generates all `uavcan` headers,
-- generates `uavcan` C++ headers for `std` and `pmr` profiles,
-- generates `uavcan` Rust crate output (`std` profile),
-- checks count parity (`.dsdl` count == generated header count),
-- checks for stub references,
-- compile-checks all generated headers as C11 with `-Wall -Wextra -Werror`.
-
-### 4.3 Run only `uavcan` integration validation
-
-```bash
-cmake --workflow --preset uavcan
-```
-
-### 4.4 macOS Homebrew LLVM workflow
-
-```bash
-cmake --workflow --preset dev-homebrew
-```
-
-Uses:
-
-- `/opt/homebrew/opt/llvm/lib/cmake/llvm`
-- `/opt/homebrew/opt/llvm/lib/cmake/mlir`
-
-### 4.5 Environment-driven LLVM/MLIR workflow
+### 4.2 Environment-driven LLVM/MLIR usage
 
 ```bash
 export LLVM_DIR=/path/to/llvm/lib/cmake/llvm
 export MLIR_DIR=/path/to/llvm/lib/cmake/mlir
-cmake --workflow --preset dev-llvm-env
+cmake --workflow --preset matrix-dev-llvm-env
 ```
 
 ## 5. Configure (Manual CMake)
@@ -148,8 +122,7 @@ Use this when you want explicit control instead of presets.
 ```bash
 LLVM_PREFIX="$(brew --prefix llvm)"
 
-cmake -S . -B build -G Ninja \
-  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+cmake -S . -B build -G "Ninja Multi-Config" \
   -DLLVM_DIR="${LLVM_PREFIX}/lib/cmake/llvm" \
   -DMLIR_DIR="${LLVM_PREFIX}/lib/cmake/mlir"
 ```
@@ -157,8 +130,7 @@ cmake -S . -B build -G Ninja \
 ### 5.2 Generic Linux example
 
 ```bash
-cmake -S . -B build -G Ninja \
-  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+cmake -S . -B build -G "Ninja Multi-Config" \
   -DLLVM_DIR=/path/to/llvm/lib/cmake/llvm \
   -DMLIR_DIR=/path/to/llvm/lib/cmake/mlir
 ```
@@ -175,13 +147,13 @@ cmake -S . -B build -G Ninja \
 Manual build:
 
 ```bash
-cmake --build build -j
+cmake --build build --config RelWithDebInfo -j
 ```
 
 Preset build (example):
 
 ```bash
-cmake --build --preset build-dev
+cmake --build --preset build-dev-llvm-env-relwithdebinfo
 ```
 
 Expected artifacts:
@@ -195,7 +167,7 @@ Expected artifacts:
 ### 7.1 Manual test invocation
 
 ```bash
-ctest --test-dir build --output-on-failure
+ctest --test-dir build --build-config RelWithDebInfo --output-on-failure
 ```
 
 ### 7.2 Preset test invocation
@@ -203,19 +175,13 @@ ctest --test-dir build --output-on-failure
 Fast test set:
 
 ```bash
-ctest --preset test-dev
+ctest --preset test-dev-llvm-env-smoke-relwithdebinfo
 ```
 
 Full test set:
 
 ```bash
-ctest --preset test-dev-full
-```
-
-`uavcan` integration only:
-
-```bash
-ctest --preset test-uavcan
+ctest --preset test-dev-llvm-env-full-relwithdebinfo
 ```
 
 ### 7.3 lit tests (if lit is available)
@@ -225,13 +191,13 @@ When lit is configured, `ctest` includes `llvmdsdl-lit`.
 You can also run lit directly:
 
 ```bash
-llvm-lit -sv build/test/lit
+lit -sv build/test/lit/RelWithDebInfo
 ```
 
 or with Python module:
 
 ```bash
-python3 -m lit.main -sv build/test/lit
+python3 -m lit.main -sv build/test/lit/RelWithDebInfo
 ```
 
 ## 8. Reproduce `uavcan` C Generation
@@ -239,11 +205,12 @@ python3 -m lit.main -sv build/test/lit
 This is the primary end-to-end check for current project status.
 
 ```bash
+DSDLC=./build/matrix/dev-llvm-env/tools/dsdlc/RelWithDebInfo/dsdlc
 OUT="build/uavcan-out-verify"
 mkdir -p "${OUT}"
 
-./build/tools/dsdlc/dsdlc c \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \ \
+"${DSDLC}" c \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
   --out-dir "${OUT}"
 ```
 
@@ -262,8 +229,8 @@ Expected result:
 OUT_CPP="build/uavcan-cpp-out-verify"
 mkdir -p "${OUT_CPP}"
 
-./build/tools/dsdlc/dsdlc cpp \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \ \
+"${DSDLC}" cpp \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
   --cpp-profile both \
   --out-dir "${OUT_CPP}"
 ```
@@ -282,15 +249,15 @@ Expected result:
 Single-profile generation:
 
 ```bash
-./build/tools/dsdlc/dsdlc cpp \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \ \
+"${DSDLC}" cpp \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
   --cpp-profile std \
   --out-dir build/uavcan-cpp-std-out
 ```
 
 ```bash
-./build/tools/dsdlc/dsdlc cpp \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \ \
+"${DSDLC}" cpp \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
   --cpp-profile pmr \
   --out-dir build/uavcan-cpp-pmr-out
 ```
@@ -301,8 +268,8 @@ Single-profile generation:
 OUT_RUST="build/uavcan-rust-out-verify"
 mkdir -p "${OUT_RUST}"
 
-./build/tools/dsdlc/dsdlc rust \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \ \
+"${DSDLC}" rust \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
   --out-dir "${OUT_RUST}" \
   --rust-crate-name uavcan_dsdl_generated \
   --rust-profile std
@@ -317,10 +284,9 @@ Expected result:
   - `${OUT_RUST}/src/dsdl_runtime.rs`
 - One generated Rust type file per input `.dsdl` definition.
 
-Reserved future profile:
+Additional profile:
 
-- `--rust-profile no-std-alloc` currently returns a not-implemented error by
-  design. This is the carve-out seam for embedded/allocator-focused work.
+- `--rust-profile no-std-alloc` is supported for `no_std + alloc` targets.
 
 ## 11. Validate Generated Output
 
@@ -424,13 +390,13 @@ Expected:
 ### 12.1 Reconfigure after dependency changes
 
 ```bash
-cmake --preset dev
+cmake --preset dev-llvm-env
 ```
 
 or manually:
 
 ```bash
-cmake -S . -B build -G Ninja \
+cmake -S . -B build -G "Ninja Multi-Config" \
   -DLLVM_DIR=... \
   -DMLIR_DIR=...
 ```
@@ -438,27 +404,27 @@ cmake -S . -B build -G Ninja \
 ### 12.2 Fast rebuild of one target
 
 ```bash
-cmake --build build --target dsdlc -j
+cmake --build build --config RelWithDebInfo --target dsdlc -j
 ```
 
 ### 12.3 Inspect CLI options
 
 ```bash
-./build/tools/dsdlc/dsdlc
-./build/tools/dsdl-opt/dsdl-opt --help
+./build/tools/dsdlc/RelWithDebInfo/dsdlc
+./build/tools/dsdl-opt/RelWithDebInfo/dsdl-opt --help
 ```
 
 ### 12.4 Run complete automation in one command
 
 ```bash
-cmake --workflow --preset full
+cmake --workflow --preset matrix-dev-llvm-env
 ```
 
 ## 13. Troubleshooting
 
 ### 13.1 `Could not find LLVMConfig.cmake` / `MLIRConfig.cmake`
 
-- Use `dev-homebrew` or `dev-llvm-env` workflow presets.
+- Use `matrix-dev-homebrew` or `matrix-dev-llvm-env` workflow presets.
 - Or pass explicit `-DLLVM_DIR` and `-DMLIR_DIR` manually.
 - Confirm paths contain the corresponding config files.
 
@@ -497,7 +463,7 @@ Checklist:
 ### 13.7 Rust profile selection
 
 - Use `--rust-profile std` for current production path.
-- `--rust-profile no-std-alloc` is intentionally not implemented yet.
+- Use `--rust-profile no-std-alloc` for `no_std + alloc` targets.
 
 ## 14. Commit and PR Expectations
 
@@ -520,3 +486,110 @@ For substantial codegen/frontend changes, also include:
 
 - One representative generated header diff snippet (before/after).
 - Any semantic behavior notes relevant to the change.
+
+## 15. Release Checklist
+
+Date baseline: February 20, 2026.
+
+Use this checklist before cutting a release tag or publishing demo/release
+artifacts.
+
+### 15.1 Toolchain baseline
+
+Required:
+
+1. CMake `>= 3.24` (`>= 3.25` recommended for presets).
+2. Ninja.
+3. C/C++ toolchain with C++20 support.
+4. LLVM + MLIR with `LLVMConfig.cmake` and `MLIRConfig.cmake`.
+
+Known-good baseline used by current team workflows:
+
+1. LLVM/MLIR `21.1.8`.
+2. macOS/Homebrew LLVM path:
+   - `LLVM_DIR=/opt/homebrew/opt/llvm/lib/cmake/llvm`
+   - `MLIR_DIR=/opt/homebrew/opt/llvm/lib/cmake/mlir`
+
+Optional but strongly recommended:
+
+1. `lit` for lit test execution.
+2. `clang-format` for format checks.
+3. `clang-tidy` for static diagnostics.
+4. `include-what-you-use` for include hygiene checks.
+5. `cargo`/`rustc` for Rust integration gates.
+6. `go` for Go integration gates.
+7. `tsc` for TypeScript typecheck/consumer gates.
+8. `patchelf` for Linux Release self-contained bundle rewriting.
+
+### 15.2 Configure + build preflight
+
+```bash
+cd /path/to/llvm-dsdl
+git submodule update --init --recursive
+
+cmake --workflow --preset matrix-dev-homebrew
+```
+
+If you are not on macOS/Homebrew LLVM, use:
+
+```bash
+cmake --workflow --preset matrix-dev-llvm-env
+```
+
+### 15.3 Required verification gates
+
+Run these before release:
+
+```bash
+cmake --workflow --preset matrix-dev-homebrew
+cmake --workflow --preset matrix-dev-llvm-env
+cmake --workflow --preset matrix-ci
+```
+
+Run format/include checks:
+
+```bash
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target check-format -j1
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target check-iwyu -j1
+```
+
+Optional but recommended static checks:
+
+```bash
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target check-clang-tidy -j1
+```
+
+### 15.4 Demo readiness gates
+
+Verify the canonical demo flow is runnable:
+
+```bash
+cmake --build --preset build-dev-homebrew-relwithdebinfo --target dsdlc dsdl-opt -j
+bash -lc 'source /dev/null; DSDLC=build/matrix/dev-homebrew/tools/dsdlc/RelWithDebInfo/dsdlc DSDLOPT=build/matrix/dev-homebrew/tools/dsdl-opt/RelWithDebInfo/dsdl-opt ROOT_NS=test/lit/fixtures/vendor OUT=build/matrix/dev-homebrew/demo-smoke; rm -rf "$OUT"; mkdir -p "$OUT"; "$DSDLC" mlir --root-namespace-dir "$ROOT_NS" > "$OUT/module.mlir"; "$DSDLOPT" --pass-pipeline=builtin.module\\(lower-dsdl-serialization,convert-dsdl-to-emitc\\) "$OUT/module.mlir" > "$OUT/module.emitc.mlir"; "$DSDLC" c --root-namespace-dir "$ROOT_NS" --out-dir "$OUT/c"; "$DSDLC" cpp --root-namespace-dir "$ROOT_NS" --cpp-profile both --out-dir "$OUT/cpp"; "$DSDLC" rust --root-namespace-dir "$ROOT_NS" --rust-profile std --rust-crate-name demo_vendor_generated --out-dir "$OUT/rust"; "$DSDLC" go --root-namespace-dir "$ROOT_NS" --go-module demo/vendor/generated --out-dir "$OUT/go"; "$DSDLC" ts --root-namespace-dir "$ROOT_NS" --ts-module demo_vendor_generated_ts --out-dir "$OUT/ts"'
+```
+
+### 15.5 Release artifact expectations
+
+Expectations for a release-ready repository/build state:
+
+1. `dsdlc --help` is detailed and up to date.
+2. `dsdlc` run summary reports:
+   - generated file count
+   - output root
+   - elapsed runtime
+3. `DEMO.md` quick path and scale-up path both work.
+4. `DESIGN.md` reflects current architecture and backend set.
+5. Generated outputs are deterministic for integration determinism lanes.
+6. Lowered contract validation remains hard-fail on malformed/missing metadata.
+
+### 15.6 Final sign-off
+
+Release sign-off requires all of the following:
+
+1. Required gates in Sections 15.3 and 15.4 pass.
+2. No unresolved high-severity regressions in open TODO/fix lists.
+3. Canonical docs are in sync:
+   - `README.md`
+   - `DEMO.md`
+   - `DESIGN.md`
+   - `CANONICAL_PLAN.md`

@@ -25,8 +25,17 @@ if(NOT LLVM_LIT_COMMAND)
   return()
 endif()
 
+set(LLVMDSDL_LIT_TEST_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
+set(LLVMDSDL_LIT_TEST_EXEC_ROOT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>")
+set(LLVMDSDL_LIT_DSDLC "$<TARGET_FILE:dsdlc>")
+set(LLVMDSDL_LIT_DSDLOPT "$<TARGET_FILE:dsdl-opt>")
+
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.py.in
-               ${CMAKE_CURRENT_BINARY_DIR}/lit.site.cfg.py @ONLY)
+               ${CMAKE_CURRENT_BINARY_DIR}/lit.site.cfg.py.in.gen @ONLY)
+
+file(GENERATE
+  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/lit.site.cfg.py"
+  INPUT "${CMAKE_CURRENT_BINARY_DIR}/lit.site.cfg.py.in.gen")
 
 add_test(NAME llvmdsdl-lit
-  COMMAND ${LLVM_LIT_COMMAND} -sv ${CMAKE_CURRENT_BINARY_DIR})
+  COMMAND ${LLVM_LIT_COMMAND} -sv ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>)

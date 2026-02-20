@@ -9,26 +9,18 @@
     {
       "name": "base",
       "hidden": true,
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/${presetName}",
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/build/matrix/${presetName}",
       "cacheVariables": {
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
-      }
-    },
-    {
-      "name": "dev",
-      "displayName": "Development",
-      "description": "RelWithDebInfo build; relies on LLVM/MLIR discovery from system paths.",
-      "inherits": "base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "LLVMDSDL_ENABLE_SELF_CONTAINED_TOOL_BUNDLE": "ON"
       }
     },
     {
       "name": "dev-llvm-env",
       "displayName": "Development (LLVM_DIR/MLIR_DIR from environment)",
-      "description": "RelWithDebInfo build using LLVM_DIR and MLIR_DIR from environment variables.",
-      "inherits": "dev",
+      "description": "Multi-config build using LLVM_DIR and MLIR_DIR from environment variables.",
+      "inherits": "base",
       "cacheVariables": {
         "LLVM_DIR": "$env{LLVM_DIR}",
         "MLIR_DIR": "$env{MLIR_DIR}"
@@ -37,8 +29,8 @@
     {
       "name": "dev-homebrew",
       "displayName": "Development (macOS Homebrew LLVM)",
-      "description": "RelWithDebInfo build with LLVM/MLIR from /opt/homebrew/opt/llvm.",
-      "inherits": "dev",
+      "description": "Multi-config build with LLVM/MLIR from /opt/homebrew/opt/llvm.",
+      "inherits": "base",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
@@ -51,95 +43,97 @@
       }
     },
     {
-      "name": "dev-homebrew-self-contained",
-      "displayName": "Development (Homebrew LLVM, self-contained tools)",
-      "description": "RelWithDebInfo build plus self-contained dsdlc/dsdl-opt bundle target.",
-      "inherits": "dev-homebrew",
-      "cacheVariables": {
-        "LLVMDSDL_ENABLE_SELF_CONTAINED_TOOL_BUNDLE": "ON"
-      }
-    },
-    {
-      "name": "release",
-      "displayName": "Release",
-      "description": "Release build for optimized tooling binaries.",
-      "inherits": "base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
-    },
-    {
       "name": "ci",
       "displayName": "CI",
-      "description": "CI-friendly RelWithDebInfo build; use with test presets and workflows.",
-      "inherits": "base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
-      }
+      "description": "Multi-config CI preset with automatic LLVM/MLIR discovery from environment/system paths.",
+      "inherits": "base"
     }
   ],
   "buildPresets": [
     {
-      "name": "build-dev",
-      "displayName": "Build (dev)",
-      "configurePreset": "dev"
+      "name": "build-dev-llvm-env-debug",
+      "displayName": "Build (dev-llvm-env, Debug)",
+      "configurePreset": "dev-llvm-env",
+      "configuration": "Debug"
     },
     {
-      "name": "build-dev-llvm-env",
-      "displayName": "Build (dev-llvm-env)",
-      "configurePreset": "dev-llvm-env"
+      "name": "build-dev-llvm-env-relwithdebinfo",
+      "displayName": "Build (dev-llvm-env, RelWithDebInfo)",
+      "configurePreset": "dev-llvm-env",
+      "configuration": "RelWithDebInfo"
     },
     {
-      "name": "build-dev-homebrew",
-      "displayName": "Build (dev-homebrew)",
-      "configurePreset": "dev-homebrew"
-    },
-    {
-      "name": "build-dev-homebrew-self-contained-tools",
-      "displayName": "Build (self-contained tools, Homebrew LLVM)",
-      "configurePreset": "dev-homebrew-self-contained",
+      "name": "build-dev-llvm-env-release",
+      "displayName": "Build (dev-llvm-env, Release + bundle)",
+      "configurePreset": "dev-llvm-env",
+      "configuration": "Release",
       "targets": [
+        "all",
         "bundle-tools-self-contained"
       ]
     },
     {
-      "name": "build-release",
-      "displayName": "Build (release)",
-      "configurePreset": "release"
+      "name": "build-dev-homebrew-debug",
+      "displayName": "Build (dev-homebrew, Debug)",
+      "configurePreset": "dev-homebrew",
+      "configuration": "Debug"
     },
     {
-      "name": "build-ci",
-      "displayName": "Build (ci)",
-      "configurePreset": "ci"
+      "name": "build-dev-homebrew-relwithdebinfo",
+      "displayName": "Build (dev-homebrew, RelWithDebInfo)",
+      "configurePreset": "dev-homebrew",
+      "configuration": "RelWithDebInfo"
     },
     {
-      "name": "build-demo",
-      "displayName": "Build (demo bundle)",
-      "configurePreset": "dev",
+      "name": "build-dev-homebrew-release",
+      "displayName": "Build (dev-homebrew, Release + bundle)",
+      "configurePreset": "dev-homebrew",
+      "configuration": "Release",
       "targets": [
-        "generate-demo-2026-02-16"
+        "all",
+        "bundle-tools-self-contained"
       ]
     },
     {
-      "name": "build-demo-homebrew",
-      "displayName": "Build (demo bundle, Homebrew LLVM)",
-      "configurePreset": "dev-homebrew",
+      "name": "build-ci-debug",
+      "displayName": "Build (ci, Debug)",
+      "configurePreset": "ci",
+      "configuration": "Debug"
+    },
+    {
+      "name": "build-ci-relwithdebinfo",
+      "displayName": "Build (ci, RelWithDebInfo)",
+      "configurePreset": "ci",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "build-ci-release",
+      "displayName": "Build (ci, Release + bundle)",
+      "configurePreset": "ci",
+      "configuration": "Release",
       "targets": [
-        "generate-demo-2026-02-16"
+        "all",
+        "bundle-tools-self-contained"
       ]
     }
   ],
   "testPresets": [
     {
-      "name": "test-dev",
-      "displayName": "Test (dev, fast)",
-      "configurePreset": "dev",
+      "name": "test-base",
+      "hidden": true,
       "execution": {
         "noTestsAction": "error"
       },
       "output": {
         "outputOnFailure": true
-      },
+      }
+    },
+    {
+      "name": "test-dev-llvm-env-smoke-debug",
+      "displayName": "Test (dev-llvm-env smoke, Debug)",
+      "inherits": "test-base",
+      "configurePreset": "dev-llvm-env",
+      "configuration": "Debug",
       "filter": {
         "exclude": {
           "label": "integration"
@@ -147,15 +141,11 @@
       }
     },
     {
-      "name": "test-dev-homebrew",
-      "displayName": "Test (dev-homebrew, fast)",
-      "configurePreset": "dev-homebrew",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
+      "name": "test-dev-llvm-env-smoke-relwithdebinfo",
+      "displayName": "Test (dev-llvm-env smoke, RelWithDebInfo)",
+      "inherits": "test-base",
+      "configurePreset": "dev-llvm-env",
+      "configuration": "RelWithDebInfo",
       "filter": {
         "exclude": {
           "label": "integration"
@@ -163,15 +153,11 @@
       }
     },
     {
-      "name": "test-dev-llvm-env",
-      "displayName": "Test (dev-llvm-env, fast)",
+      "name": "test-dev-llvm-env-smoke-release",
+      "displayName": "Test (dev-llvm-env smoke, Release)",
+      "inherits": "test-base",
       "configurePreset": "dev-llvm-env",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
+      "configuration": "Release",
       "filter": {
         "exclude": {
           "label": "integration"
@@ -179,346 +165,47 @@
       }
     },
     {
-      "name": "test-dev-full",
-      "displayName": "Test (dev, full)",
-      "configurePreset": "dev",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "test-optimized",
-      "displayName": "Test (optimized gates, dev)",
-      "configurePreset": "dev",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
-      "filter": {
-        "include": {
-          "label": "optimized"
-        }
-      }
-    },
-    {
-      "name": "test-optimized-homebrew",
-      "displayName": "Test (optimized gates, dev-homebrew)",
+      "name": "test-dev-homebrew-smoke-debug",
+      "displayName": "Test (dev-homebrew smoke, Debug)",
+      "inherits": "test-base",
       "configurePreset": "dev-homebrew",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
+      "configuration": "Debug",
       "filter": {
-        "include": {
-          "label": "optimized"
+        "exclude": {
+          "label": "integration"
         }
       }
     },
     {
-      "name": "test-optimized-llvm-env",
-      "displayName": "Test (optimized gates, dev-llvm-env)",
-      "configurePreset": "dev-llvm-env",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
-      "filter": {
-        "include": {
-          "label": "optimized"
-        }
-      }
-    },
-    {
-      "name": "test-uavcan",
-      "displayName": "Test (uavcan integration only)",
-      "configurePreset": "dev",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
-      "filter": {
-        "include": {
-          "label": "uavcan"
-        }
-      }
-    },
-    {
-      "name": "test-uavcan-homebrew",
-      "displayName": "Test (uavcan integration only, dev-homebrew)",
+      "name": "test-dev-homebrew-smoke-relwithdebinfo",
+      "displayName": "Test (dev-homebrew smoke, RelWithDebInfo)",
+      "inherits": "test-base",
       "configurePreset": "dev-homebrew",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
+      "configuration": "RelWithDebInfo",
       "filter": {
-        "include": {
-          "label": "uavcan"
+        "exclude": {
+          "label": "integration"
         }
       }
     },
     {
-      "name": "test-uavcan-llvm-env",
-      "displayName": "Test (uavcan integration only, dev-llvm-env)",
-      "configurePreset": "dev-llvm-env",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
-      "filter": {
-        "include": {
-          "label": "uavcan"
-        }
-      }
-    },
-    {
-      "name": "test-rust-no-std",
-      "displayName": "Test (Rust no-std profile gates, dev)",
-      "configurePreset": "dev",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
-      "filter": {
-        "include": {
-          "label": "rust-no-std"
-        }
-      }
-    },
-    {
-      "name": "test-rust-no-std-homebrew",
-      "displayName": "Test (Rust no-std profile gates, dev-homebrew)",
+      "name": "test-dev-homebrew-smoke-release",
+      "displayName": "Test (dev-homebrew smoke, Release)",
+      "inherits": "test-base",
       "configurePreset": "dev-homebrew",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
+      "configuration": "Release",
       "filter": {
-        "include": {
-          "label": "rust-no-std"
+        "exclude": {
+          "label": "integration"
         }
       }
     },
     {
-      "name": "test-rust-no-std-llvm-env",
-      "displayName": "Test (Rust no-std profile gates, dev-llvm-env)",
-      "configurePreset": "dev-llvm-env",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
-      "filter": {
-        "include": {
-          "label": "rust-no-std"
-        }
-      }
-    },
-    {
-      "name": "test-rust-runtime-specialization",
-      "displayName": "Test (Rust runtime specialization gates, dev)",
-      "configurePreset": "dev",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
-      "filter": {
-        "include": {
-          "label": "rust-runtime-specialization"
-        }
-      }
-    },
-    {
-      "name": "test-rust-runtime-specialization-homebrew",
-      "displayName": "Test (Rust runtime specialization gates, dev-homebrew)",
-      "configurePreset": "dev-homebrew",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
-      "filter": {
-        "include": {
-          "label": "rust-runtime-specialization"
-        }
-      }
-    },
-    {
-      "name": "test-rust-runtime-specialization-llvm-env",
-      "displayName": "Test (Rust runtime specialization gates, dev-llvm-env)",
-      "configurePreset": "dev-llvm-env",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
-      "filter": {
-        "include": {
-          "label": "rust-runtime-specialization"
-        }
-      }
-    },
-    {
-      "name": "test-ts-runtime-specialization",
-      "displayName": "Test (TypeScript runtime specialization gates, dev)",
-      "configurePreset": "dev",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
-      "filter": {
-        "include": {
-          "label": "ts-runtime-specialization"
-        }
-      }
-    },
-    {
-      "name": "test-ts-runtime-specialization-homebrew",
-      "displayName": "Test (TypeScript runtime specialization gates, dev-homebrew)",
-      "configurePreset": "dev-homebrew",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
-      "filter": {
-        "include": {
-          "label": "ts-runtime-specialization"
-        }
-      }
-    },
-    {
-      "name": "test-ts-runtime-specialization-llvm-env",
-      "displayName": "Test (TypeScript runtime specialization gates, dev-llvm-env)",
-      "configurePreset": "dev-llvm-env",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
-      "filter": {
-        "include": {
-          "label": "ts-runtime-specialization"
-        }
-      }
-    },
-    {
-      "name": "test-ts",
-      "displayName": "Test (TypeScript generation/typecheck/determinism/consumer-smoke/index-contract gates, dev)",
-      "configurePreset": "dev",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
-      "filter": {
-        "include": {
-          "label": "ts"
-        }
-      }
-    },
-    {
-      "name": "test-ts-homebrew",
-      "displayName": "Test (TypeScript generation/typecheck/determinism/consumer-smoke/index-contract gates, dev-homebrew)",
-      "configurePreset": "dev-homebrew",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
-      "filter": {
-        "include": {
-          "label": "ts"
-        }
-      }
-    },
-    {
-      "name": "test-ts-llvm-env",
-      "displayName": "Test (TypeScript generation/typecheck/determinism/consumer-smoke/index-contract gates, dev-llvm-env)",
-      "configurePreset": "dev-llvm-env",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
-      "filter": {
-        "include": {
-          "label": "ts"
-        }
-      }
-    },
-    {
-      "name": "test-ts-complete",
-      "displayName": "Test (TypeScript completion ring, generation/runtime/parity, dev)",
-      "configurePreset": "dev",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
-      "filter": {
-        "include": {
-          "label": "ts"
-        }
-      }
-    },
-    {
-      "name": "test-ts-complete-homebrew",
-      "displayName": "Test (TypeScript completion ring, generation/runtime/parity, dev-homebrew)",
-      "configurePreset": "dev-homebrew",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
-      "filter": {
-        "include": {
-          "label": "ts"
-        }
-      }
-    },
-    {
-      "name": "test-ci",
-      "displayName": "Test (ci, fast)",
+      "name": "test-ci-smoke-debug",
+      "displayName": "Test (ci smoke, Debug)",
+      "inherits": "test-base",
       "configurePreset": "ci",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
+      "configuration": "Debug",
       "filter": {
         "exclude": {
           "label": "integration"
@@ -526,112 +213,56 @@
       }
     },
     {
-      "name": "test-go-differential-homebrew",
-      "displayName": "Test (Go differential ring, dev-homebrew)",
-      "configurePreset": "dev-homebrew",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
+      "name": "test-ci-smoke-relwithdebinfo",
+      "displayName": "Test (ci smoke, RelWithDebInfo)",
+      "inherits": "test-base",
+      "configurePreset": "ci",
+      "configuration": "RelWithDebInfo",
       "filter": {
-        "include": {
-          "label": "go-differential"
+        "exclude": {
+          "label": "integration"
         }
       }
     },
     {
-      "name": "test-go-differential",
-      "displayName": "Test (Go differential ring, dev)",
-      "configurePreset": "dev",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
+      "name": "test-ci-smoke-release",
+      "displayName": "Test (ci smoke, Release)",
+      "inherits": "test-base",
+      "configurePreset": "ci",
+      "configuration": "Release",
       "filter": {
-        "include": {
-          "label": "go-differential"
+        "exclude": {
+          "label": "integration"
         }
       }
     },
     {
-      "name": "test-go-differential-llvm-env",
-      "displayName": "Test (Go differential ring, dev-llvm-env)",
+      "name": "test-dev-llvm-env-full-relwithdebinfo",
+      "displayName": "Test (dev-llvm-env full, RelWithDebInfo)",
+      "inherits": "test-base",
       "configurePreset": "dev-llvm-env",
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "output": {
-        "outputOnFailure": true
-      },
-      "filter": {
-        "include": {
-          "label": "go-differential"
-        }
-      }
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "test-dev-homebrew-full-relwithdebinfo",
+      "displayName": "Test (dev-homebrew full, RelWithDebInfo)",
+      "inherits": "test-base",
+      "configurePreset": "dev-homebrew",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "test-ci-full-relwithdebinfo",
+      "displayName": "Test (ci full, RelWithDebInfo)",
+      "inherits": "test-base",
+      "configurePreset": "ci",
+      "configuration": "RelWithDebInfo"
     }
   ],
   "workflowPresets": [
     {
-      "name": "dev",
-      "displayName": "Workflow (dev fast)",
-      "description": "Configure + build + fast test set (unit/lit when available).",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev"
-        },
-        {
-          "type": "build",
-          "name": "build-dev"
-        },
-        {
-          "type": "test",
-          "name": "test-dev"
-        }
-      ]
-    },
-    {
-      "name": "dev-homebrew",
-      "displayName": "Workflow (dev fast, Homebrew LLVM)",
-      "description": "Configure + build + fast tests using Homebrew LLVM/MLIR paths.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev-homebrew"
-        },
-        {
-          "type": "build",
-          "name": "build-dev-homebrew"
-        },
-        {
-          "type": "test",
-          "name": "test-dev-homebrew"
-        }
-      ]
-    },
-    {
-      "name": "self-contained-tools-homebrew",
-      "displayName": "Workflow (self-contained tools bundle, Homebrew LLVM)",
-      "description": "Configure + build self-contained dsdlc/dsdl-opt bundle with local runtime dependencies.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev-homebrew-self-contained"
-        },
-        {
-          "type": "build",
-          "name": "build-dev-homebrew-self-contained-tools"
-        }
-      ]
-    },
-    {
-      "name": "dev-llvm-env",
-      "displayName": "Workflow (dev fast, LLVM env vars)",
-      "description": "Configure + build + fast tests using LLVM_DIR/MLIR_DIR from environment.",
+      "name": "matrix-dev-llvm-env",
+      "displayName": "Workflow (matrix dev-llvm-env)",
+      "description": "Configure once, then run Debug smoke, RelWithDebInfo full, and Release smoke+bundle.",
       "steps": [
         {
           "type": "configure",
@@ -639,56 +270,34 @@
         },
         {
           "type": "build",
-          "name": "build-dev-llvm-env"
+          "name": "build-dev-llvm-env-debug"
         },
         {
           "type": "test",
-          "name": "test-dev-llvm-env"
-        }
-      ]
-    },
-    {
-      "name": "full",
-      "displayName": "Workflow (full verification)",
-      "description": "Configure + build + full tests, including uavcan generation integration test.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev"
+          "name": "test-dev-llvm-env-smoke-debug"
         },
         {
           "type": "build",
-          "name": "build-dev"
+          "name": "build-dev-llvm-env-relwithdebinfo"
         },
         {
           "type": "test",
-          "name": "test-dev-full"
-        }
-      ]
-    },
-    {
-      "name": "optimized",
-      "displayName": "Workflow (optimized verification)",
-      "description": "Configure + build + run optimization-enabled parity and differential gates.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev"
+          "name": "test-dev-llvm-env-full-relwithdebinfo"
         },
         {
           "type": "build",
-          "name": "build-dev"
+          "name": "build-dev-llvm-env-release"
         },
         {
           "type": "test",
-          "name": "test-optimized"
+          "name": "test-dev-llvm-env-smoke-release"
         }
       ]
     },
     {
-      "name": "optimized-homebrew",
-      "displayName": "Workflow (optimized verification, Homebrew LLVM)",
-      "description": "Configure + build + run optimization-enabled parity and differential gates using Homebrew LLVM/MLIR.",
+      "name": "matrix-dev-homebrew",
+      "displayName": "Workflow (matrix dev-homebrew)",
+      "description": "Configure once, then run Debug smoke, RelWithDebInfo full, and Release smoke+bundle.",
       "steps": [
         {
           "type": "configure",
@@ -696,360 +305,34 @@
         },
         {
           "type": "build",
-          "name": "build-dev-homebrew"
+          "name": "build-dev-homebrew-debug"
         },
         {
           "type": "test",
-          "name": "test-optimized-homebrew"
-        }
-      ]
-    },
-    {
-      "name": "optimized-llvm-env",
-      "displayName": "Workflow (optimized verification, LLVM env vars)",
-      "description": "Configure + build + run optimization-enabled parity and differential gates using LLVM_DIR/MLIR_DIR from environment.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev-llvm-env"
+          "name": "test-dev-homebrew-smoke-debug"
         },
         {
           "type": "build",
-          "name": "build-dev-llvm-env"
+          "name": "build-dev-homebrew-relwithdebinfo"
         },
         {
           "type": "test",
-          "name": "test-optimized-llvm-env"
-        }
-      ]
-    },
-    {
-      "name": "uavcan",
-      "displayName": "Workflow (uavcan integration)",
-      "description": "Configure + build + run only uavcan integration validation.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev"
+          "name": "test-dev-homebrew-full-relwithdebinfo"
         },
         {
           "type": "build",
-          "name": "build-dev"
+          "name": "build-dev-homebrew-release"
         },
         {
           "type": "test",
-          "name": "test-uavcan"
+          "name": "test-dev-homebrew-smoke-release"
         }
       ]
     },
     {
-      "name": "uavcan-homebrew",
-      "displayName": "Workflow (uavcan integration, Homebrew LLVM)",
-      "description": "Configure + build + uavcan integration validation using Homebrew LLVM/MLIR paths.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev-homebrew"
-        },
-        {
-          "type": "build",
-          "name": "build-dev-homebrew"
-        },
-        {
-          "type": "test",
-          "name": "test-uavcan-homebrew"
-        }
-      ]
-    },
-    {
-      "name": "uavcan-llvm-env",
-      "displayName": "Workflow (uavcan integration, LLVM env vars)",
-      "description": "Configure + build + uavcan integration validation using LLVM_DIR/MLIR_DIR from environment.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev-llvm-env"
-        },
-        {
-          "type": "build",
-          "name": "build-dev-llvm-env"
-        },
-        {
-          "type": "test",
-          "name": "test-uavcan-llvm-env"
-        }
-      ]
-    },
-    {
-      "name": "rust-no-std",
-      "displayName": "Workflow (Rust no-std profile gates)",
-      "description": "Configure + build + run Rust no-std profile generation/cargo/parity gates.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev"
-        },
-        {
-          "type": "build",
-          "name": "build-dev"
-        },
-        {
-          "type": "test",
-          "name": "test-rust-no-std"
-        }
-      ]
-    },
-    {
-      "name": "rust-no-std-homebrew",
-      "displayName": "Workflow (Rust no-std profile gates, Homebrew LLVM)",
-      "description": "Configure + build + run Rust no-std profile generation/cargo/parity gates using Homebrew LLVM/MLIR.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev-homebrew"
-        },
-        {
-          "type": "build",
-          "name": "build-dev-homebrew"
-        },
-        {
-          "type": "test",
-          "name": "test-rust-no-std-homebrew"
-        }
-      ]
-    },
-    {
-      "name": "rust-no-std-llvm-env",
-      "displayName": "Workflow (Rust no-std profile gates, LLVM env vars)",
-      "description": "Configure + build + run Rust no-std profile generation/cargo/parity gates using LLVM_DIR/MLIR_DIR from environment.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev-llvm-env"
-        },
-        {
-          "type": "build",
-          "name": "build-dev-llvm-env"
-        },
-        {
-          "type": "test",
-          "name": "test-rust-no-std-llvm-env"
-        }
-      ]
-    },
-    {
-      "name": "rust-runtime-specialization",
-      "displayName": "Workflow (Rust runtime specialization gates)",
-      "description": "Configure + build + run Rust runtime-specialization generation/cargo/semantic-diff gates.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev"
-        },
-        {
-          "type": "build",
-          "name": "build-dev"
-        },
-        {
-          "type": "test",
-          "name": "test-rust-runtime-specialization"
-        }
-      ]
-    },
-    {
-      "name": "rust-runtime-specialization-homebrew",
-      "displayName": "Workflow (Rust runtime specialization gates, Homebrew LLVM)",
-      "description": "Configure + build + run Rust runtime-specialization generation/cargo/semantic-diff gates using Homebrew LLVM/MLIR.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev-homebrew"
-        },
-        {
-          "type": "build",
-          "name": "build-dev-homebrew"
-        },
-        {
-          "type": "test",
-          "name": "test-rust-runtime-specialization-homebrew"
-        }
-      ]
-    },
-    {
-      "name": "rust-runtime-specialization-llvm-env",
-      "displayName": "Workflow (Rust runtime specialization gates, LLVM env vars)",
-      "description": "Configure + build + run Rust runtime-specialization generation/cargo/semantic-diff gates using LLVM_DIR/MLIR_DIR from environment.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev-llvm-env"
-        },
-        {
-          "type": "build",
-          "name": "build-dev-llvm-env"
-        },
-        {
-          "type": "test",
-          "name": "test-rust-runtime-specialization-llvm-env"
-        }
-      ]
-    },
-    {
-      "name": "ts-runtime-specialization",
-      "displayName": "Workflow (TypeScript runtime specialization gates)",
-      "description": "Configure + build + run TypeScript runtime-specialization generation/typecheck/parity/semantic-diff gates.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev"
-        },
-        {
-          "type": "build",
-          "name": "build-dev"
-        },
-        {
-          "type": "test",
-          "name": "test-ts-runtime-specialization"
-        }
-      ]
-    },
-    {
-      "name": "ts-runtime-specialization-homebrew",
-      "displayName": "Workflow (TypeScript runtime specialization gates, Homebrew LLVM)",
-      "description": "Configure + build + run TypeScript runtime-specialization generation/typecheck/parity/semantic-diff gates using Homebrew LLVM/MLIR.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev-homebrew"
-        },
-        {
-          "type": "build",
-          "name": "build-dev-homebrew"
-        },
-        {
-          "type": "test",
-          "name": "test-ts-runtime-specialization-homebrew"
-        }
-      ]
-    },
-    {
-      "name": "ts-runtime-specialization-llvm-env",
-      "displayName": "Workflow (TypeScript runtime specialization gates, LLVM env vars)",
-      "description": "Configure + build + run TypeScript runtime-specialization generation/typecheck/parity/semantic-diff gates using LLVM_DIR/MLIR_DIR from environment.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev-llvm-env"
-        },
-        {
-          "type": "build",
-          "name": "build-dev-llvm-env"
-        },
-        {
-          "type": "test",
-          "name": "test-ts-runtime-specialization-llvm-env"
-        }
-      ]
-    },
-    {
-      "name": "ts",
-      "displayName": "Workflow (TypeScript generation/typecheck/determinism/consumer-smoke/index-contract gates)",
-      "description": "Configure + build + run TypeScript generation, typecheck, determinism, consumer-smoke, and index-contract integration gates.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev"
-        },
-        {
-          "type": "build",
-          "name": "build-dev"
-        },
-        {
-          "type": "test",
-          "name": "test-ts"
-        }
-      ]
-    },
-    {
-      "name": "ts-homebrew",
-      "displayName": "Workflow (TypeScript generation/typecheck/determinism/consumer-smoke/index-contract gates, Homebrew LLVM)",
-      "description": "Configure + build + run TypeScript generation, typecheck, determinism, consumer-smoke, and index-contract integration gates using Homebrew LLVM/MLIR.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev-homebrew"
-        },
-        {
-          "type": "build",
-          "name": "build-dev-homebrew"
-        },
-        {
-          "type": "test",
-          "name": "test-ts-homebrew"
-        }
-      ]
-    },
-    {
-      "name": "ts-llvm-env",
-      "displayName": "Workflow (TypeScript generation/typecheck/determinism/consumer-smoke/index-contract gates, LLVM env vars)",
-      "description": "Configure + build + run TypeScript generation, typecheck, determinism, consumer-smoke, and index-contract integration gates using LLVM_DIR/MLIR_DIR from environment.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev-llvm-env"
-        },
-        {
-          "type": "build",
-          "name": "build-dev-llvm-env"
-        },
-        {
-          "type": "test",
-          "name": "test-ts-llvm-env"
-        }
-      ]
-    },
-    {
-      "name": "ts-complete",
-      "displayName": "Workflow (TypeScript completion ring)",
-      "description": "Configure + build + run the TypeScript completion ring (generation/runtime + invariant parity gates).",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev"
-        },
-        {
-          "type": "build",
-          "name": "build-dev"
-        },
-        {
-          "type": "test",
-          "name": "test-ts-complete"
-        }
-      ]
-    },
-    {
-      "name": "ts-complete-homebrew",
-      "displayName": "Workflow (TypeScript completion ring, Homebrew LLVM)",
-      "description": "Configure + build + run the TypeScript completion ring (generation/runtime + invariant parity gates) using Homebrew LLVM/MLIR.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev-homebrew"
-        },
-        {
-          "type": "build",
-          "name": "build-dev-homebrew"
-        },
-        {
-          "type": "test",
-          "name": "test-ts-complete-homebrew"
-        }
-      ]
-    },
-    {
-      "name": "ci",
-      "displayName": "Workflow (ci fast)",
-      "description": "Configure + build + fast CI tests on ci preset.",
+      "name": "matrix-ci",
+      "displayName": "Workflow (matrix ci)",
+      "description": "Configure once, then run Debug smoke, RelWithDebInfo full, and Release smoke+bundle.",
       "steps": [
         {
           "type": "configure",
@@ -1057,98 +340,27 @@
         },
         {
           "type": "build",
-          "name": "build-ci"
+          "name": "build-ci-debug"
         },
         {
           "type": "test",
-          "name": "test-ci"
-        }
-      ]
-    },
-    {
-      "name": "demo",
-      "displayName": "Workflow (demo artifact)",
-      "description": "Configure + build demo artifact bundle with generation outputs and selected verification logs.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev"
+          "name": "test-ci-smoke-debug"
         },
         {
           "type": "build",
-          "name": "build-demo"
-        }
-      ]
-    },
-    {
-      "name": "demo-homebrew",
-      "displayName": "Workflow (demo artifact, Homebrew LLVM)",
-      "description": "Configure + build demo artifact bundle with Homebrew LLVM/MLIR paths.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev-homebrew"
-        },
-        {
-          "type": "build",
-          "name": "build-demo-homebrew"
-        }
-      ]
-    },
-    {
-      "name": "go-differential-homebrew",
-      "displayName": "Workflow (Go differential ring, Homebrew LLVM)",
-      "description": "Configure + build + run Go differential parity gates (signed_narrow + uavcan).",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev-homebrew"
-        },
-        {
-          "type": "build",
-          "name": "build-dev-homebrew"
+          "name": "build-ci-relwithdebinfo"
         },
         {
           "type": "test",
-          "name": "test-go-differential-homebrew"
-        }
-      ]
-    },
-    {
-      "name": "go-differential",
-      "displayName": "Workflow (Go differential ring)",
-      "description": "Configure + build + run Go differential ring on default dev preset.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev"
+          "name": "test-ci-full-relwithdebinfo"
         },
         {
           "type": "build",
-          "name": "build-dev"
+          "name": "build-ci-release"
         },
         {
           "type": "test",
-          "name": "test-go-differential"
-        }
-      ]
-    },
-    {
-      "name": "go-differential-llvm-env",
-      "displayName": "Workflow (Go differential ring, LLVM env vars)",
-      "description": "Configure + build + run Go differential ring using LLVM_DIR/MLIR_DIR from environment.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "dev-llvm-env"
-        },
-        {
-          "type": "build",
-          "name": "build-dev-llvm-env"
-        },
-        {
-          "type": "test",
-          "name": "test-go-differential-llvm-env"
+          "name": "test-ci-smoke-release"
         }
       ]
     }
