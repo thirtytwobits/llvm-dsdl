@@ -71,7 +71,6 @@ execute_process(
   COMMAND
     "${DSDLC}" c
       --root-namespace-dir "${FIXTURE_ROOT}"
-      --strict
       ${dsdlc_extra_args}
       --out-dir "${c_out}"
   RESULT_VARIABLE c_result
@@ -88,7 +87,6 @@ execute_process(
   COMMAND
     "${DSDLC}" go
       --root-namespace-dir "${FIXTURE_ROOT}"
-      --strict
       ${dsdlc_extra_args}
       --go-module "signed_narrow_generated"
       --out-dir "${go_out}"

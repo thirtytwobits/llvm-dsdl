@@ -21,7 +21,6 @@ execute_process(
   COMMAND
     "${DSDLC}" ts
       --root-namespace-dir "${FIXTURES_ROOT}"
-      --strict
       --out-dir "${OUT_DIR}"
       --ts-module "fixtures_dsdl_generated_ts"
   RESULT_VARIABLE gen_result

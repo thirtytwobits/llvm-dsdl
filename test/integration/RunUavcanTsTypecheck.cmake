@@ -18,6 +18,14 @@ if(NOT EXISTS "${TSC_EXECUTABLE}")
   message(FATAL_ERROR "tsc executable not found: ${TSC_EXECUTABLE}")
 endif()
 
+if(NOT DEFINED TS_RUNTIME_SPECIALIZATION OR "${TS_RUNTIME_SPECIALIZATION}" STREQUAL "")
+  set(TS_RUNTIME_SPECIALIZATION "portable")
+endif()
+if(NOT "${TS_RUNTIME_SPECIALIZATION}" STREQUAL "portable" AND
+   NOT "${TS_RUNTIME_SPECIALIZATION}" STREQUAL "fast")
+  message(FATAL_ERROR "Invalid TS_RUNTIME_SPECIALIZATION value: ${TS_RUNTIME_SPECIALIZATION}")
+endif()
+
 file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
@@ -25,9 +33,9 @@ execute_process(
   COMMAND
     "${DSDLC}" ts
       --root-namespace-dir "${UAVCAN_ROOT}"
-      --strict
       --out-dir "${OUT_DIR}"
       --ts-module "uavcan_dsdl_generated_ts"
+      --ts-runtime-specialization "${TS_RUNTIME_SPECIALIZATION}"
   RESULT_VARIABLE gen_result
   OUTPUT_VARIABLE gen_stdout
   ERROR_VARIABLE gen_stderr

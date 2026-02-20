@@ -32,7 +32,6 @@ execute_process(
   COMMAND
     "${DSDLC}" rust
       --root-namespace-dir "${UAVCAN_ROOT}"
-      --strict
       --out-dir "${portable_out}"
       --rust-crate-name "uavcan_dsdl_generated"
       --rust-profile "${RUST_PROFILE}"
@@ -51,7 +50,6 @@ execute_process(
   COMMAND
     "${DSDLC}" rust
       --root-namespace-dir "${UAVCAN_ROOT}"
-      --strict
       --out-dir "${fast_out}"
       --rust-crate-name "uavcan_dsdl_generated"
       --rust-profile "${RUST_PROFILE}"

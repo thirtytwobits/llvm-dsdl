@@ -19,7 +19,7 @@ As of February 19, 2026:
    - Rust (`std`, `no-std-alloc`, runtime specialization `portable|fast`)
    - Go
    - TypeScript
-3. TypeScript completion backlog (strict + compat + parity + optimized lanes) is complete per prior plan records.
+3. TypeScript completion backlog (generation + runtime + parity + optimized lanes) is complete per prior plan records.
 4. Lowered contract markers and hard-fail validation are enforced end-to-end.
 5. Cross-language parity model is established with inventory/pass-line invariants.
 6. Optional optimization pipeline exists (`--optimize-lowered-serdes`) with parity-preserving gates.
@@ -30,9 +30,8 @@ The following project rules are retained and should not regress:
 
 1. Lowered SerDes contract remains versioned and producer-marked (currently version `1`), as defined in `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/LOWERED_SERDES_CONTRACT.md`.
 2. Consumers fail hard on missing/mismatched required lowered contract metadata.
-3. `--strict` remains default spec-first mode.
-4. `--compat-mode` remains migration mode for legacy/non-conformant trees, with deterministic warnings and documented migration back to strict mode.
-5. Parity gates remain invariant-based (not smoke-only), including optimized variants.
+3. Frontend semantics remain spec-conformant in a single mode (no compatibility fallback mode).
+4. Parity gates remain invariant-based (not smoke-only), including optimized variants.
 
 ## 4. Remaining Workstreams (Canonical Backlog)
 
@@ -86,6 +85,8 @@ Completion evidence (February 19, 2026):
 
 Objective: add profile flexibility without wire-semantic drift.
 
+Status: Completed on February 20, 2026.
+
 Tasks:
 
 1. Expand profile matrix where beneficial (embedded/runtime-specialized variants) while preserving lowered semantics.
@@ -94,13 +95,46 @@ Tasks:
    - compile/build gate
    - parity-equivalence gate
    - semantic-diff gate where relevant
-3. Preserve strict/compat behavior equivalence guarantees for supported profiles.
+3. Preserve spec-conformant behavior equivalence guarantees for supported profiles.
 
 Acceptance:
 
 1. Profile additions have deterministic, documented CLI UX.
-2. Parity results are unchanged relative to canonical strict semantics.
+2. Parity results are unchanged relative to canonical semantics.
 3. No contract-version drift is required unless schema changes are intentional.
+
+Completion evidence (February 20, 2026):
+
+1. Added TypeScript runtime specialization profile axis (`portable|fast`) with
+   deterministic CLI/config handling:
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/include/llvmdsdl/CodeGen/TsEmitter.h`
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/lib/CodeGen/TsEmitter.cpp`
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/tools/dsdlc/main.cpp`
+2. Added runtime-fast generation targets and integration profile lanes:
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/CMakeLists.txt`
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/test/integration/CMakeLists.txt`
+3. Added/expanded TypeScript runtime-specialization gates:
+   - generation gate (`llvmdsdl-uavcan-ts-generation-runtime-fast`)
+   - typecheck/build gate (`llvmdsdl-uavcan-ts-typecheck-runtime-fast`)
+   - parity-equivalence gate (`llvmdsdl-c-ts-parity-runtime-fast`)
+   - semantic-diff gate (`llvmdsdl-uavcan-ts-runtime-specialization-diff`)
+   - scripts:
+     - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/test/integration/RunUavcanTsGeneration.cmake`
+     - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/test/integration/RunUavcanTsTypecheck.cmake`
+     - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/test/integration/RunCTsParity.cmake`
+     - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/test/integration/RunTsRuntimeSpecializationDiff.cmake`
+4. Added dedicated preset/workflow lanes for the new integration label:
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/CMakePresets.json`
+5. Documentation updated to reflect profile behavior and gates:
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/README.md`
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/DESIGN.md`
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/DEMO.md`
+6. Validation commands:
+   - `cmake --build build/dev-homebrew --target format-source -j1`
+   - `cmake --build build/dev-homebrew --target check-format -j1`
+   - `cmake --build build/dev-homebrew --target dsdlc llvmdsdl-unit-tests -j4`
+   - `ctest --test-dir build/dev-homebrew -R llvmdsdl-unit-tests --output-on-failure`
+   - `ctest --test-dir build/dev-homebrew -L ts-runtime-specialization --output-on-failure` (`4/4` passed)
 
 ## Workstream C: Test and Validation Hardening (Priority P1)
 
@@ -111,7 +145,7 @@ Tasks:
 1. Expand directed parity vectors for deep-nesting and cross-family mixed error paths.
 2. Add targeted negative tests for malformed/missing lowered metadata families across all emitters.
 3. Add reliability checks for deterministic generation artifacts under concurrent test execution.
-4. Keep TypeScript strict/compat parity gates continuously green in the same invariant model as other language pairs.
+4. Keep TypeScript parity gates continuously green in the same invariant model as other language pairs.
 
 Acceptance:
 
@@ -127,7 +161,7 @@ Tasks:
 
 1. Keep one canonical demo flow current (`DEMO.md`) with short and scale-up paths.
 2. Keep one canonical architecture snapshot current (`DESIGN.md`).
-3. Keep one canonical status/runbook current (`README.md`) with strict/compat clarity.
+3. Keep one canonical status/runbook current (`README.md`) with semantic-mode clarity.
 4. Add/maintain a release checklist (toolchain versions, full gate command set, artifact expectations).
 5. Keep formatting/lint utilities (`check-format`, `format-source`) healthy and documented.
 
@@ -167,7 +201,7 @@ Target:
 Exit criteria:
 
 1. Full test workflow is green.
-2. No unresolved ambiguity on strict/compat semantics in docs.
+2. No unresolved ambiguity on semantic mode behavior in docs.
 
 ## M2: Expanded Profiles and Hardening
 

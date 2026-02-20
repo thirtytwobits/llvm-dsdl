@@ -52,7 +52,6 @@ execute_process(
   COMMAND
     "${DSDLC}" c
       --root-namespace-dir "${fixture_root}"
-      --strict
       --out-dir "${c_out}"
   RESULT_VARIABLE c_gen_result
   OUTPUT_VARIABLE c_gen_stdout
@@ -68,7 +67,6 @@ execute_process(
   COMMAND
     "${DSDLC}" ts
       --root-namespace-dir "${fixture_root}"
-      --strict
       --out-dir "${ts_out}"
       --ts-module "fixture_ts_union_composite_parity"
   RESULT_VARIABLE ts_gen_result

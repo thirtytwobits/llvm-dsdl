@@ -32,7 +32,6 @@ execute_process(
   COMMAND
     "${DSDLC}" ts
       --root-namespace-dir "${UAVCAN_ROOT}"
-      --strict
       --out-dir "${gen_dir}"
       --ts-module "uavcan_dsdl_generated_ts"
   RESULT_VARIABLE gen_result

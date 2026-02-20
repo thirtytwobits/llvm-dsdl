@@ -29,7 +29,6 @@ execute_process(
   COMMAND
     "${DSDLC}" rust
       --root-namespace-dir "${UAVCAN_ROOT}"
-      --strict
       ${dsdlc_extra_args}
       --out-dir "${std_out}"
       --rust-crate-name "uavcan_dsdl_generated"
@@ -48,7 +47,6 @@ execute_process(
   COMMAND
     "${DSDLC}" rust
       --root-namespace-dir "${UAVCAN_ROOT}"
-      --strict
       ${dsdlc_extra_args}
       --out-dir "${no_std_out}"
       --rust-crate-name "uavcan_dsdl_generated"

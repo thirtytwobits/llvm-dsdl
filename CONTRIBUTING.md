@@ -1,7 +1,7 @@
 # Contributing to llvm-dsdl
 
 This document is a reproducibility-first guide for contributors. It is designed
-to let a new contributor go from a clean checkout to a verified build and strict
+to let a new contributor go from a clean checkout to a verified build and
 `uavcan` generation with deterministic checks.
 
 ## Table of Contents
@@ -13,9 +13,9 @@ to let a new contributor go from a clean checkout to a verified build and strict
 5. Configure (Manual CMake)
 6. Build
 7. Test
-8. Reproduce Strict `uavcan` C Generation
-9. Reproduce Strict `uavcan` C++ Generation (`std` + `pmr`)
-10. Reproduce Strict `uavcan` Rust Generation (`std`)
+8. Reproduce `uavcan` C Generation
+9. Reproduce `uavcan` C++ Generation (`std` + `pmr`)
+10. Reproduce `uavcan` Rust Generation (`std`)
 11. Validate Generated Output
 12. Common Development Tasks
 13. Troubleshooting
@@ -27,7 +27,7 @@ This guide covers:
 
 - Building `dsdlc` and `dsdl-opt`.
 - Running unit tests and lit tests (when available).
-- Running integration validation for strict `uavcan` generation.
+- Running integration validation for `uavcan` generation.
 - Generating C11 output from `public_regulated_data_types/uavcan`.
 - Generating C++23 output (`std`/`pmr` profiles) from
   `public_regulated_data_types/uavcan`.
@@ -69,7 +69,7 @@ cd llvm-dsdl
 git submodule update --init --recursive
 ```
 
-`public_regulated_data_types` is required for strict full-tree generation
+`public_regulated_data_types` is required for full-tree generation
 checks and integration validation.
 
 ## 4. Recommended: Preset-Driven Workflows
@@ -107,14 +107,14 @@ cmake --workflow --preset full
 
 Runs all tests, including integration validation that:
 
-- generates all strict `uavcan` headers,
-- generates strict `uavcan` C++ headers for `std` and `pmr` profiles,
-- generates strict `uavcan` Rust crate output (`std` profile),
+- generates all `uavcan` headers,
+- generates `uavcan` C++ headers for `std` and `pmr` profiles,
+- generates `uavcan` Rust crate output (`std` profile),
 - checks count parity (`.dsdl` count == generated header count),
 - checks for stub references,
 - compile-checks all generated headers as C11 with `-Wall -Wextra -Werror`.
 
-### 4.3 Run only strict `uavcan` integration validation
+### 4.3 Run only `uavcan` integration validation
 
 ```bash
 cmake --workflow --preset uavcan
@@ -212,7 +212,7 @@ Full test set:
 ctest --preset test-dev-full
 ```
 
-Strict `uavcan` integration only:
+`uavcan` integration only:
 
 ```bash
 ctest --preset test-uavcan
@@ -234,17 +234,16 @@ or with Python module:
 python3 -m lit.main -sv build/test/lit
 ```
 
-## 8. Reproduce Strict `uavcan` C Generation
+## 8. Reproduce `uavcan` C Generation
 
 This is the primary end-to-end check for current project status.
 
 ```bash
-OUT="build/uavcan-out-strict-verify"
+OUT="build/uavcan-out-verify"
 mkdir -p "${OUT}"
 
 ./build/tools/dsdlc/dsdlc c \
-  --root-namespace-dir public_regulated_data_types/uavcan \
-  --strict \
+  --root-namespace-dir public_regulated_data_types/uavcan \ \
   --out-dir "${OUT}"
 ```
 
@@ -257,15 +256,14 @@ Expected result:
   `${OUT}/<namespace>/`.
   Example: `${OUT}/uavcan/node/Heartbeat_1_0.c`
 
-## 9. Reproduce Strict `uavcan` C++ Generation (`std` + `pmr`)
+## 9. Reproduce `uavcan` C++ Generation (`std` + `pmr`)
 
 ```bash
-OUT_CPP="build/uavcan-cpp-out-strict-verify"
+OUT_CPP="build/uavcan-cpp-out-verify"
 mkdir -p "${OUT_CPP}"
 
 ./build/tools/dsdlc/dsdlc cpp \
-  --root-namespace-dir public_regulated_data_types/uavcan \
-  --strict \
+  --root-namespace-dir public_regulated_data_types/uavcan \ \
   --cpp-profile both \
   --out-dir "${OUT_CPP}"
 ```
@@ -285,29 +283,26 @@ Single-profile generation:
 
 ```bash
 ./build/tools/dsdlc/dsdlc cpp \
-  --root-namespace-dir public_regulated_data_types/uavcan \
-  --strict \
+  --root-namespace-dir public_regulated_data_types/uavcan \ \
   --cpp-profile std \
   --out-dir build/uavcan-cpp-std-out
 ```
 
 ```bash
 ./build/tools/dsdlc/dsdlc cpp \
-  --root-namespace-dir public_regulated_data_types/uavcan \
-  --strict \
+  --root-namespace-dir public_regulated_data_types/uavcan \ \
   --cpp-profile pmr \
   --out-dir build/uavcan-cpp-pmr-out
 ```
 
-## 10. Reproduce Strict `uavcan` Rust Generation (`std`)
+## 10. Reproduce `uavcan` Rust Generation (`std`)
 
 ```bash
-OUT_RUST="build/uavcan-rust-out-strict-verify"
+OUT_RUST="build/uavcan-rust-out-verify"
 mkdir -p "${OUT_RUST}"
 
 ./build/tools/dsdlc/dsdlc rust \
-  --root-namespace-dir public_regulated_data_types/uavcan \
-  --strict \
+  --root-namespace-dir public_regulated_data_types/uavcan \ \
   --out-dir "${OUT_RUST}" \
   --rust-crate-name uavcan_dsdl_generated \
   --rust-profile std
@@ -333,7 +328,7 @@ Reserved future profile:
 
 ```bash
 find public_regulated_data_types/uavcan -name '*.dsdl' | wc -l
-find build/uavcan-out-strict-verify -name '*.h' ! -name 'dsdl_runtime.h' | wc -l
+find build/uavcan-out-verify -name '*.h' ! -name 'dsdl_runtime.h' | wc -l
 ```
 
 Expected:
@@ -343,7 +338,7 @@ Expected:
 ### 11.2 Ensure stubs are gone
 
 ```bash
-rg -n "dsdl_runtime_stub_" build/uavcan-out-strict-verify
+rg -n "dsdl_runtime_stub_" build/uavcan-out-verify
 ```
 
 Expected:
@@ -353,7 +348,7 @@ Expected:
 ### 11.3 Compile-check all generated headers as C11, warning-clean
 
 ```bash
-outdir="build/uavcan-out-strict-verify"
+outdir="build/uavcan-out-verify"
 scratch="$(mktemp -d)"
 rc=0
 
@@ -377,8 +372,8 @@ Expected:
 
 ```bash
 find public_regulated_data_types/uavcan -name '*.dsdl' | wc -l
-find build/uavcan-cpp-out-strict-verify/std -name '*.hpp' ! -name 'dsdl_runtime.hpp' | wc -l
-find build/uavcan-cpp-out-strict-verify/pmr -name '*.hpp' ! -name 'dsdl_runtime.hpp' | wc -l
+find build/uavcan-cpp-out-verify/std -name '*.hpp' ! -name 'dsdl_runtime.hpp' | wc -l
+find build/uavcan-cpp-out-verify/pmr -name '*.hpp' ! -name 'dsdl_runtime.hpp' | wc -l
 ```
 
 Expected:
@@ -389,7 +384,7 @@ Expected:
 
 ```bash
 for profile in std pmr; do
-  outdir="build/uavcan-cpp-out-strict-verify/${profile}"
+  outdir="build/uavcan-cpp-out-verify/${profile}"
   scratch="$(mktemp -d)"
   rc=0
 
@@ -416,7 +411,7 @@ Expected:
 
 ```bash
 find public_regulated_data_types/uavcan -name '*.dsdl' | wc -l
-find build/uavcan-rust-out-strict-verify/src -name '*.rs' \
+find build/uavcan-rust-out-verify/src -name '*.rs' \
   ! -name 'lib.rs' ! -name 'mod.rs' ! -name 'dsdl_runtime.rs' | wc -l
 ```
 
@@ -472,7 +467,7 @@ cmake --workflow --preset full
 - Install `llvm-lit` or Python `lit`.
 - Re-run configure so CMake can detect lit tooling.
 
-### 13.3 `dsdlc` strict generation fails
+### 13.3 `dsdlc` generation fails
 
 Checklist:
 
@@ -480,13 +475,11 @@ Checklist:
   - `git submodule update --init --recursive`
 - Command points at the root namespace:
   - `--root-namespace-dir public_regulated_data_types/uavcan`
-- Use strict explicitly while diagnosing:
-  - `--strict`
 
 ### 13.4 Header compile-check failures
 
 - Ensure include root is the generation root:
-  - `-I build/uavcan-out-strict-verify`
+  - `-I build/uavcan-out-verify`
 - Confirm `dsdl_runtime.h` exists in output root.
 
 ### 13.5 Workflow preset not found
@@ -512,7 +505,7 @@ Please include in PR description:
 
 - Exact preset/workflow or manual configure command used.
 - Exact build/test commands run.
-- Strict generation command used.
+- Generation command used.
 - Validation outputs:
   - DSDL/header count parity
   - stub scan result
@@ -526,4 +519,4 @@ For behavior changes affecting wire semantics, include:
 For substantial codegen/frontend changes, also include:
 
 - One representative generated header diff snippet (before/after).
-- Any compatibility notes (`--strict` vs `--compat-mode`).
+- Any semantic behavior notes relevant to the change.

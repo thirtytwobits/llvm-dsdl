@@ -53,14 +53,12 @@ using TypeAttributeResolver =
 /// @param[in] env Immutable symbol environment.
 /// @param[in,out] diagnostics Diagnostic sink for evaluation failures.
 /// @param[in] location Fallback source location for diagnostics.
-/// @param[in] strictMode Enables strict semantic diagnostics.
 /// @param[in] resolver Optional type-attribute resolver.
 /// @return Evaluated value, or `std::nullopt` on failure.
 std::optional<Value> evaluateExpression(const ExprAST&               expr,
                                         const ValueEnv&              env,
                                         DiagnosticEngine&            diagnostics,
                                         const SourceLocation&        location,
-                                        bool                         strictMode,
                                         const TypeAttributeResolver* resolver = nullptr);
 
 }  // namespace llvmdsdl

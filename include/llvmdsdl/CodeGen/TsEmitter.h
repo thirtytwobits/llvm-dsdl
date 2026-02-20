@@ -22,6 +22,16 @@ namespace llvmdsdl
 /// @file
 /// @brief TypeScript backend emission entry points.
 
+/// @brief TypeScript runtime specialization selection.
+enum class TsRuntimeSpecialization
+{
+    /// @brief Emit conservative portable runtime helpers.
+    Portable,
+
+    /// @brief Emit runtime helpers with byte-aligned fast paths.
+    Fast,
+};
+
 /// @brief Configuration options for TypeScript code generation.
 struct TsEmitOptions final
 {
@@ -33,6 +43,9 @@ struct TsEmitOptions final
 
     /// @brief Emits package metadata when true.
     bool emitPackageJson{true};
+
+    /// @brief Requested runtime helper specialization.
+    TsRuntimeSpecialization runtimeSpecialization{TsRuntimeSpecialization::Portable};
 
     /// @brief Enables optional lowered-serdes optimization before emission.
     bool optimizeLoweredSerDes{false};

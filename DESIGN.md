@@ -4,9 +4,9 @@
 
 ### 1.1 Goals
 
-`llvm-dsdl` is designed to be a strict, reproducible DSDL compiler with:
+`llvm-dsdl` is designed to be a reproducible DSDL compiler with:
 
-- Spec-first frontend behavior (strict by default).
+- Spec-first frontend behavior (single mode).
 - A typed semantic model that can support multiple backends.
 - An LLVM/MLIR foundation for long-term compiler evolution.
 - Multi-language code generation with shared wire semantics.
@@ -107,7 +107,7 @@ Runtime helpers encapsulate wire-level bit operations and numeric conversions:
 
 - `dsdlc` is the main CLI frontend/driver.
 - `dsdl-opt` supports MLIR pass experimentation.
-- Integration tests verify strict full-tree generation and compile checks.
+- Integration tests verify full-tree generation and compile checks.
 - CMake workflow presets provide reproducible configure/build/test automation.
 
 ---
@@ -234,8 +234,8 @@ codegen” into full compiler capabilities.
 Current:
 
 - Frontend + semantics are shared and mature enough for full `uavcan` generation.
-- C++/Rust generation is implemented and tested for strict tree generation.
-- Go generation is implemented and tested for strict tree generation.
+- C++/Rust generation is implemented and tested for full-tree generation.
+- Go generation is implemented and tested for full-tree generation.
 - C path already has an EmitC lowering route for implementation translation units.
 - Current implementation emits one `.c` translation unit per DSDL definition
   (monolithic TU-only mode has been removed).
@@ -266,6 +266,11 @@ Current:
   track with lowered-schema validation, shared lowered render-order planning,
   generated runtime support (`dsdl_runtime.ts`), and runtime-backed per-type
   SerDes entrypoints across core semantic families.
+- TypeScript runtime specialization is now configurable
+  (`--ts-runtime-specialization` `portable|fast`), with dedicated
+  `ts-runtime-specialization` integration labels/workflows, C<->TS parity
+  gates, and semantic-diff gates ensuring generated type semantics remain
+  unchanged while runtime helper implementation strategy varies.
 - TypeScript integration coverage includes full-`uavcan` generation/determinism/
   typecheck/consumer-smoke/index-contract/runtime-execution gates
   (`llvmdsdl-uavcan-ts-generation`,
@@ -277,11 +282,6 @@ Current:
   (`llvmdsdl-fixtures-ts-generation-hardening`), invariant-based C<->TS parity
   (`llvmdsdl-c-ts-parity`, `llvmdsdl-signed-narrow-c-ts-parity`, optimized
   variants), and broad runtime/parity fixture lanes.
-- TypeScript strict+compat migration coverage is integrated via:
-  `llvmdsdl-ts-compat-generation`,
-  `llvmdsdl-ts-compat-runtime`, and
-  `llvmdsdl-fixtures-c-ts-compat-parity`.
-
 Target trajectory:
 
 - Continue using MLIR-first lowering plus render-IR convergence so backend logic
@@ -302,12 +302,8 @@ Wire-semantics behavior (scalar normalization, array prefix/validation, union ta
 helpers, delimiter checks, capacity checks, section-plan ordering) is expected to
 be sourced from lowered MLIR contracts rather than backend-local fallback logic.
 
-### 4.2 Strict vs Compat Semantics
+### 4.2 Frontend Semantics
 
-- `--strict` is spec-first mode (default): enforce current Cyphal DSDL
-  semantics implemented by this compiler.
-- `--compat-mode` is migration mode: compatibility with legacy/non-conformant
-  trees that relied on permissive historical behavior (for example malformed
-  array-capacity bounds that are clamped/defaulted in compat mode).
-- Compat mode must emit deterministic warnings for downgraded diagnostics, and
-  the expected migration path is resolving warnings and returning to `--strict`.
+- `dsdlc` enforces one spec-conformant semantic mode for Cyphal DSDL.
+- Non-conformant definitions are rejected with diagnostics; no permissive
+  compatibility fallback mode is supported.

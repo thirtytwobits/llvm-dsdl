@@ -106,21 +106,6 @@ find_program(GO_EXECUTABLE go QUIET)
 find_program(TSC_EXECUTABLE tsc QUIET)
 find_program(NODE_EXECUTABLE node QUIET)
 
-add_test(
-  NAME llvmdsdl-ts-compat-generation
-  COMMAND
-    ${CMAKE_COMMAND}
-      -DDSDLC=$<TARGET_FILE:dsdlc>
-      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/ts-compat-generation-out
-      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsCompatGeneration.cmake
-)
-
-set_tests_properties(
-  llvmdsdl-ts-compat-generation
-  PROPERTIES
-    LABELS "integration;fixtures;ts"
-)
-
 if(GO_EXECUTABLE)
   add_test(
     NAME llvmdsdl-go-runtime-unit-tests
@@ -159,6 +144,26 @@ if(CMAKE_C_COMPILER AND TSC_EXECUTABLE AND NODE_EXECUTABLE)
     llvmdsdl-c-ts-parity
     PROPERTIES
       LABELS "integration;fixtures;ts;differential"
+  )
+
+  add_test(
+    NAME llvmdsdl-c-ts-parity-runtime-fast
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DTS_RUNTIME_SPECIALIZATION=fast
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/c-ts-parity-runtime-fast-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunCTsParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-c-ts-parity-runtime-fast
+    PROPERTIES
+      LABELS "integration;fixtures;ts;differential;ts-runtime-specialization"
   )
 
   add_test(
@@ -218,25 +223,6 @@ if(CMAKE_C_COMPILER AND TSC_EXECUTABLE AND NODE_EXECUTABLE)
     llvmdsdl-signed-narrow-c-ts-parity-optimized
     PROPERTIES
       LABELS "integration;fixtures;ts;differential;optimized"
-  )
-
-  add_test(
-    NAME llvmdsdl-fixtures-c-ts-compat-parity
-    COMMAND
-      ${CMAKE_COMMAND}
-        -DDSDLC=$<TARGET_FILE:dsdlc>
-        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-c-ts-compat-parity-out
-        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
-        -DC_COMPILER=${CMAKE_C_COMPILER}
-        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
-        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunFixturesCTsCompatParity.cmake
-  )
-
-  set_tests_properties(
-    llvmdsdl-fixtures-c-ts-compat-parity
-    PROPERTIES
-      LABELS "integration;fixtures;ts;differential"
   )
 
   add_test(
@@ -566,23 +552,6 @@ else()
 endif()
 
 if(TSC_EXECUTABLE AND NODE_EXECUTABLE)
-  add_test(
-    NAME llvmdsdl-ts-compat-runtime
-    COMMAND
-      ${CMAKE_COMMAND}
-        -DDSDLC=$<TARGET_FILE:dsdlc>
-        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/ts-compat-runtime-out
-        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
-        -DNODE_EXECUTABLE=${NODE_EXECUTABLE}
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsCompatRuntime.cmake
-  )
-
-  set_tests_properties(
-    llvmdsdl-ts-compat-runtime
-    PROPERTIES
-      LABELS "integration;fixtures;ts"
-  )
-
   add_test(
     NAME llvmdsdl-ts-runtime-fixed-array-smoke
     COMMAND
@@ -1034,18 +1003,18 @@ if(NOT CMAKE_CXX_COMPILER)
 endif()
 
 add_test(
-  NAME llvmdsdl-uavcan-strict-generation
+  NAME llvmdsdl-uavcan-generation
   COMMAND
     ${CMAKE_COMMAND}
       -DDSDLC=$<TARGET_FILE:dsdlc>
       -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
-      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-strict-out
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-out
       -DC_COMPILER=${CMAKE_C_COMPILER}
-      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanStrictGeneration.cmake
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanGeneration.cmake
 )
 
 set_tests_properties(
-  llvmdsdl-uavcan-strict-generation
+  llvmdsdl-uavcan-generation
   PROPERTIES
     LABELS "integration;uavcan;slow"
 )
@@ -1201,6 +1170,39 @@ set_tests_properties(
 )
 
 add_test(
+  NAME llvmdsdl-uavcan-ts-generation-runtime-fast
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-ts-runtime-fast-out
+      -DTS_RUNTIME_SPECIALIZATION=fast
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanTsGeneration.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-uavcan-ts-generation-runtime-fast
+  PROPERTIES
+    LABELS "integration;uavcan;ts;slow;ts-runtime-specialization"
+)
+
+add_test(
+  NAME llvmdsdl-uavcan-ts-runtime-specialization-diff
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-ts-runtime-specialization-diff-out
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunTsRuntimeSpecializationDiff.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-uavcan-ts-runtime-specialization-diff
+  PROPERTIES
+    LABELS "integration;uavcan;ts;slow;ts-runtime-specialization"
+)
+
+add_test(
   NAME llvmdsdl-uavcan-ts-determinism
   COMMAND
     ${CMAKE_COMMAND}
@@ -1248,6 +1250,24 @@ if(TSC_EXECUTABLE)
     llvmdsdl-uavcan-ts-typecheck
     PROPERTIES
       LABELS "integration;uavcan;ts;slow"
+  )
+
+  add_test(
+    NAME llvmdsdl-uavcan-ts-typecheck-runtime-fast
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-ts-typecheck-runtime-fast-out
+        -DTSC_EXECUTABLE=${TSC_EXECUTABLE}
+        -DTS_RUNTIME_SPECIALIZATION=fast
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanTsTypecheck.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-uavcan-ts-typecheck-runtime-fast
+    PROPERTIES
+      LABELS "integration;uavcan;ts;slow;ts-runtime-specialization"
   )
 
   add_test(

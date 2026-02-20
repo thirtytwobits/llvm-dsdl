@@ -27,13 +27,14 @@ It currently provides:
   - A generated module layout (`go.mod`, `uavcan/**`, `dsdlruntime/**`).
   - Per-type Go data types and inline SerDes methods.
   - A local Go runtime module (`dsdlruntime/dsdl_runtime.go`) with bit-level primitives.
-  - Deterministic output and strict-mode full-`uavcan` generation/build gates.
+  - Deterministic output and full-`uavcan` generation/build gates.
 - TypeScript code generation (`dsdlc ts`) with:
   - A generated package/module layout (`package.json`, `index.ts`, namespace `*.ts` files).
   - Per-type TypeScript interface/type declarations, DSDL metadata constants, and generated runtime SerDes entrypoints.
   - A generated TypeScript runtime helper module (`dsdl_runtime.ts`) for bit-level read/write primitives.
+  - Runtime specialization (`portable|fast`) for generated runtime helper implementation strategy.
   - MLIR schema/plan metadata validation before emission.
-- Strict-mode-first semantics (`--strict` is default).
+- Spec-conformant frontend semantics (single mode; no compatibility fallback mode).
 
 ## Ambitions
 
@@ -111,7 +112,7 @@ Fast dev workflow (configure + build + fast tests):
 cmake --workflow --preset dev
 ```
 
-Full verification workflow (includes strict `uavcan` C, C++, and Rust integration tests):
+Full verification workflow (includes `uavcan` C, C++, and Rust integration tests):
 
 ```bash
 cmake --workflow --preset full
@@ -169,14 +170,24 @@ This lane now includes runtime-fast generation/cargo checks, runtime
 specialization semantic-diff checks, and C/Rust parity checks (including
 `no-std-alloc + runtime-fast`).
 
+TypeScript runtime-specialization workflow (runs tests labeled
+`ts-runtime-specialization`):
+
+```bash
+cmake --workflow --preset ts-runtime-specialization
+```
+
+This lane includes runtime-fast generation, typecheck, C<->TS parity, and
+portable-vs-fast semantic-diff checks.
+
 TypeScript non-C-like target workflow (runs tests labeled `ts`):
 
 ```bash
 cmake --workflow --preset ts
 ```
 
-This lane runs the full TypeScript gate set, including strict and compat
-generation/runtime checks, full-`uavcan` generation/determinism/typecheck/
+This lane runs the full TypeScript gate set, including generation/runtime
+checks, full-`uavcan` generation/determinism/typecheck/
 consumer/index-contract/runtime-execution gates, fixture/runtime semantic-family
 smoke/parity lanes, and invariant-based C<->TS parity lanes (signed-narrow and
 optimized variants included).
@@ -244,6 +255,12 @@ Run only Rust runtime-specialization gates:
 
 ```bash
 ctest --test-dir build -L rust-runtime-specialization --output-on-failure
+```
+
+Run only TypeScript runtime-specialization gates:
+
+```bash
+ctest --test-dir build -L ts-runtime-specialization --output-on-failure
 ```
 
 Run only the C/C++ PMR parity test:
@@ -427,7 +444,7 @@ Run only the generated-Rust compile gate:
 ctest --test-dir build -R llvmdsdl-uavcan-rust-cargo-check --output-on-failure
 ```
 
-Run only strict `uavcan` integration validation:
+Run only `uavcan` integration validation:
 
 ```bash
 cmake --workflow --preset uavcan
@@ -530,22 +547,16 @@ Notes:
   --root-namespace-dir public_regulated_data_types/uavcan
 ```
 
-### C header generation (strict by default)
+### C header generation
 
 ```bash
 ./build/tools/dsdlc/dsdlc c \
-  --root-namespace-dir public_regulated_data_types/uavcan \
-  --strict \
+  --root-namespace-dir public_regulated_data_types/uavcan \ \
   --out-dir build/uavcan-out
 ```
 
 Optional:
 
-- `--compat-mode`: compatibility mode for legacy/non-conformant DSDL trees.
-  "Compatibility with what?": historical OpenCyphal-style permissive behavior
-  (for example malformed array-capacity bounds that older trees may rely on).
-  Strict mode is spec-first: Cyphal DSDL semantics as implemented by this
-  compiler.
 - `--optimize-lowered-serdes`: enable optional semantics-preserving MLIR
   optimization on lowered SerDes IR before backend emission.
 - No additional C mode flags are required: `dsdlc c` always emits headers and
@@ -557,8 +568,7 @@ Generate both profiles:
 
 ```bash
 ./build/tools/dsdlc/dsdlc cpp \
-  --root-namespace-dir public_regulated_data_types/uavcan \
-  --strict \
+  --root-namespace-dir public_regulated_data_types/uavcan \ \
   --cpp-profile both \
   --out-dir build/uavcan-cpp-out
 ```
@@ -567,16 +577,14 @@ Generate only one profile:
 
 ```bash
 ./build/tools/dsdlc/dsdlc cpp \
-  --root-namespace-dir public_regulated_data_types/uavcan \
-  --strict \
+  --root-namespace-dir public_regulated_data_types/uavcan \ \
   --cpp-profile std \
   --out-dir build/uavcan-cpp-std-out
 ```
 
 ```bash
 ./build/tools/dsdlc/dsdlc cpp \
-  --root-namespace-dir public_regulated_data_types/uavcan \
-  --strict \
+  --root-namespace-dir public_regulated_data_types/uavcan \ \
   --cpp-profile pmr \
   --out-dir build/uavcan-cpp-pmr-out
 ```
@@ -603,8 +611,7 @@ Naming style:
 
 ```bash
 ./build/tools/dsdlc/dsdlc rust \
-  --root-namespace-dir public_regulated_data_types/uavcan \
-  --strict \
+  --root-namespace-dir public_regulated_data_types/uavcan \ \
   --out-dir build/uavcan-rust-out \
   --rust-crate-name uavcan_dsdl_generated \
   --rust-profile std
@@ -614,8 +621,7 @@ No-std+alloc profile:
 
 ```bash
 ./build/tools/dsdlc/dsdlc rust \
-  --root-namespace-dir public_regulated_data_types/uavcan \
-  --strict \
+  --root-namespace-dir public_regulated_data_types/uavcan \ \
   --out-dir build/uavcan-rust-no-std-out \
   --rust-crate-name uavcan_dsdl_generated_no_std \
   --rust-profile no-std-alloc
@@ -625,8 +631,7 @@ Runtime-specialized std profile:
 
 ```bash
 ./build/tools/dsdlc/dsdlc rust \
-  --root-namespace-dir public_regulated_data_types/uavcan \
-  --strict \
+  --root-namespace-dir public_regulated_data_types/uavcan \ \
   --out-dir build/uavcan-rust-fast-out \
   --rust-crate-name uavcan_dsdl_generated_fast \
   --rust-profile std \
@@ -654,10 +659,19 @@ Current behavior:
 
 ```bash
 ./build/tools/dsdlc/dsdlc ts \
-  --root-namespace-dir public_regulated_data_types/uavcan \
-  --strict \
+  --root-namespace-dir public_regulated_data_types/uavcan \ \
   --out-dir build/uavcan-ts-out \
   --ts-module uavcan_dsdl_generated_ts
+```
+
+Runtime-specialized fast profile:
+
+```bash
+./build/tools/dsdlc/dsdlc ts \
+  --root-namespace-dir public_regulated_data_types/uavcan \ \
+  --out-dir build/uavcan-ts-fast-out \
+  --ts-module uavcan_dsdl_generated_ts_fast \
+  --ts-runtime-specialization fast
 ```
 
 Current behavior:
@@ -669,6 +683,11 @@ Current behavior:
 - Generates interface/type declarations, DSDL metadata constants
   (`DSDL_FULL_NAME`, version major/minor), and runtime-backed
   `serialize*`/`deserialize*` helpers.
+- `--ts-runtime-specialization portable` is the default profile behavior.
+- `--ts-runtime-specialization fast` enables byte-aligned fast paths in
+  `dsdl_runtime.ts` while preserving semantic generated type files.
+- Runtime-specialization integration gates include generation, typecheck,
+  C<->TS parity, and semantic-diff checks between portable and fast outputs.
 - Uses lowered-contract validation (`collectLoweredFactsFromMlir`) and shared
   lowered render-order planning for runtime section emission.
 - Hard-fails generation if required lowered runtime planning metadata is
@@ -679,28 +698,15 @@ Current behavior:
   - full-`uavcan` generation/determinism/typecheck/consumer-smoke/index-contract/runtime-execution gates
   - runtime smoke lanes across scalar/array/union/composite/delimited/service/padding/truncated-decode families
   - C<->TS parity lanes including invariant-based random+direct checks, signed-narrow cast-mode checks, and optimized-lowering variants
-  - compat-mode lanes:
-    - `llvmdsdl-ts-compat-generation`
-    - `llvmdsdl-ts-compat-runtime`
-    - `llvmdsdl-fixtures-c-ts-compat-parity`
-
-Strict vs compat usage:
-
-- `--strict` (default): spec-first mode for current Cyphal DSDL semantics.
-- `--compat-mode`: migration mode for legacy/non-conformant trees that relied
-  on permissive behavior. Expected diagnostics are deterministic compat warnings
-  (for example array-capacity clamp/default behavior), and migration target is
-  returning to `--strict`.
 
 ## Reproducible Full `uavcan` Generation Check
 
 ```bash
-OUT="build/uavcan-out-strict"
+OUT="build/uavcan-out"
 mkdir -p "${OUT}"
 
 ./build/tools/dsdlc/dsdlc c \
-  --root-namespace-dir public_regulated_data_types/uavcan \
-  --strict \
+  --root-namespace-dir public_regulated_data_types/uavcan \ \
   --out-dir "${OUT}"
 
 find public_regulated_data_types/uavcan -name '*.dsdl' | wc -l
@@ -715,11 +721,11 @@ Current milestone supports generating all types under:
 
 - `public_regulated_data_types/uavcan`
 
-with strict mode enabled and no `dsdl_runtime_stub_*` references in generated
-headers, strict C++23 generation (`std` + `pmr` profiles), plus strict Rust
-crate generation in `std`, `no-std-alloc`, and runtime-specialized (`fast`)
-modes, plus TypeScript generation with compile (`tsc --noEmit`), determinism,
-consumer-smoke, index-contract, runtime execution, strict/compat generation
-gates, and fixture/runtime parity validation gates (including compat parity,
+with no `dsdl_runtime_stub_*` references in generated headers, C++23 generation
+(`std` + `pmr` profiles), Rust generation in `std`, `no-std-alloc`, and
+runtime-specialized (`fast`) modes, plus TypeScript generation with compile
+(`tsc --noEmit`), determinism, consumer-smoke, index-contract, runtime
+execution, runtime-specialized (`portable|fast`) generation/typecheck/parity/
+semantic-diff gates, and fixture/runtime parity validation lanes (including
 signed-narrow parity, optimized parity, variable-array/bigint/union/composite/
 service/delimited families).

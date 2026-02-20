@@ -50,7 +50,7 @@ bool runEvaluatorTests()
         auto                       expr = parseAssertExpression("Foo.1.0.MAX", diag);
         if (!expr)
         {
-            std::cerr << "failed to parse strict evaluator expression\n";
+            std::cerr << "failed to parse evaluator expression\n";
             return false;
         }
 
@@ -59,15 +59,15 @@ bool runEvaluatorTests()
                                                   env,
                                                   diag,
                                                   expr->location,
-                                                  /*strictMode=*/true);
+                                                  nullptr);
         if (value)
         {
-            std::cerr << "expected strict evaluation without resolver to fail\n";
+            std::cerr << "expected evaluation without resolver to fail\n";
             return false;
         }
         if (!hasErrorContaining(diag, "unsupported metaserializable attribute: MAX"))
         {
-            std::cerr << "missing strict unsupported-attribute diagnostic\n";
+            std::cerr << "missing unsupported-attribute diagnostic\n";
             return false;
         }
     }
@@ -100,7 +100,6 @@ bool runEvaluatorTests()
                                                   env,
                                                   diag,
                                                   expr->location,
-                                                  /*strictMode=*/true,
                                                   &resolver);
         if (!value || !std::holds_alternative<llvmdsdl::Rational>(value->data) ||
             std::get<llvmdsdl::Rational>(value->data) != llvmdsdl::Rational(42, 1))
@@ -140,7 +139,6 @@ bool runEvaluatorTests()
                                                   env,
                                                   diag,
                                                   expr->location,
-                                                  /*strictMode=*/true,
                                                   &resolver);
         if (!value || !std::holds_alternative<llvmdsdl::Rational>(value->data) ||
             std::get<llvmdsdl::Rational>(value->data) != llvmdsdl::Rational(128, 1))

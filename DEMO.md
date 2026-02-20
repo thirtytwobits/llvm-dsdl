@@ -65,40 +65,34 @@ mkdir -p "$OUT"
   "$OUT/module.mlir" > "$OUT/module.emitc.mlir"
 
 "$DSDLC" c \
-  --root-namespace-dir "$ROOT_NS" \
-  --strict \
+  --root-namespace-dir "$ROOT_NS" \ \
   --out-dir "$OUT/c"
 
 "$DSDLC" cpp \
-  --root-namespace-dir "$ROOT_NS" \
-  --strict \
+  --root-namespace-dir "$ROOT_NS" \ \
   --cpp-profile both \
   --out-dir "$OUT/cpp"
 
 "$DSDLC" rust \
-  --root-namespace-dir "$ROOT_NS" \
-  --strict \
+  --root-namespace-dir "$ROOT_NS" \ \
   --rust-profile std \
   --rust-crate-name demo_vendor_generated \
   --out-dir "$OUT/rust"
 
 "$DSDLC" rust \
-  --root-namespace-dir "$ROOT_NS" \
-  --strict \
+  --root-namespace-dir "$ROOT_NS" \ \
   --rust-profile std \
   --rust-runtime-specialization fast \
   --rust-crate-name demo_vendor_generated_fast \
   --out-dir "$OUT/rust-fast"
 
 "$DSDLC" go \
-  --root-namespace-dir "$ROOT_NS" \
-  --strict \
+  --root-namespace-dir "$ROOT_NS" \ \
   --go-module demo/vendor/generated \
   --out-dir "$OUT/go"
 
 "$DSDLC" ts \
-  --root-namespace-dir "$ROOT_NS" \
-  --strict \
+  --root-namespace-dir "$ROOT_NS" \ \
   --ts-module demo_vendor_generated_ts \
   --out-dir "$OUT/ts"
 ```
@@ -151,8 +145,8 @@ OUT_TS_DET="$OUT/ts-determinism"
 rm -rf "$OUT_TS_DET"
 mkdir -p "$OUT_TS_DET"
 
-"$DSDLC" ts --root-namespace-dir "$ROOT_NS" --strict --ts-module demo_vendor_generated_ts --out-dir "$OUT_TS_DET/run-a"
-"$DSDLC" ts --root-namespace-dir "$ROOT_NS" --strict --ts-module demo_vendor_generated_ts --out-dir "$OUT_TS_DET/run-b"
+"$DSDLC" ts --root-namespace-dir "$ROOT_NS" --ts-module demo_vendor_generated_ts --out-dir "$OUT_TS_DET/run-a"
+"$DSDLC" ts --root-namespace-dir "$ROOT_NS" --ts-module demo_vendor_generated_ts --out-dir "$OUT_TS_DET/run-b"
 
 diff -ru "$OUT_TS_DET/run-a" "$OUT_TS_DET/run-b"
 ```
@@ -243,27 +237,7 @@ ctest --test-dir build/dev-homebrew \
   --output-on-failure
 ```
 
-Optional quick strict-vs-compat TypeScript proof (migration semantics):
-
-```bash
-COMPAT_ROOT="$OUT/compatdemo"
-rm -rf "$COMPAT_ROOT"
-mkdir -p "$COMPAT_ROOT"
-cat > "$COMPAT_ROOT/CompatArray.1.0.dsdl" <<'DSDL'
-uint8[0] fixed_bad
-uint8[<=0] var_inc_bad
-uint8[<1] var_exc_bad
-@sealed
-DSDL
-
-# strict (spec-first) should fail
-"$DSDLC" ts --root-namespace-dir "$COMPAT_ROOT" --strict --out-dir "$OUT/ts-compat-strict" || true
-
-# compat should pass with deterministic compat warnings and clamped semantics
-"$DSDLC" ts --root-namespace-dir "$COMPAT_ROOT" --compat-mode --out-dir "$OUT/ts-compat"
-```
-
-Optional one-command TypeScript completion ring (strict + compat + parity):
+Optional one-command TypeScript completion ring (generation + runtime + parity):
 
 ```bash
 ctest --test-dir build/dev-homebrew -L ts --output-on-failure
@@ -342,11 +316,11 @@ mkdir -p "$OUT_FULL"
 "$DSDLOPT" --pass-pipeline=builtin.module\(lower-dsdl-serialization,convert-dsdl-to-emitc\) \
   "$OUT_FULL/module.mlir" > "$OUT_FULL/module.emitc.mlir"
 
-"$DSDLC" c    --root-namespace-dir "$ROOT_NS_FULL" --strict --out-dir "$OUT_FULL/c"
-"$DSDLC" cpp  --root-namespace-dir "$ROOT_NS_FULL" --strict --cpp-profile both --out-dir "$OUT_FULL/cpp"
-"$DSDLC" rust --root-namespace-dir "$ROOT_NS_FULL" --strict --rust-profile std --rust-crate-name uavcan_dsdl_generated --out-dir "$OUT_FULL/rust"
-"$DSDLC" go   --root-namespace-dir "$ROOT_NS_FULL" --strict --go-module demo/uavcan/generated --out-dir "$OUT_FULL/go"
-"$DSDLC" ts   --root-namespace-dir "$ROOT_NS_FULL" --strict --ts-module demo_uavcan_generated_ts --out-dir "$OUT_FULL/ts"
+"$DSDLC" c    --root-namespace-dir "$ROOT_NS_FULL" --out-dir "$OUT_FULL/c"
+"$DSDLC" cpp  --root-namespace-dir "$ROOT_NS_FULL" --cpp-profile both --out-dir "$OUT_FULL/cpp"
+"$DSDLC" rust --root-namespace-dir "$ROOT_NS_FULL" --rust-profile std --rust-crate-name uavcan_dsdl_generated --out-dir "$OUT_FULL/rust"
+"$DSDLC" go   --root-namespace-dir "$ROOT_NS_FULL" --go-module demo/uavcan/generated --out-dir "$OUT_FULL/go"
+"$DSDLC" ts   --root-namespace-dir "$ROOT_NS_FULL" --ts-module demo_uavcan_generated_ts --out-dir "$OUT_FULL/ts"
 ```
 
 Quick count checks:
@@ -364,22 +338,22 @@ Use this close:
 
 ## 8) Caveat: Remaining Project Work
 
-As of **February 19, 2026**, Phases 0-5 in `MLIR_MAX_LOWERING_PLAN.md` are complete for the current backend scope (C/C++/Rust/Go), and TypeScript now includes strict+compat integration/parity coverage, including optimization-enabled parity gates.
+As of **February 19, 2026**, Phases 0-5 in `MLIR_MAX_LOWERING_PLAN.md` are complete for the current backend scope (C/C++/Rust/Go), and TypeScript includes generation/runtime/parity coverage, including optimization-enabled parity gates.
 
 Remaining work is now the **optional stretch**:
 
 1. Continue maturing the new language-agnostic render-IR layer (`LoweredRenderIR`) so more backend code paths become pure rendering adapters.
-2. Continue profile-knob expansion (embedded allocator/runtime specialization) without changing lowered wire semantics. (`--rust-profile no-std-alloc` and `--rust-runtime-specialization fast` are implemented with generation/cargo-check/parity and semantic-diff validation lanes.)
+2. Continue profile-knob expansion (embedded allocator/runtime specialization) without changing lowered wire semantics. (`--rust-profile no-std-alloc`, `--rust-runtime-specialization fast`, and `--ts-runtime-specialization fast` are implemented with generation/build-or-typecheck/parity and semantic-diff validation lanes.)
 3. Continue converging all backends (including TypeScript) on thinner shared render-IR consumption so backend code remains syntax/runtime binding.
 
 What we have now (already true):
 
 1. A versioned, backend-agnostic lowered SerDes contract as the semantic source of truth.
-2. C, C++ (`std`/`pmr`), Rust, Go, and TypeScript emitters converged on shared lowering products with strong parity/differential validation; TypeScript includes declaration generation, generated runtime helpers (`dsdl_runtime.ts`), compile/determinism/consumer/index-contract/runtime-execution gates, strict+compat generation/runtime gates, and C<->TS parity lanes (including signed-narrow and optimized variants).
+2. C, C++ (`std`/`pmr`), Rust, Go, and TypeScript emitters converged on shared lowering products with strong parity/differential validation; TypeScript includes declaration generation, generated runtime helpers (`dsdl_runtime.ts`), compile/determinism/consumer/index-contract/runtime-execution gates, and C<->TS parity lanes (including signed-narrow and optimized variants).
 3. Optional optimization passes with parity-preserving validation under optimization-enabled workflows.
 
 What we should have when optional stretch work is done:
 
 1. Even thinner backends built on shared render IR with backend code focused on syntax/runtime binding.
 2. Profile flexibility (`std`/`pmr`/`no_std`/runtime-specialized embedded variants) without semantic drift.
-3. A non-C-like target path where TypeScript remains parity-validated in strict and compat modes with no fallback runtime stubs, lowering risk for additional language targets.
+3. A non-C-like target path where TypeScript remains parity-validated with no fallback runtime stubs, lowering risk for additional language targets.

@@ -123,7 +123,6 @@ if(LLVMDSDL_UAVCAN_ROOT)
         $<TARGET_FILE:dsdlc>
           ${ARGN}
           --root-namespace-dir "${LLVMDSDL_UAVCAN_ROOT}"
-          --strict
           --out-dir "${out_dir}"
       DEPENDS dsdlc
       USES_TERMINAL
@@ -142,7 +141,6 @@ if(LLVMDSDL_UAVCAN_ROOT)
           c
           ${ARGN}
           --root-namespace-dir "${LLVMDSDL_UAVCAN_ROOT}"
-          --strict
           --out-dir "${out_dir}"
       COMMAND
         ${CMAKE_COMMAND}
@@ -190,6 +188,9 @@ if(LLVMDSDL_UAVCAN_ROOT)
   llvmdsdl_add_uavcan_codegen_target(generate-uavcan-ts
                                      ts
                                      ts --ts-module uavcan_dsdl_generated_ts)
+  llvmdsdl_add_uavcan_codegen_target(generate-uavcan-ts-runtime-fast
+                                     ts-runtime-fast
+                                     ts --ts-module uavcan_dsdl_generated_ts_fast --ts-runtime-specialization fast)
 
   add_custom_target(generate-uavcan-all)
   add_dependencies(generate-uavcan-all
@@ -202,7 +203,8 @@ if(LLVMDSDL_UAVCAN_ROOT)
                    generate-uavcan-rust-runtime-fast
                    generate-uavcan-rust-no-std-runtime-fast
                    generate-uavcan-go
-                   generate-uavcan-ts)
+                   generate-uavcan-ts
+                   generate-uavcan-ts-runtime-fast)
 
   add_custom_target(generate-demo-2026-02-16
     COMMAND

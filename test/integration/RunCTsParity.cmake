@@ -29,6 +29,14 @@ if(DEFINED DSDLC_EXTRA_ARGS AND NOT "${DSDLC_EXTRA_ARGS}" STREQUAL "")
   separate_arguments(dsdlc_extra_args NATIVE_COMMAND "${DSDLC_EXTRA_ARGS}")
 endif()
 
+if(NOT DEFINED TS_RUNTIME_SPECIALIZATION OR "${TS_RUNTIME_SPECIALIZATION}" STREQUAL "")
+  set(TS_RUNTIME_SPECIALIZATION "portable")
+endif()
+if(NOT "${TS_RUNTIME_SPECIALIZATION}" STREQUAL "portable" AND
+   NOT "${TS_RUNTIME_SPECIALIZATION}" STREQUAL "fast")
+  message(FATAL_ERROR "Invalid TS_RUNTIME_SPECIALIZATION value: ${TS_RUNTIME_SPECIALIZATION}")
+endif()
+
 file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
@@ -82,7 +90,6 @@ execute_process(
   COMMAND
     "${DSDLC}" c
       --root-namespace-dir "${fixture_root}"
-      --strict
       ${dsdlc_extra_args}
       --out-dir "${c_out}"
   RESULT_VARIABLE c_gen_result
@@ -99,10 +106,10 @@ execute_process(
   COMMAND
     "${DSDLC}" ts
       --root-namespace-dir "${fixture_root}"
-      --strict
       ${dsdlc_extra_args}
       --out-dir "${ts_out}"
       --ts-module "c_ts_parity"
+      --ts-runtime-specialization "${TS_RUNTIME_SPECIALIZATION}"
   RESULT_VARIABLE ts_gen_result
   OUTPUT_VARIABLE ts_gen_stdout
   ERROR_VARIABLE ts_gen_stderr

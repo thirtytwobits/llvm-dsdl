@@ -21,12 +21,9 @@ namespace llvmdsdl
 
 /// @brief Converts parsed AST into the resolved semantic model.
 /// @param[in] module Parsed AST module.
-/// @param[in] options Semantic-analysis strictness options.
 /// @param[in,out] diagnostics Diagnostic sink for semantic issues.
 /// @return Resolved semantic module on success.
-llvm::Expected<SemanticModule> analyze(const ASTModule&       module,
-                                       const SemanticOptions& options,
-                                       DiagnosticEngine&      diagnostics);
+llvm::Expected<SemanticModule> analyze(const ASTModule& module, DiagnosticEngine& diagnostics);
 
 }  // namespace llvmdsdl
 

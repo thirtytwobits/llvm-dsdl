@@ -48,12 +48,8 @@ bool runAnalyzerTests()
     llvmdsdl::ASTModule module;
     module.definitions.push_back(llvmdsdl::ParsedDefinition{discovered, *def});
 
-    llvmdsdl::SemanticOptions options;
-    options.strict     = true;
-    options.compatMode = false;
-
     llvmdsdl::DiagnosticEngine semDiag;
-    auto                       semantic = llvmdsdl::analyze(module, options, semDiag);
+    auto                       semantic = llvmdsdl::analyze(module, semDiag);
     if (!semantic)
     {
         llvm::consumeError(semantic.takeError());
@@ -62,8 +58,7 @@ bool runAnalyzerTests()
     }
     if (semDiag.hasErrors())
     {
-        std::cerr << "analyzer produced unexpected strict errors on union offset "
-                     "fixture\n";
+        std::cerr << "analyzer produced unexpected errors on union offset fixture\n";
         return false;
     }
 

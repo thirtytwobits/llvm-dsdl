@@ -197,19 +197,17 @@ std::optional<Value::Set> applySetElementwise(BinaryOp op, const Value::Set& lhs
 std::optional<Value> evaluate(const ExprAST&               expr,
                               const ValueEnv&              env,
                               DiagnosticEngine&            diagnostics,
-                              bool                         strictMode,
                               const TypeAttributeResolver* resolver);
 
 std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
                                     const SourceLocation&        location,
                                     const ValueEnv&              env,
                                     DiagnosticEngine&            diagnostics,
-                                    bool                         strictMode,
                                     const TypeAttributeResolver* resolver)
 {
     if (b.op == BinaryOp::Attribute)
     {
-        auto lhs = evaluate(*b.lhs, env, diagnostics, strictMode, resolver);
+        auto lhs = evaluate(*b.lhs, env, diagnostics, resolver);
         if (!lhs)
         {
             return std::nullopt;
@@ -218,11 +216,6 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
         const auto* rhsId = std::get_if<ExprAST::Identifier>(&b.rhs->value);
         if (!rhsId)
         {
-            if (!strictMode)
-            {
-                diagnostics.warning(location, "compat mode: malformed attribute access evaluated as 0");
-                return Value{Rational(0, 1)};
-            }
             diagnostics.error(location, "attribute operator expects identifier on RHS");
             return std::nullopt;
         }
@@ -235,11 +228,6 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
             }
             if (set->empty())
             {
-                if (!strictMode)
-                {
-                    diagnostics.warning(location, "compat mode: empty set attribute evaluated as 0");
-                    return Value{Rational(0, 1)};
-                }
                 diagnostics.error(location, "cannot access set min/max on an empty set literal");
                 return std::nullopt;
             }
@@ -263,26 +251,16 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
             {
                 return Value{Rational(0, 1)};
             }
-            if (strictMode)
-            {
-                diagnostics.error(location, "unsupported metaserializable attribute: " + rhsId->name);
-                return std::nullopt;
-            }
-            diagnostics.warning(location, "compat mode: unknown type attribute evaluated as 0");
-            return Value{Rational(0, 1)};
+            diagnostics.error(location, "unsupported metaserializable attribute: " + rhsId->name);
+            return std::nullopt;
         }
 
-        if (!strictMode)
-        {
-            diagnostics.warning(location, "compat mode: unknown attribute access evaluated as 0");
-            return Value{Rational(0, 1)};
-        }
         diagnostics.error(location, "attribute operator is not defined on " + lhs->typeName());
         return std::nullopt;
     }
 
-    auto lhs = evaluate(*b.lhs, env, diagnostics, strictMode, resolver);
-    auto rhs = evaluate(*b.rhs, env, diagnostics, strictMode, resolver);
+    auto lhs = evaluate(*b.lhs, env, diagnostics, resolver);
+    auto rhs = evaluate(*b.rhs, env, diagnostics, resolver);
     if (!lhs || !rhs)
     {
         return std::nullopt;
@@ -433,7 +411,6 @@ std::optional<Value> evaluateBinary(const ExprAST::Binary&       b,
 std::optional<Value> evaluate(const ExprAST&               expr,
                               const ValueEnv&              env,
                               DiagnosticEngine&            diagnostics,
-                              bool                         strictMode,
                               const TypeAttributeResolver* resolver)
 {
     if (auto p = std::get_if<bool>(&expr.value))
@@ -453,12 +430,6 @@ std::optional<Value> evaluate(const ExprAST&               expr,
         const auto it = env.find(p->name);
         if (it == env.end())
         {
-            if (!strictMode)
-            {
-                diagnostics.warning(expr.location,
-                                    "compat mode: undefined identifier '" + p->name + "' evaluated as 0");
-                return Value{Rational(0, 1)};
-            }
             diagnostics.error(expr.location, "undefined identifier: " + p->name);
             return std::nullopt;
         }
@@ -466,7 +437,7 @@ std::optional<Value> evaluate(const ExprAST&               expr,
     }
     if (auto p = std::get_if<ExprAST::Unary>(&expr.value))
     {
-        auto operand = evaluate(*p->operand, env, diagnostics, strictMode, resolver);
+        auto operand = evaluate(*p->operand, env, diagnostics, resolver);
         if (!operand)
         {
             return std::nullopt;
@@ -497,14 +468,14 @@ std::optional<Value> evaluate(const ExprAST&               expr,
     }
     if (auto p = std::get_if<ExprAST::Binary>(&expr.value))
     {
-        return evaluateBinary(*p, expr.location, env, diagnostics, strictMode, resolver);
+        return evaluateBinary(*p, expr.location, env, diagnostics, resolver);
     }
     if (auto p = std::get_if<ExprAST::SetLiteral>(&expr.value))
     {
         Value::Set set;
         for (const auto& elem : p->elements)
         {
-            auto value = evaluate(*elem, env, diagnostics, strictMode, resolver);
+            auto value = evaluate(*elem, env, diagnostics, resolver);
             if (!value)
             {
                 return std::nullopt;
@@ -592,11 +563,10 @@ std::optional<Value> evaluateExpression(const ExprAST&               expr,
                                         const ValueEnv&              env,
                                         DiagnosticEngine&            diagnostics,
                                         const SourceLocation&        location,
-                                        bool                         strictMode,
                                         const TypeAttributeResolver* resolver)
 {
     const auto beforeDiagnostics = diagnostics.diagnostics().size();
-    auto       v                 = evaluate(expr, env, diagnostics, strictMode, resolver);
+    auto       v                 = evaluate(expr, env, diagnostics, resolver);
     if (!v && diagnostics.diagnostics().size() == beforeDiagnostics)
     {
         diagnostics.error(location, "failed to evaluate expression");

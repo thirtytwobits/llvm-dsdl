@@ -27,7 +27,6 @@ foreach(out_dir "${out_a}" "${out_b}")
     COMMAND
       "${DSDLC}" go
         --root-namespace-dir "${UAVCAN_ROOT}"
-        --strict
         --out-dir "${out_dir}"
         --go-module "uavcan_dsdl_generated"
     RESULT_VARIABLE gen_result

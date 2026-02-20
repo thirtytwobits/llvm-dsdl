@@ -49,7 +49,6 @@ execute_process(
   COMMAND
     "${DSDLC}" c
       --root-namespace-dir "${FIXTURE_ROOT}"
-      --strict
       ${dsdlc_extra_args}
       --out-dir "${c_out}"
   RESULT_VARIABLE c_gen_result
@@ -66,7 +65,6 @@ execute_process(
   COMMAND
     "${DSDLC}" ts
       --root-namespace-dir "${FIXTURE_ROOT}"
-      --strict
       ${dsdlc_extra_args}
       --out-dir "${ts_out}"
       --ts-module "signed_narrow_c_ts_parity"

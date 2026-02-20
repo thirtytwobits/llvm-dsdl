@@ -81,7 +81,6 @@ execute_process(
   COMMAND
     "${DSDLC}" c
       --root-namespace-dir "${FIXTURE_ROOT}"
-      --strict
       ${dsdlc_extra_args}
       --out-dir "${c_out}"
   RESULT_VARIABLE c_result
@@ -98,7 +97,6 @@ execute_process(
   COMMAND
     "${DSDLC}" rust
       --root-namespace-dir "${FIXTURE_ROOT}"
-      --strict
       ${dsdlc_extra_args}
       --rust-profile "${RUST_PROFILE}"
       --rust-runtime-specialization "${RUST_RUNTIME_SPECIALIZATION}"

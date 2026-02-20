@@ -21,7 +21,6 @@ execute_process(
   COMMAND
     "${DSDLC}" cpp
       --root-namespace-dir "${UAVCAN_ROOT}"
-      --strict
       --cpp-profile both
       --out-dir "${OUT_DIR}"
   RESULT_VARIABLE gen_result

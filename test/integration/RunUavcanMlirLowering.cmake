@@ -32,7 +32,6 @@ execute_process(
   COMMAND
     "${DSDLC}" mlir
       --root-namespace-dir "${UAVCAN_ROOT}"
-      --strict
   RESULT_VARIABLE mlir_result
   OUTPUT_FILE "${input_mlir}"
   ERROR_VARIABLE mlir_stderr

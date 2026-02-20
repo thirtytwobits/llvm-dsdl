@@ -382,6 +382,54 @@
       }
     },
     {
+      "name": "test-ts-runtime-specialization",
+      "displayName": "Test (TypeScript runtime specialization gates, dev)",
+      "configurePreset": "dev",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "ts-runtime-specialization"
+        }
+      }
+    },
+    {
+      "name": "test-ts-runtime-specialization-homebrew",
+      "displayName": "Test (TypeScript runtime specialization gates, dev-homebrew)",
+      "configurePreset": "dev-homebrew",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "ts-runtime-specialization"
+        }
+      }
+    },
+    {
+      "name": "test-ts-runtime-specialization-llvm-env",
+      "displayName": "Test (TypeScript runtime specialization gates, dev-llvm-env)",
+      "configurePreset": "dev-llvm-env",
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "ts-runtime-specialization"
+        }
+      }
+    },
+    {
       "name": "test-ts",
       "displayName": "Test (TypeScript generation/typecheck/determinism/consumer-smoke/index-contract gates, dev)",
       "configurePreset": "dev",
@@ -431,7 +479,7 @@
     },
     {
       "name": "test-ts-complete",
-      "displayName": "Test (TypeScript completion ring, strict+compat+parity, dev)",
+      "displayName": "Test (TypeScript completion ring, generation/runtime/parity, dev)",
       "configurePreset": "dev",
       "execution": {
         "noTestsAction": "error"
@@ -447,7 +495,7 @@
     },
     {
       "name": "test-ts-complete-homebrew",
-      "displayName": "Test (TypeScript completion ring, strict+compat+parity, dev-homebrew)",
+      "displayName": "Test (TypeScript completion ring, generation/runtime/parity, dev-homebrew)",
       "configurePreset": "dev-homebrew",
       "execution": {
         "noTestsAction": "error"
@@ -602,7 +650,7 @@
     {
       "name": "full",
       "displayName": "Workflow (full verification)",
-      "description": "Configure + build + full tests, including strict uavcan generation integration test.",
+      "description": "Configure + build + full tests, including uavcan generation integration test.",
       "steps": [
         {
           "type": "configure",
@@ -678,7 +726,7 @@
     {
       "name": "uavcan",
       "displayName": "Workflow (uavcan integration)",
-      "description": "Configure + build + run only strict uavcan integration validation.",
+      "description": "Configure + build + run only uavcan integration validation.",
       "steps": [
         {
           "type": "configure",
@@ -697,7 +745,7 @@
     {
       "name": "uavcan-homebrew",
       "displayName": "Workflow (uavcan integration, Homebrew LLVM)",
-      "description": "Configure + build + strict uavcan integration validation using Homebrew LLVM/MLIR paths.",
+      "description": "Configure + build + uavcan integration validation using Homebrew LLVM/MLIR paths.",
       "steps": [
         {
           "type": "configure",
@@ -716,7 +764,7 @@
     {
       "name": "uavcan-llvm-env",
       "displayName": "Workflow (uavcan integration, LLVM env vars)",
-      "description": "Configure + build + strict uavcan integration validation using LLVM_DIR/MLIR_DIR from environment.",
+      "description": "Configure + build + uavcan integration validation using LLVM_DIR/MLIR_DIR from environment.",
       "steps": [
         {
           "type": "configure",
@@ -847,6 +895,63 @@
       ]
     },
     {
+      "name": "ts-runtime-specialization",
+      "displayName": "Workflow (TypeScript runtime specialization gates)",
+      "description": "Configure + build + run TypeScript runtime-specialization generation/typecheck/parity/semantic-diff gates.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev"
+        },
+        {
+          "type": "build",
+          "name": "build-dev"
+        },
+        {
+          "type": "test",
+          "name": "test-ts-runtime-specialization"
+        }
+      ]
+    },
+    {
+      "name": "ts-runtime-specialization-homebrew",
+      "displayName": "Workflow (TypeScript runtime specialization gates, Homebrew LLVM)",
+      "description": "Configure + build + run TypeScript runtime-specialization generation/typecheck/parity/semantic-diff gates using Homebrew LLVM/MLIR.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev-homebrew"
+        },
+        {
+          "type": "build",
+          "name": "build-dev-homebrew"
+        },
+        {
+          "type": "test",
+          "name": "test-ts-runtime-specialization-homebrew"
+        }
+      ]
+    },
+    {
+      "name": "ts-runtime-specialization-llvm-env",
+      "displayName": "Workflow (TypeScript runtime specialization gates, LLVM env vars)",
+      "description": "Configure + build + run TypeScript runtime-specialization generation/typecheck/parity/semantic-diff gates using LLVM_DIR/MLIR_DIR from environment.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "dev-llvm-env"
+        },
+        {
+          "type": "build",
+          "name": "build-dev-llvm-env"
+        },
+        {
+          "type": "test",
+          "name": "test-ts-runtime-specialization-llvm-env"
+        }
+      ]
+    },
+    {
       "name": "ts",
       "displayName": "Workflow (TypeScript generation/typecheck/determinism/consumer-smoke/index-contract gates)",
       "description": "Configure + build + run TypeScript generation, typecheck, determinism, consumer-smoke, and index-contract integration gates.",
@@ -906,7 +1011,7 @@
     {
       "name": "ts-complete",
       "displayName": "Workflow (TypeScript completion ring)",
-      "description": "Configure + build + run the TypeScript completion ring (strict+compat generation/runtime + invariant parity gates).",
+      "description": "Configure + build + run the TypeScript completion ring (generation/runtime + invariant parity gates).",
       "steps": [
         {
           "type": "configure",
@@ -925,7 +1030,7 @@
     {
       "name": "ts-complete-homebrew",
       "displayName": "Workflow (TypeScript completion ring, Homebrew LLVM)",
-      "description": "Configure + build + run the TypeScript completion ring (strict+compat generation/runtime + invariant parity gates) using Homebrew LLVM/MLIR.",
+      "description": "Configure + build + run the TypeScript completion ring (generation/runtime + invariant parity gates) using Homebrew LLVM/MLIR.",
       "steps": [
         {
           "type": "configure",

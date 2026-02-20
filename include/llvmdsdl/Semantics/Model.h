@@ -21,16 +21,6 @@ namespace llvmdsdl
 /// @file
 /// @brief Semantic model produced from parsed DSDL AST.
 
-/// @brief Semantic-analysis knobs controlling strictness behavior.
-struct SemanticOptions final
-{
-    /// @brief Enables strict spec-first semantic validation.
-    bool strict{true};
-
-    /// @brief Enables compatibility behavior for legacy/non-conformant inputs.
-    bool compatMode{false};
-};
-
 /// @brief Resolved scalar category for a semantic field type.
 enum class SemanticScalarCategory
 {

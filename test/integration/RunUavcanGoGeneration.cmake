@@ -21,7 +21,6 @@ execute_process(
   COMMAND
     "${DSDLC}" go
       --root-namespace-dir "${UAVCAN_ROOT}"
-      --strict
       --out-dir "${OUT_DIR}"
       --go-module "uavcan_dsdl_generated"
   RESULT_VARIABLE gen_result

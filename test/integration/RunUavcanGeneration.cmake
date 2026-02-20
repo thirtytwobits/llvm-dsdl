@@ -21,7 +21,6 @@ execute_process(
   COMMAND
     "${DSDLC}" c
       --root-namespace-dir "${UAVCAN_ROOT}"
-      --strict
       --out-dir "${OUT_DIR}"
   RESULT_VARIABLE gen_result
   OUTPUT_VARIABLE gen_stdout
@@ -30,7 +29,7 @@ execute_process(
 if(NOT gen_result EQUAL 0)
   message(STATUS "dsdlc stdout:\n${gen_stdout}")
   message(STATUS "dsdlc stderr:\n${gen_stderr}")
-  message(FATAL_ERROR "uavcan strict generation failed")
+  message(FATAL_ERROR "uavcan generation failed")
 endif()
 
 file(GLOB_RECURSE dsdl_files "${UAVCAN_ROOT}/*.dsdl")
@@ -396,4 +395,4 @@ foreach(h IN LISTS filtered_headers)
 endforeach()
 
 message(STATUS
-  "uavcan strict generation check passed: ${dsdl_count} DSDL -> ${header_count} headers")
+  "uavcan generation check passed: ${dsdl_count} DSDL -> ${header_count} headers")

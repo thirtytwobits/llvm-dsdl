@@ -68,7 +68,6 @@ run_step(
   "dsdlc-c"
   "${DSDLC}" c
   --root-namespace-dir "${UAVCAN_ROOT}"
-  --strict
   --out-dir "${C_OUT}"
 )
 
@@ -85,7 +84,6 @@ run_step(
   "dsdlc-cpp-both"
   "${DSDLC}" cpp
   --root-namespace-dir "${UAVCAN_ROOT}"
-  --strict
   --cpp-profile both
   --out-dir "${CPP_OUT}"
 )
@@ -94,7 +92,6 @@ run_step(
   "dsdlc-rust-std"
   "${DSDLC}" rust
   --root-namespace-dir "${UAVCAN_ROOT}"
-  --strict
   --rust-profile std
   --rust-crate-name uavcan_dsdl_generated
   --out-dir "${RUST_OUT}"
@@ -105,7 +102,6 @@ execute_process(
   COMMAND
     "${DSDLC}" mlir
       --root-namespace-dir "${UAVCAN_ROOT}"
-      --strict
   RESULT_VARIABLE mlir_rv
   OUTPUT_FILE "${MLIR_OUT}"
   ERROR_VARIABLE mlir_err
@@ -191,7 +187,7 @@ if(NOT ctest_list_rv EQUAL 0)
 endif()
 
 set(demo_tests
-  llvmdsdl-uavcan-strict-generation
+  llvmdsdl-uavcan-generation
   llvmdsdl-uavcan-mlir-lowering
   llvmdsdl-uavcan-cpp-generation
   llvmdsdl-uavcan-cpp-c-parity
@@ -231,11 +227,11 @@ string(APPEND demo_md "- Build directory: `${BINARY_DIR}`\n")
 string(APPEND demo_md "- DSDL root: `${UAVCAN_ROOT}`\n\n")
 string(APPEND demo_md "## Commands Executed\n\n")
 string(APPEND demo_md "```bash\n")
-string(APPEND demo_md "${DSDLC} c --root-namespace-dir ${UAVCAN_ROOT} --strict --out-dir ${C_OUT}\n")
+string(APPEND demo_md "${DSDLC} c --root-namespace-dir ${UAVCAN_ROOT} --out-dir ${C_OUT}\n")
 string(APPEND demo_md "${CMAKE_COMMAND} -DC_COMPILER=${C_COMPILER} -DSOURCE_ROOT=${C_OUT} -DINCLUDE_ROOT=${C_OUT} -P ${COMPILE_C_SCRIPT}\n")
-string(APPEND demo_md "${DSDLC} cpp --root-namespace-dir ${UAVCAN_ROOT} --strict --cpp-profile both --out-dir ${CPP_OUT}\n")
-string(APPEND demo_md "${DSDLC} rust --root-namespace-dir ${UAVCAN_ROOT} --strict --rust-profile std --rust-crate-name uavcan_dsdl_generated --out-dir ${RUST_OUT}\n")
-string(APPEND demo_md "${DSDLC} mlir --root-namespace-dir ${UAVCAN_ROOT} --strict > ${MLIR_OUT}\n")
+string(APPEND demo_md "${DSDLC} cpp --root-namespace-dir ${UAVCAN_ROOT} --cpp-profile both --out-dir ${CPP_OUT}\n")
+string(APPEND demo_md "${DSDLC} rust --root-namespace-dir ${UAVCAN_ROOT} --rust-profile std --rust-crate-name uavcan_dsdl_generated --out-dir ${RUST_OUT}\n")
+string(APPEND demo_md "${DSDLC} mlir --root-namespace-dir ${UAVCAN_ROOT} > ${MLIR_OUT}\n")
 string(APPEND demo_md "${DSDLOPT} --pass-pipeline 'builtin.module(lower-dsdl-serialization)' ${MLIR_OUT} > ${LOWERED_MLIR_OUT}\n")
 string(APPEND demo_md "```\n\n")
 string(APPEND demo_md "## Artifact Summary\n\n")

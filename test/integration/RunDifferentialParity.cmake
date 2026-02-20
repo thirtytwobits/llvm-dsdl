@@ -75,7 +75,6 @@ execute_process(
   COMMAND
     "${DSDLC}" c
       --root-namespace-dir "${UAVCAN_ROOT}"
-      --strict
       ${dsdlc_extra_args}
       --out-dir "${ours_out}"
   RESULT_VARIABLE ours_result

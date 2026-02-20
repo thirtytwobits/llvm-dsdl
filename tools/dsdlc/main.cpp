@@ -73,35 +73,11 @@ void printHelp(const std::string& selectedCommand = "")
         << "      Required for all commands except --help.\n"
         << "  --lookup-dir <dir>\n"
         << "      Additional dependency lookup root. Repeat as needed.\n"
-        << "  --strict\n"
-        << "      Enable strict semantic behavior (default).\n"
-        << "      Strict means: enforce the Cyphal DSDL specification as implemented by this compiler.\n"
-        << "      Recommended for CI/release builds.\n"
-        << "  --compat-mode\n"
-        << "      Relax selected semantic checks to keep generation running on legacy/non-strict trees.\n"
-        << "      Compatibility target: historical OpenCyphal-style definition workflows and existing trees\n"
-        << "      that depend on permissive behavior.\n"
         << "  --optimize-lowered-serdes\n"
         << "      Enable optional semantics-preserving MLIR optimization on lowered SerDes IR\n"
         << "      before backend code generation.\n"
         << "  --help, -h\n"
         << "      Print this help text. With a command, prints command-focused guidance.\n\n"
-        << "STRICTNESS MODES\n"
-        << "  Default behavior:\n"
-        << "    - If neither flag is provided, dsdlc runs in strict mode.\n"
-        << "  --strict:\n"
-        << "    - Prefer when you need deterministic, standards-aligned validation.\n"
-        << "    - \"Standards-aligned\" here means Cyphal DSDL spec conformance for language semantics.\n"
-        << "    - Definitions that fail strict semantic rules are reported as errors.\n"
-        << "  --compat-mode:\n"
-        << "    - Accepts some inputs that strict mode would reject, to ease migration.\n"
-        << "    - Enables fallback behavior (for example, clamping/defaulting in malformed cases) and emits\n"
-        << "      compatibility warnings instead of hard errors in selected situations.\n"
-        << "    - Use when porting older trees; then move back to --strict once diagnostics are resolved.\n"
-        << "  Flag precedence:\n"
-        << "    - If both flags are present, the last one on the command line wins.\n"
-        << "      Example: '--compat-mode --strict' ends in strict mode.\n"
-        << "      Example: '--strict --compat-mode' ends in compat mode.\n\n"
         << "CODEGEN OPTIONS (c/cpp/rust/go/ts)\n"
         << "  --out-dir <dir>\n"
         << "      Output directory root for generated files.\n\n"
@@ -124,7 +100,11 @@ void printHelp(const std::string& selectedCommand = "")
         << "      Go module name written to go.mod (default: llvmdsdl_generated).\n\n"
         << "TS OPTIONS (ts)\n"
         << "  --ts-module <name>\n"
-        << "      TypeScript package name written to package.json (default: llvmdsdl_generated).\n\n"
+        << "      TypeScript package name written to package.json (default: llvmdsdl_generated).\n"
+        << "  --ts-runtime-specialization <portable|fast>\n"
+        << "      portable -> emit conservative bit-loop runtime helpers (default).\n"
+        << "      fast     -> emit byte-aligned fast paths in the generated runtime helpers.\n"
+        << "                  Wire semantics remain unchanged relative to portable.\n\n"
         << "RUN SUMMARY\n"
         << "  On successful command execution, dsdlc prints a summary to stderr with:\n"
         << "    - files generated\n"
@@ -133,7 +113,7 @@ void printHelp(const std::string& selectedCommand = "")
         << "EXAMPLES\n"
         << "  dsdlc ast --root-namespace-dir public_regulated_data_types/uavcan\n"
         << "  dsdlc mlir --root-namespace-dir public_regulated_data_types/uavcan\n"
-        << "  dsdlc c --root-namespace-dir public_regulated_data_types/uavcan --strict --out-dir build/uavcan-c\n"
+        << "  dsdlc c --root-namespace-dir public_regulated_data_types/uavcan --out-dir build/uavcan-c\n"
         << "  dsdlc cpp --root-namespace-dir public_regulated_data_types/uavcan --cpp-profile both --out-dir "
            "build/uavcan-cpp\n"
         << "  dsdlc rust --root-namespace-dir public_regulated_data_types/uavcan --rust-profile std --rust-crate-name "
@@ -145,7 +125,9 @@ void printHelp(const std::string& selectedCommand = "")
         << "  dsdlc go --root-namespace-dir public_regulated_data_types/uavcan --go-module demo/uavcan/generated "
            "--out-dir build/uavcan-go\n"
         << "  dsdlc ts --root-namespace-dir public_regulated_data_types/uavcan --ts-module demo_uavcan_generated "
-           "--out-dir build/uavcan-ts\n\n"
+           "--out-dir build/uavcan-ts\n"
+        << "  dsdlc ts --root-namespace-dir public_regulated_data_types/uavcan --ts-module demo_uavcan_generated_fast "
+           "--ts-runtime-specialization fast --out-dir build/uavcan-ts-fast\n\n"
         << "EXIT STATUS\n"
         << "  0 on success, non-zero on parse/semantic/lowering/codegen failure or invalid CLI usage.\n";
 
@@ -179,7 +161,7 @@ void printHelp(const std::string& selectedCommand = "")
         }
         else if (selectedCommand == "ts")
         {
-            llvm::errs() << "  Requires --out-dir. Honors --ts-module.\n";
+            llvm::errs() << "  Requires --out-dir. Honors --ts-module and --ts-runtime-specialization.\n";
         }
     }
 }
@@ -307,8 +289,6 @@ int main(int argc, char** argv)
     std::vector<std::string>            lookups;
     std::string                         outDir;
     bool                                helpRequested             = false;
-    bool                                strict                    = true;
-    bool                                compatMode                = false;
     bool                                optimizeLoweredSerDes     = false;
     llvmdsdl::CppProfile                cppProfile                = llvmdsdl::CppProfile::Both;
     std::string                         rustCrateName             = "llvmdsdl_generated";
@@ -316,6 +296,7 @@ int main(int argc, char** argv)
     llvmdsdl::RustRuntimeSpecialization rustRuntimeSpecialization = llvmdsdl::RustRuntimeSpecialization::Portable;
     std::string                         goModuleName              = "llvmdsdl_generated";
     std::string                         tsModuleName              = "llvmdsdl_generated";
+    llvmdsdl::TsRuntimeSpecialization   tsRuntimeSpecialization   = llvmdsdl::TsRuntimeSpecialization::Portable;
 
     for (int i = 2; i < argc; ++i)
     {
@@ -345,16 +326,6 @@ int main(int argc, char** argv)
         else if (arg == "--out-dir")
         {
             outDir = requireValue(arg);
-        }
-        else if (arg == "--compat-mode")
-        {
-            compatMode = true;
-            strict     = false;
-        }
-        else if (arg == "--strict")
-        {
-            strict     = true;
-            compatMode = false;
         }
         else if (arg == "--optimize-lowered-serdes")
         {
@@ -430,6 +401,24 @@ int main(int argc, char** argv)
         {
             tsModuleName = requireValue(arg);
         }
+        else if (arg == "--ts-runtime-specialization")
+        {
+            const auto value = requireValue(arg);
+            if (value == "portable")
+            {
+                tsRuntimeSpecialization = llvmdsdl::TsRuntimeSpecialization::Portable;
+            }
+            else if (value == "fast")
+            {
+                tsRuntimeSpecialization = llvmdsdl::TsRuntimeSpecialization::Fast;
+            }
+            else
+            {
+                llvm::errs() << "Invalid --ts-runtime-specialization value: " << value << "\n";
+                printUsage();
+                return 1;
+            }
+        }
         else
         {
             llvm::errs() << "Unknown argument: " << arg << "\n";
@@ -472,11 +461,7 @@ int main(int argc, char** argv)
         return finish("stdout", 0);
     }
 
-    llvmdsdl::SemanticOptions semOptions;
-    semOptions.strict     = strict;
-    semOptions.compatMode = compatMode;
-
-    auto semantic = llvmdsdl::analyze(*ast, semOptions, diagnostics);
+    auto semantic = llvmdsdl::analyze(*ast, diagnostics);
     if (!semantic)
     {
         llvm::consumeError(semantic.takeError());
@@ -610,6 +595,7 @@ int main(int argc, char** argv)
         llvmdsdl::TsEmitOptions options;
         options.outDir                = outDir;
         options.moduleName            = tsModuleName;
+        options.runtimeSpecialization = tsRuntimeSpecialization;
         options.optimizeLoweredSerDes = optimizeLoweredSerDes;
 
         if (llvm::Error err = llvmdsdl::emitTs(*semantic, *mlirModule, options, diagnostics))

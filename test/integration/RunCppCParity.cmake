@@ -53,7 +53,6 @@ execute_process(
   COMMAND
     "${DSDLC}" c
       --root-namespace-dir "${UAVCAN_ROOT}"
-      --strict
       ${dsdlc_extra_args}
       --out-dir "${c_out}"
   RESULT_VARIABLE c_result
@@ -70,7 +69,6 @@ execute_process(
   COMMAND
     "${DSDLC}" cpp
       --root-namespace-dir "${UAVCAN_ROOT}"
-      --strict
       ${dsdlc_extra_args}
       --cpp-profile "${CPP_PROFILE}"
       --out-dir "${cpp_out}"

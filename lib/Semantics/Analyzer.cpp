@@ -113,9 +113,8 @@ Value::Set bitLengthSetToValueSet(const BitLengthSet& bls)
 class AnalyzerImpl final
 {
 public:
-    AnalyzerImpl(const ASTModule& module, const SemanticOptions& options, DiagnosticEngine& diagnostics)
+    AnalyzerImpl(const ASTModule& module, DiagnosticEngine& diagnostics)
         : module_(module)
-        , options_(options)
         , diagnostics_(diagnostics)
     {
         state_.resize(module_.definitions.size(), State::Unvisited);
@@ -162,7 +161,6 @@ private:
     };
 
     const ASTModule&                               module_;
-    SemanticOptions                                options_;
     DiagnosticEngine&                              diagnostics_;
     std::vector<State>                             state_;
     std::vector<std::optional<SemanticDefinition>> results_;
@@ -448,21 +446,12 @@ private:
                                            env,
                                            diagnostics_,
                                            type.location,
-                                           options_.strict && !options_.compatMode,
                                            resolver);
         if (!capValue || !std::holds_alternative<Rational>(capValue->data) ||
             !std::get<Rational>(capValue->data).isInteger())
         {
-            if (options_.compatMode)
-            {
-                diagnostics_.warning(type.location, "compat mode: array capacity expression fallback to 1");
-                capacity = 1;
-            }
-            else
-            {
-                diagnostics_.error(type.location, "array capacity expression must yield integer rational");
-                return out;
-            }
+            diagnostics_.error(type.location, "array capacity expression must yield integer rational");
+            return out;
         }
         else
         {
@@ -473,16 +462,8 @@ private:
         {
             if (capacity < 1)
             {
-                if (options_.compatMode)
-                {
-                    diagnostics_.warning(type.location, "compat mode: fixed array capacity clamped to 1");
-                    capacity = 1;
-                }
-                else
-                {
-                    diagnostics_.error(type.location, "fixed-length array capacity must be positive");
-                    return out;
-                }
+                diagnostics_.error(type.location, "fixed-length array capacity must be positive");
+                return out;
             }
             TypeLayout layout;
             layout.bls                            = scalarLayout.bls.repeat(capacity);
@@ -500,16 +481,8 @@ private:
         {
             if (capacity <= 1)
             {
-                if (options_.compatMode)
-                {
-                    diagnostics_.warning(type.location, "compat mode: exclusive bound clamped to 2");
-                    capacity = 2;
-                }
-                else
-                {
-                    diagnostics_.error(type.location, "exclusive variable-length array bound must be > 1");
-                    return out;
-                }
+                diagnostics_.error(type.location, "exclusive variable-length array bound must be > 1");
+                return out;
             }
             capacity -= 1;
         }
@@ -517,16 +490,8 @@ private:
         {
             if (capacity < 1)
             {
-                if (options_.compatMode)
-                {
-                    diagnostics_.warning(type.location, "compat mode: inclusive bound clamped to 1");
-                    capacity = 1;
-                }
-                else
-                {
-                    diagnostics_.error(type.location, "inclusive variable-length array bound must be >= 1");
-                    return out;
-                }
+                diagnostics_.error(type.location, "inclusive variable-length array bound must be >= 1");
+                return out;
             }
         }
 
@@ -621,11 +586,6 @@ private:
                                                      const std::string&    attributeName,
                                                      const SourceLocation& location) -> std::optional<Value> {
             const auto unsupported = [&](const std::string& message) -> std::optional<Value> {
-                if (options_.compatMode)
-                {
-                    diagnostics_.warning(location, "compat mode: " + message + " evaluated as 0");
-                    return Value{Rational(0, 1)};
-                }
                 diagnostics_.error(location, message);
                 return std::nullopt;
             };
@@ -641,29 +601,15 @@ private:
                 return unsupported("unsupported metaserializable attribute: " + attributeName);
             }
 
-            auto resolved = resolveCompositeType(owner, *versioned, location, !options_.compatMode);
+            auto resolved = resolveCompositeType(owner, *versioned, location, true);
             if (!resolved)
             {
-                if (options_.compatMode)
-                {
-                    diagnostics_.warning(location,
-                                         "compat mode: unresolved composite type in attribute "
-                                         "access evaluated as 0");
-                    return Value{Rational(0, 1)};
-                }
                 return std::nullopt;
             }
 
             auto* resolvedDef = analyzeOne(resolved->first);
             if (!resolvedDef || !*resolvedDef)
             {
-                if (options_.compatMode)
-                {
-                    diagnostics_.warning(location,
-                                         "compat mode: unresolved dependent definition "
-                                         "in attribute access evaluated as 0");
-                    return Value{Rational(0, 1)};
-                }
                 diagnostics_.error(location, "failed to analyze dependent type: " + resolved->second);
                 return std::nullopt;
             }
@@ -741,14 +687,7 @@ private:
 
                 if (d.kind == DirectiveKind::Unknown)
                 {
-                    if (options_.compatMode)
-                    {
-                        diagnostics_.warning(d.location, "compat mode: unknown directive @" + d.rawName);
-                    }
-                    else
-                    {
-                        diagnostics_.error(d.location, "unknown directive @" + d.rawName);
-                    }
+                    diagnostics_.error(d.location, "unknown directive @" + d.rawName);
                     continue;
                 }
 
@@ -812,7 +751,6 @@ private:
                                                 env,
                                                 diagnostics_,
                                                 d.location,
-                                                options_.strict && !options_.compatMode,
                                                 &typeAttrResolver);
                     if (!v || !std::holds_alternative<Rational>(v->data) || !std::get<Rational>(v->data).isInteger())
                     {
@@ -854,14 +792,7 @@ private:
                     }
                     if (!d.expression && d.kind == DirectiveKind::Assert)
                     {
-                        if (options_.compatMode)
-                        {
-                            diagnostics_.warning(d.location, "compat mode: @assert without expression ignored");
-                        }
-                        else
-                        {
-                            diagnostics_.error(d.location, "@assert requires an expression");
-                        }
+                        diagnostics_.error(d.location, "@assert requires an expression");
                         continue;
                     }
                     if (d.expression)
@@ -870,31 +801,16 @@ private:
                                                         env,
                                                         diagnostics_,
                                                         d.location,
-                                                        options_.strict && !options_.compatMode,
                                                         &typeAttrResolver);
                         if (d.kind == DirectiveKind::Assert)
                         {
                             if (!value || !std::holds_alternative<bool>(value->data))
                             {
-                                if (options_.compatMode)
-                                {
-                                    diagnostics_.warning(d.location, "compat mode: non-bool @assert ignored");
-                                }
-                                else
-                                {
-                                    diagnostics_.error(d.location, "@assert expression must evaluate to bool");
-                                }
+                                diagnostics_.error(d.location, "@assert expression must evaluate to bool");
                             }
                             else if (!std::get<bool>(value->data))
                             {
-                                if (options_.compatMode)
-                                {
-                                    diagnostics_.warning(d.location, "compat mode: assertion failed but ignored");
-                                }
-                                else
-                                {
-                                    diagnostics_.error(d.location, "assertion failed");
-                                }
+                                diagnostics_.error(d.location, "assertion failed");
                             }
                         }
                     }
@@ -920,7 +836,6 @@ private:
                                                 env,
                                                 diagnostics_,
                                                 c.location,
-                                                options_.strict && !options_.compatMode,
                                                 &typeAttrResolver);
                 if (!value)
                 {
@@ -1164,11 +1079,9 @@ private:
 
 }  // namespace
 
-llvm::Expected<SemanticModule> analyze(const ASTModule&       module,
-                                       const SemanticOptions& options,
-                                       DiagnosticEngine&      diagnostics)
+llvm::Expected<SemanticModule> analyze(const ASTModule& module, DiagnosticEngine& diagnostics)
 {
-    AnalyzerImpl impl(module, options, diagnostics);
+    AnalyzerImpl impl(module, diagnostics);
     return impl.run();
 }
 
