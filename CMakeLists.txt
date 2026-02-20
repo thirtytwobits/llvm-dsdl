@@ -5,6 +5,21 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Some distro LLVM packages export LLVMSupport with zstd::libzstd_* targets but
+# do not bring zstd in transitively. Preload zstd to avoid unresolved imported
+# target references during find_package(LLVM).
+find_package(zstd CONFIG QUIET)
+if(TARGET ZSTD::ZSTD)
+  if(NOT TARGET zstd::libzstd_shared)
+    add_library(zstd::libzstd_shared INTERFACE IMPORTED)
+    target_link_libraries(zstd::libzstd_shared INTERFACE ZSTD::ZSTD)
+  endif()
+  if(NOT TARGET zstd::libzstd_static)
+    add_library(zstd::libzstd_static INTERFACE IMPORTED)
+    target_link_libraries(zstd::libzstd_static INTERFACE ZSTD::ZSTD)
+  endif()
+endif()
+
 find_package(LLVM REQUIRED CONFIG)
 find_package(MLIR REQUIRED CONFIG)
 

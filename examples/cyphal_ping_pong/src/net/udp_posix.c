@@ -15,16 +15,17 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#include "udp_posix.h"
-
 #ifndef _DEFAULT_SOURCE
 #    define _DEFAULT_SOURCE
 #endif
+
+#include "udp_posix.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <netinet/in.h>
 #include <poll.h>
 #include <stdlib.h>
 #include <string.h>

@@ -1,0 +1,35 @@
+{
+  "name": "llvm-dsdl (toolshed ts24.4.3)",
+  "image": "ghcr.io/opencyphal/toolshed:ts24.4.3",
+  "containerEnv": {
+    "LLVM_DIR": "/usr/lib/llvm-19/lib/cmake/llvm",
+    "MLIR_DIR": "/usr/lib/llvm-19/lib/cmake/mlir",
+    "CMAKE_PREFIX_PATH": "/usr/lib/llvm-19"
+  },
+  "runArgs": [
+    "--init"
+  ],
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "llvm-vs-code-extensions.vscode-clangd",
+        "ms-vscode.cmake-tools",
+        "ms-vscode.cpptools",
+        "ms-vscode.cpptools-extension-pack",
+        "ms-python.python",
+        "streetsidesoftware.code-spell-checker"
+      ],
+      "settings": {
+        "cmake.useCMakePresets": "always",
+        "cmake.defaultConfigurePreset": "ci",
+        "cmake.defaultBuildPreset": "build-ci-relwithdebinfo",
+        "cmake.defaultTestPreset": "test-ci-smoke-relwithdebinfo",
+        "cmake.configureOnOpen": false,
+        "clangd.arguments": [
+          "--compile-commands-dir=build/matrix/ci"
+        ]
+      }
+    }
+  }
+}

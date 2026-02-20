@@ -1,5 +1,7 @@
 # llvm-dsdl
 
+![](llvm-dsdl.png)
+
 `llvm-dsdl` is an out-of-tree LLVM/MLIR-based DSDL compiler for Cyphal data
 types.
 
