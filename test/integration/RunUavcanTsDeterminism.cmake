@@ -22,23 +22,42 @@ set(out_b "${OUT_DIR}/run-b")
 file(MAKE_DIRECTORY "${out_a}")
 file(MAKE_DIRECTORY "${out_b}")
 
-foreach(out_dir "${out_a}" "${out_b}")
-  execute_process(
-    COMMAND
-      "${DSDLC}" ts
-        --root-namespace-dir "${UAVCAN_ROOT}"
-        --out-dir "${out_dir}"
-        --ts-module "uavcan_dsdl_generated_ts"
-    RESULT_VARIABLE gen_result
-    OUTPUT_VARIABLE gen_stdout
-    ERROR_VARIABLE gen_stderr
-  )
-  if(NOT gen_result EQUAL 0)
-    message(STATUS "dsdlc stdout:\n${gen_stdout}")
-    message(STATUS "dsdlc stderr:\n${gen_stderr}")
-    message(FATAL_ERROR "uavcan TypeScript determinism generation failed for ${out_dir}")
-  endif()
-endforeach()
+if(NOT EXISTS "/bin/sh")
+  message(FATAL_ERROR "parallel determinism check requires /bin/sh")
+endif()
+
+set(parallel_script "${OUT_DIR}/run-ts-parallel.sh")
+file(WRITE
+  "${parallel_script}"
+  "#!/bin/sh\n"
+  "set -eu\n"
+  "\"${DSDLC}\" ts --root-namespace-dir \"${UAVCAN_ROOT}\" --out-dir \"${out_a}\" --ts-module \"uavcan_dsdl_generated_ts\" >\"${OUT_DIR}/run-a.stdout\" 2>\"${OUT_DIR}/run-a.stderr\" &\n"
+  "pid_a=$!\n"
+  "\"${DSDLC}\" ts --root-namespace-dir \"${UAVCAN_ROOT}\" --out-dir \"${out_b}\" --ts-module \"uavcan_dsdl_generated_ts\" >\"${OUT_DIR}/run-b.stdout\" 2>\"${OUT_DIR}/run-b.stderr\" &\n"
+  "pid_b=$!\n"
+  "wait \"$pid_a\"\n"
+  "wait \"$pid_b\"\n"
+)
+
+execute_process(
+  COMMAND "/bin/sh" "${parallel_script}"
+  RESULT_VARIABLE gen_result
+  OUTPUT_VARIABLE gen_stdout
+  ERROR_VARIABLE gen_stderr
+)
+if(NOT gen_result EQUAL 0)
+  file(READ "${OUT_DIR}/run-a.stdout" run_a_stdout)
+  file(READ "${OUT_DIR}/run-a.stderr" run_a_stderr)
+  file(READ "${OUT_DIR}/run-b.stdout" run_b_stdout)
+  file(READ "${OUT_DIR}/run-b.stderr" run_b_stderr)
+  message(STATUS "parallel launch stdout:\n${gen_stdout}")
+  message(STATUS "parallel launch stderr:\n${gen_stderr}")
+  message(STATUS "run-a stdout:\n${run_a_stdout}")
+  message(STATUS "run-a stderr:\n${run_a_stderr}")
+  message(STATUS "run-b stdout:\n${run_b_stdout}")
+  message(STATUS "run-b stderr:\n${run_b_stderr}")
+  message(FATAL_ERROR "uavcan TypeScript concurrent determinism generation failed")
+endif()
 
 file(GLOB_RECURSE run_a_entries RELATIVE "${out_a}" "${out_a}/*")
 file(GLOB_RECURSE run_b_entries RELATIVE "${out_b}" "${out_b}/*")
@@ -85,4 +104,4 @@ if(file_count EQUAL 0)
   message(FATAL_ERROR "TypeScript determinism check found zero generated files")
 endif()
 
-message(STATUS "uavcan TypeScript determinism check passed: ${file_count} files identical across two runs")
+message(STATUS "uavcan TypeScript concurrent determinism check passed: ${file_count} files identical across two runs")

@@ -9,13 +9,7 @@
 
 #include "llvmdsdl/CodeGen/TsEmitter.h"
 
-#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
-#include "llvmdsdl/CodeGen/TsLoweredPlan.h"
-
-#include "llvm/Support/Error.h"
-#include "llvm/Support/FileSystem.h"
-#include "llvm/Support/raw_ostream.h"
-
+#include <llvm/ADT/StringRef.h>
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -25,9 +19,28 @@
 #include <sstream>
 #include <unordered_map>
 #include <vector>
+#include <compare>
+#include <cstddef>
+#include <cstdint>
+#include <system_error>
+#include <utility>
+#include <variant>
+
+#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/TsLoweredPlan.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Semantics/Evaluator.h"
+#include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/Rational.h"
+#include "mlir/IR/BuiltinOps.h"
 
 namespace llvmdsdl
 {
+class DiagnosticEngine;
+
 namespace
 {
 

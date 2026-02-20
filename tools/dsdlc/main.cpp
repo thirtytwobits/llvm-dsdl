@@ -1,3 +1,19 @@
+#include <llvm/ADT/StringRef.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/EmitC/IR/EmitC.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <chrono>
+#include <cstdint>
+#include <cstdlib>
+#include <filesystem>
+#include <string>
+#include <vector>
+#include <system_error>
+#include <utility>
+
 #include "llvmdsdl/CodeGen/CEmitter.h"
 #include "llvmdsdl/CodeGen/CppEmitter.h"
 #include "llvmdsdl/CodeGen/GoEmitter.h"
@@ -5,26 +21,16 @@
 #include "llvmdsdl/CodeGen/TsEmitter.h"
 #include "llvmdsdl/Frontend/ASTPrinter.h"
 #include "llvmdsdl/Frontend/Parser.h"
-#include "llvmdsdl/IR/DSDLDialect.h"
 #include "llvmdsdl/Lowering/LowerToMLIR.h"
 #include "llvmdsdl/Semantics/Analyzer.h"
-
-#include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/EmitC/IR/EmitC.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "llvmdsdl/IR/DSDLDialect.h"
 #include "mlir/IR/MLIRContext.h"
-
 #include "llvm/Support/Error.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/raw_ostream.h"
-
-#include <chrono>
-#include <cstdint>
-#include <cstdlib>
-#include <filesystem>
-#include <string>
-#include <vector>
+#include "llvmdsdl/Frontend/SourceLocation.h"
+#include "llvmdsdl/Support/Diagnostics.h"
+#include "mlir/IR/BuiltinOps.h"
 
 namespace
 {

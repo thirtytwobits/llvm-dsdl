@@ -15,6 +15,7 @@ add_executable(llvmdsdl-unit-tests
   HelperSymbolResolverTests.cpp
   WireLayoutFactsTests.cpp
   TypeStorageTests.cpp
+  LoweredMetadataHardeningTests.cpp
 )
 
 target_link_libraries(llvmdsdl-unit-tests

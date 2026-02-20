@@ -1,10 +1,15 @@
-#include "llvmdsdl/CodeGen/TsLoweredPlan.h"
-
-#include "llvm/ADT/StringRef.h"
-#include "llvm/Support/Error.h"
-
 #include <iostream>
 #include <string>
+#include <optional>
+#include <unordered_map>
+#include <vector>
+
+#include "llvmdsdl/CodeGen/TsLoweredPlan.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
+#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 bool runTsLoweredPlanTests()
 {

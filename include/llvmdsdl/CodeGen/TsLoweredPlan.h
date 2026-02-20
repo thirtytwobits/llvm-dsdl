@@ -7,17 +7,18 @@
 #ifndef LLVMDSDL_CODEGEN_TS_LOWERED_PLAN_H
 #define LLVMDSDL_CODEGEN_TS_LOWERED_PLAN_H
 
-#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
-
-#include "llvm/Support/Error.h"
-
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include "llvm/Support/Error.h"
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Semantics/Model.h"
+
 namespace llvmdsdl
 {
+struct LoweredSectionFacts;
 
 /// @file
 /// @brief TypeScript ordered-field plans derived from lowered facts.

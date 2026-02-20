@@ -8,13 +8,14 @@
 #define LLVMDSDL_FRONTEND_DISCOVERY_H
 
 #include "llvmdsdl/Frontend/AST.h"
-#include "llvmdsdl/Support/Diagnostics.h"
 
 #include <string>
 #include <vector>
 
 namespace llvmdsdl
 {
+
+class DiagnosticEngine;
 
 /// @file
 /// @brief Discovery routines for locating and loading DSDL definitions.

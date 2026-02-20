@@ -9,14 +9,19 @@
 
 #include "llvmdsdl/CodeGen/TsLoweredPlan.h"
 
-#include "llvmdsdl/CodeGen/LoweredRenderIR.h"
-
-#include "llvm/Support/Error.h"
-
 #include <algorithm>
 #include <cctype>
 #include <set>
 #include <string>
+#include <cstddef>
+#include <utility>
+
+#include "llvmdsdl/CodeGen/LoweredRenderIR.h"
+#include "llvm/Support/Error.h"
+#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
+#include "llvmdsdl/Semantics/BitLengthSet.h"
 
 namespace llvmdsdl
 {

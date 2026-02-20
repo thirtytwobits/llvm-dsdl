@@ -11,9 +11,13 @@
 #include "llvmdsdl/CodeGen/ArrayWirePlan.h"
 
 #include "llvmdsdl/CodeGen/TypeStorage.h"
+#include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 namespace llvmdsdl
 {
+enum class HelperBindingDirection;
+struct LoweredFieldFacts;
 
 ArrayWirePlan buildArrayWirePlan(const SemanticFieldType&           type,
                                  const LoweredFieldFacts*           fieldFacts,

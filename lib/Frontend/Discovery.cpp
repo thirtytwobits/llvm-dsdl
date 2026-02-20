@@ -8,14 +8,20 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/Frontend/Discovery.h"
+#include "llvmdsdl/Support/Diagnostics.h"
 
 #include <algorithm>
 #include <cctype>
+#include <compare>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <regex>
 #include <sstream>
 #include <unordered_map>
+#include <utility>
 
 namespace llvmdsdl
 {

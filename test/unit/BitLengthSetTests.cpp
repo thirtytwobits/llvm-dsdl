@@ -1,6 +1,7 @@
-#include "llvmdsdl/Semantics/BitLengthSet.h"
-
 #include <iostream>
+#include <set>
+
+#include "llvmdsdl/Semantics/BitLengthSet.h"
 
 bool runBitLengthSetTests()
 {

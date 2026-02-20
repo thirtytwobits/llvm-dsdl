@@ -9,17 +9,28 @@
 
 #include "llvmdsdl/Semantics/Analyzer.h"
 
-#include "llvmdsdl/Semantics/Evaluator.h"
-
-#include "llvm/Support/Error.h"
-
 #include <algorithm>
-#include <cmath>
 #include <map>
 #include <optional>
 #include <set>
 #include <sstream>
 #include <unordered_map>
+#include <compare>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <utility>
+#include <variant>
+#include <vector>
+
+#include "llvmdsdl/Semantics/Evaluator.h"
+#include "llvm/Support/Error.h"
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Frontend/SourceLocation.h"
+#include "llvmdsdl/Semantics/BitLengthSet.h"
+#include "llvmdsdl/Support/Diagnostics.h"
+#include "llvmdsdl/Support/Rational.h"
 
 namespace llvmdsdl
 {
@@ -442,11 +453,7 @@ private:
             return out;
         }
 
-        auto capValue = evaluateExpression(*type.arrayCapacity,
-                                           env,
-                                           diagnostics_,
-                                           type.location,
-                                           resolver);
+        auto capValue = evaluateExpression(*type.arrayCapacity, env, diagnostics_, type.location, resolver);
         if (!capValue || !std::holds_alternative<Rational>(capValue->data) ||
             !std::get<Rational>(capValue->data).isInteger())
         {
@@ -747,11 +754,7 @@ private:
                     {
                         unionOffsetUsed = true;
                     }
-                    auto v = evaluateExpression(*d.expression,
-                                                env,
-                                                diagnostics_,
-                                                d.location,
-                                                &typeAttrResolver);
+                    auto v = evaluateExpression(*d.expression, env, diagnostics_, d.location, &typeAttrResolver);
                     if (!v || !std::holds_alternative<Rational>(v->data) || !std::get<Rational>(v->data).isInteger())
                     {
                         diagnostics_.error(d.location, "@extent expression must evaluate to integer rational");
@@ -797,11 +800,8 @@ private:
                     }
                     if (d.expression)
                     {
-                        auto value = evaluateExpression(*d.expression,
-                                                        env,
-                                                        diagnostics_,
-                                                        d.location,
-                                                        &typeAttrResolver);
+                        auto value =
+                            evaluateExpression(*d.expression, env, diagnostics_, d.location, &typeAttrResolver);
                         if (d.kind == DirectiveKind::Assert)
                         {
                             if (!value || !std::holds_alternative<bool>(value->data))
@@ -832,11 +832,7 @@ private:
                     continue;
                 }
 
-                auto value = evaluateExpression(*c.value,
-                                                env,
-                                                diagnostics_,
-                                                c.location,
-                                                &typeAttrResolver);
+                auto value = evaluateExpression(*c.value, env, diagnostics_, c.location, &typeAttrResolver);
                 if (!value)
                 {
                     continue;

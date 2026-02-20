@@ -8,10 +8,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
-#include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 
 #include <set>
 #include <string>
+#include <utility>
+
+#include "llvmdsdl/CodeGen/WireLayoutFacts.h"
+#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 namespace llvmdsdl
 {

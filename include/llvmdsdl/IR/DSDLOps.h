@@ -7,19 +7,19 @@
 #ifndef LLVMDSDL_IR_DSDLOPS_H
 #define LLVMDSDL_IR_DSDLOPS_H
 
-#include "llvmdsdl/IR/DSDLDialect.h"
-#include "llvmdsdl/IR/DSDLAttrs.h"
-#include "llvmdsdl/IR/DSDLTypes.h"
+#include "llvmdsdl/IR/DSDLDialect.h"  // IWYU pragma: keep
+#include "llvmdsdl/IR/DSDLAttrs.h"  // IWYU pragma: keep
+#include "llvmdsdl/IR/DSDLTypes.h"  // IWYU pragma: keep
 
-#include "mlir/Bytecode/BytecodeOpInterface.h"
-#include "mlir/IR/OpDefinition.h"
-#include "mlir/IR/SymbolTable.h"
-#include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Bytecode/BytecodeOpInterface.h"  // IWYU pragma: keep
+#include "mlir/IR/OpDefinition.h"  // IWYU pragma: keep
+#include "mlir/IR/SymbolTable.h"  // IWYU pragma: keep
+#include "mlir/Interfaces/SideEffectInterfaces.h"  // IWYU pragma: keep
 
 /// @file
 /// @brief Generated DSDL operation class declarations.
 
 #define GET_OP_CLASSES
-#include "llvmdsdl/IR/DSDLOps.h.inc"
+#include "llvmdsdl/IR/DSDLOps.h.inc"  // IWYU pragma: keep
 
 #endif  // LLVMDSDL_IR_DSDLOPS_H

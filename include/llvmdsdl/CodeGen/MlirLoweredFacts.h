@@ -7,18 +7,19 @@
 #ifndef LLVMDSDL_CODEGEN_MLIR_LOWERED_FACTS_H
 #define LLVMDSDL_CODEGEN_MLIR_LOWERED_FACTS_H
 
-#include "llvmdsdl/Semantics/Model.h"
-#include "llvmdsdl/Support/Diagnostics.h"
-
-#include "mlir/IR/BuiltinOps.h"
-
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <unordered_map>
 
+namespace mlir {
+class ModuleOp;
+}  // namespace mlir
+
 namespace llvmdsdl
 {
+class DiagnosticEngine;
+struct SemanticModule;
 
 /// @file
 /// @brief Extracted lowered-serdes metadata consumed by backend emitters.

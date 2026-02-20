@@ -140,6 +140,8 @@ Completion evidence (February 20, 2026):
 
 Objective: strengthen confidence and lower regression risk.
 
+Status: Completed on February 20, 2026.
+
 Tasks:
 
 1. Expand directed parity vectors for deep-nesting and cross-family mixed error paths.
@@ -152,6 +154,25 @@ Acceptance:
 1. Full workflow and focused differential/parity rings pass consistently.
 2. No flaky nondeterminism observed in generation/parity artifacts.
 3. New edge vectors are documented and reproducible.
+
+Completion evidence (February 20, 2026):
+
+1. Expanded directed parity vectors with deeper nested composite coverage and new mixed error-path checks in the C<->TS invariant harness:
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/test/integration/RunCTsParity.cmake`
+   - Added `DeepLeaf.1.0`, `DeepInner.1.0`, `DeepOuter.1.0` fixture families and new directed parity markers.
+2. Added targeted negative tests for malformed/missing metadata families across backend validation paths:
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/test/unit/LoweredMetadataHardeningTests.cpp`
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/test/unit/UnitMain.cpp`
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/test/unit/CMakeLists.txt`
+3. Added concurrent determinism reliability checks for generated artifact stability:
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/test/integration/RunUavcanTsDeterminism.cmake`
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/test/integration/RunUavcanGoDeterminism.cmake`
+4. Validation commands:
+   - `cmake --build build/dev-homebrew-strictless --target llvmdsdl-unit-tests dsdlc -j4`
+   - `ctest --test-dir build/dev-homebrew-strictless -R llvmdsdl-unit-tests --output-on-failure`
+   - `ctest --test-dir build/dev-homebrew-strictless -R llvmdsdl-c-ts-parity --output-on-failure`
+   - `ctest --test-dir build/dev-homebrew-strictless -R llvmdsdl-uavcan-ts-determinism --output-on-failure`
+   - `ctest --test-dir build/dev-homebrew-strictless -R llvmdsdl-uavcan-go-determinism --output-on-failure`
 
 ## Workstream D: Productization and Release Readiness (Priority P0)
 
@@ -171,24 +192,7 @@ Acceptance:
 2. Docs do not contain stale experimental caveats that conflict with tested status.
 3. Demo remains runnable in under five minutes for fixture corpus.
 
-## Workstream E: TODO Closure and Upstream Coordination (Priority P2)
-
-Objective: close remaining explicit TODOs and avoid silent backlog leakage.
-
-Tasks:
-
-1. Fix `public_regulated_data_types/verify` handling of `#` inside string literals.
-2. Classify `Status.0.1.dsdl` TODO as:
-   - upstream content roadmap item, or
-   - local action item with owner/date.
-3. Add a tiny “open TODO ledger” section in this plan and keep it current.
-
-Acceptance:
-
-1. Repo-level TODO scan returns only intentionally deferred, documented items.
-2. Each deferred item has owner, scope, and disposition.
-
-## 5. Milestones
+## 6. Milestones
 
 ## M1: Convergence and Release Baseline
 
@@ -196,7 +200,6 @@ Target:
 
 1. Workstream A initial pass complete.
 2. Workstream D release checklist added.
-3. Workstream E TODO dispositions recorded.
 
 Exit criteria:
 

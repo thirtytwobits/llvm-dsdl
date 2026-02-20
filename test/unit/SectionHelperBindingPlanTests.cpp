@@ -1,6 +1,14 @@
-#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
-
 #include <iostream>
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 bool runSectionHelperBindingPlanTests()
 {

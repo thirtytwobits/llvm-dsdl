@@ -10,6 +10,11 @@
 #include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 
 #include <algorithm>
+#include <optional>
+#include <vector>
+
+#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 namespace llvmdsdl
 {

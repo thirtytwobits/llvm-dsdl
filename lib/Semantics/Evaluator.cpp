@@ -9,9 +9,15 @@
 
 #include "llvmdsdl/Semantics/Evaluator.h"
 
-#include <cmath>
 #include <optional>
 #include <sstream>
+#include <algorithm>
+#include <cstdint>
+#include <memory>
+#include <type_traits>
+#include <vector>
+
+#include "llvmdsdl/Support/Diagnostics.h"
 
 namespace llvmdsdl
 {

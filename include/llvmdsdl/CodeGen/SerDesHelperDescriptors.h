@@ -7,15 +7,18 @@
 #ifndef LLVMDSDL_CODEGEN_SERDES_HELPER_DESCRIPTORS_H
 #define LLVMDSDL_CODEGEN_SERDES_HELPER_DESCRIPTORS_H
 
-#include "llvmdsdl/Semantics/Model.h"
-
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include "llvmdsdl/Frontend/AST.h"
+
 namespace llvmdsdl
 {
+struct SemanticField;
+struct SemanticFieldType;
+struct SemanticSection;
 
 /// @file
 /// @brief Structured descriptor types for generated serdes helpers.

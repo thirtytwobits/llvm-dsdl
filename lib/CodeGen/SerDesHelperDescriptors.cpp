@@ -11,6 +11,9 @@
 
 #include <algorithm>
 #include <set>
+#include <utility>
+
+#include "llvmdsdl/Semantics/Model.h"
 
 namespace llvmdsdl
 {

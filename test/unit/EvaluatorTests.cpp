@@ -1,10 +1,23 @@
+#include <llvm/Support/Error.h>
+#include <iostream>
+#include <string_view>
+#include <memory>
+#include <optional>
+#include <string>
+#include <utility>
+#include <variant>
+#include <vector>
+
 #include "llvmdsdl/Frontend/Lexer.h"
 #include "llvmdsdl/Frontend/Parser.h"
 #include "llvmdsdl/Semantics/Evaluator.h"
 #include "llvmdsdl/Support/Diagnostics.h"
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Support/Rational.h"
 
-#include <iostream>
-#include <string_view>
+namespace llvmdsdl {
+struct SourceLocation;
+}  // namespace llvmdsdl
 
 namespace
 {
@@ -55,11 +68,7 @@ bool runEvaluatorTests()
         }
 
         llvmdsdl::ValueEnv env;
-        auto               value = llvmdsdl::evaluateExpression(*expr,
-                                                  env,
-                                                  diag,
-                                                  expr->location,
-                                                  nullptr);
+        auto               value = llvmdsdl::evaluateExpression(*expr, env, diag, expr->location, nullptr);
         if (value)
         {
             std::cerr << "expected evaluation without resolver to fail\n";
@@ -96,11 +105,7 @@ bool runEvaluatorTests()
         };
 
         llvmdsdl::ValueEnv env;
-        auto               value = llvmdsdl::evaluateExpression(*expr,
-                                                  env,
-                                                  diag,
-                                                  expr->location,
-                                                  &resolver);
+        auto               value = llvmdsdl::evaluateExpression(*expr, env, diag, expr->location, &resolver);
         if (!value || !std::holds_alternative<llvmdsdl::Rational>(value->data) ||
             std::get<llvmdsdl::Rational>(value->data) != llvmdsdl::Rational(42, 1))
         {
@@ -135,11 +140,7 @@ bool runEvaluatorTests()
         };
 
         llvmdsdl::ValueEnv env;
-        auto               value = llvmdsdl::evaluateExpression(*expr,
-                                                  env,
-                                                  diag,
-                                                  expr->location,
-                                                  &resolver);
+        auto               value = llvmdsdl::evaluateExpression(*expr, env, diag, expr->location, &resolver);
         if (!value || !std::holds_alternative<llvmdsdl::Rational>(value->data) ||
             std::get<llvmdsdl::Rational>(value->data) != llvmdsdl::Rational(128, 1))
         {

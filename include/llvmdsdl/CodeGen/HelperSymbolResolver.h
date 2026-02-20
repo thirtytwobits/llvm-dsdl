@@ -7,15 +7,18 @@
 #ifndef LLVMDSDL_CODEGEN_HELPER_SYMBOL_RESOLVER_H
 #define LLVMDSDL_CODEGEN_HELPER_SYMBOL_RESOLVER_H
 
-#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
-#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
-#include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
-
 #include <optional>
 #include <string>
+#include <cstdint>
+
+#include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
 
 namespace llvmdsdl
 {
+enum class HelperBindingDirection;
+struct LoweredFieldFacts;
+struct LoweredSectionFacts;
+struct SemanticFieldType;
 
 /// @file
 /// @brief Symbol-resolution helpers for lowered serdes helper functions.

@@ -1,7 +1,11 @@
-#include "llvmdsdl/CodeGen/TypeStorage.h"
-
 #include <iostream>
 #include <string>
+#include <optional>
+#include <utility>
+
+#include "llvmdsdl/CodeGen/TypeStorage.h"
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 bool runTypeStorageTests()
 {

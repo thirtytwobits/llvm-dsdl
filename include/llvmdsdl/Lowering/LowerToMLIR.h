@@ -7,9 +7,6 @@
 #ifndef LLVMDSDL_LOWERING_LOWERTOMLIR_H
 #define LLVMDSDL_LOWERING_LOWERTOMLIR_H
 
-#include "llvmdsdl/Semantics/Model.h"
-#include "llvmdsdl/Support/Diagnostics.h"
-
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/OwningOpRef.h"
 
@@ -20,6 +17,8 @@ class MLIRContext;
 
 namespace llvmdsdl
 {
+class DiagnosticEngine;
+struct SemanticModule;
 
 /// @file
 /// @brief Semantic-to-MLIR lowering entry points.

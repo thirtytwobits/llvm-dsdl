@@ -7,14 +7,14 @@
 #ifndef LLVMDSDL_IR_DSDLATTRS_H
 #define LLVMDSDL_IR_DSDLATTRS_H
 
-#include "llvmdsdl/IR/DSDLDialect.h"
+#include "llvmdsdl/IR/DSDLDialect.h"  // IWYU pragma: keep
 
-#include "mlir/IR/Attributes.h"
+#include "mlir/IR/Attributes.h"  // IWYU pragma: keep
 
 /// @file
 /// @brief Generated DSDL attribute declarations.
 
 #define GET_ATTRDEF_CLASSES
-#include "llvmdsdl/IR/DSDLAttrs.h.inc"
+#include "llvmdsdl/IR/DSDLAttrs.h.inc"  // IWYU pragma: keep
 
 #endif  // LLVMDSDL_IR_DSDLATTRS_H

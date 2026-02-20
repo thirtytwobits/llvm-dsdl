@@ -11,6 +11,8 @@
 
 namespace llvmdsdl
 {
+struct LoweredSectionFacts;
+struct SemanticSection;
 
 LoweredBodyPlan buildLoweredBodyPlan(const SemanticSection&       section,
                                      const LoweredSectionFacts*   sectionFacts,

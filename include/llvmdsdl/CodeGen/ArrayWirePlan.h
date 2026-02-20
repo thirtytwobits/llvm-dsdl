@@ -7,13 +7,16 @@
 #ifndef LLVMDSDL_CODEGEN_ARRAY_WIRE_PLAN_H
 #define LLVMDSDL_CODEGEN_ARRAY_WIRE_PLAN_H
 
-#include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
-
 #include <cstdint>
 #include <optional>
 
+#include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
+
 namespace llvmdsdl
 {
+enum class HelperBindingDirection;
+struct LoweredFieldFacts;
+struct SemanticFieldType;
 
 /// @file
 /// @brief Array wire-layout helper planning utilities.

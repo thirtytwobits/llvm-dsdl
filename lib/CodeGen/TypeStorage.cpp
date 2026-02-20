@@ -9,6 +9,8 @@
 
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 
+#include "llvmdsdl/Frontend/AST.h"
+
 namespace llvmdsdl
 {
 

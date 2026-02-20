@@ -9,15 +9,21 @@
 
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Frontend/Lexer.h"
-#include "llvmdsdl/Support/Diagnostics.h"
 
 #include "llvm/Support/Error.h"
 
+#include <cstddef>
+#include <initializer_list>
+#include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 namespace llvmdsdl
 {
+
+class DiagnosticEngine;
+struct SourceLocation;
 
 /// @file
 /// @brief Recursive-descent parser interfaces.

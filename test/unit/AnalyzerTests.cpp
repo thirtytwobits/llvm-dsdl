@@ -1,12 +1,15 @@
+#include <iostream>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "llvmdsdl/Frontend/Lexer.h"
 #include "llvmdsdl/Frontend/Parser.h"
 #include "llvmdsdl/Semantics/Analyzer.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/Diagnostics.h"
-
 #include "llvm/Support/Error.h"
-
-#include <iostream>
+#include "llvmdsdl/Frontend/AST.h"
 
 bool runAnalyzerTests()
 {

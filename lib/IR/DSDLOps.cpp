@@ -9,9 +9,12 @@
 
 #include "llvmdsdl/IR/DSDLOps.h"
 
-#include "mlir/IR/Builders.h"
+#include <llvm/Support/LogicalResult.h>
+
+#include "mlir/IR/Builders.h"  // IWYU pragma: keep
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Diagnostics.h"
-#include "mlir/IR/OpImplementation.h"
+#include "mlir/Support/LLVM.h"
 
 using namespace mlir;
 using namespace mlir::dsdl;
@@ -26,4 +29,4 @@ LogicalResult SchemaOp::verify()
 }
 
 #define GET_OP_CLASSES
-#include "llvmdsdl/IR/DSDLOps.cpp.inc"
+#include "llvmdsdl/IR/DSDLOps.cpp.inc"  // IWYU pragma: keep

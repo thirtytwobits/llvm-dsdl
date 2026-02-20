@@ -12,6 +12,11 @@
 #include <functional>
 #include <string>
 #include <vector>
+#include <optional>
+
+#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
+#include "llvmdsdl/Frontend/AST.h"
 
 namespace llvmdsdl
 {

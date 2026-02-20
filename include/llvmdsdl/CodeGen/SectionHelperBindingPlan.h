@@ -7,16 +7,17 @@
 #ifndef LLVMDSDL_CODEGEN_SECTION_HELPER_BINDING_PLAN_H
 #define LLVMDSDL_CODEGEN_SECTION_HELPER_BINDING_PLAN_H
 
-#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
-#include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
-
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
+
 namespace llvmdsdl
 {
+struct LoweredSectionFacts;
+struct SemanticSection;
 
 /// @file
 /// @brief Helper binding plans for section serialize/deserialize bodies.

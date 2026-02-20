@@ -1,8 +1,17 @@
-#include "llvmdsdl/CodeGen/LoweredRenderIR.h"
-
 #include <iostream>
 #include <string>
 #include <vector>
+#include <cstddef>
+#include <functional>
+#include <optional>
+#include <unordered_map>
+
+#include "llvmdsdl/CodeGen/LoweredRenderIR.h"
+#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
+#include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 bool runLoweredRenderIRTests()
 {

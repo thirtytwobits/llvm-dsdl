@@ -10,9 +10,18 @@
 #include "llvmdsdl/Frontend/ASTPrinter.h"
 
 #include <sstream>
+#include <cstddef>
+#include <memory>
+#include <type_traits>
+#include <variant>
+#include <vector>
+
+#include "llvmdsdl/Frontend/AST.h"
 
 namespace llvmdsdl
 {
+class Rational;
+
 namespace
 {
 

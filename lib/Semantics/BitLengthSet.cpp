@@ -10,10 +10,9 @@
 #include "llvmdsdl/Semantics/BitLengthSet.h"
 
 #include <algorithm>
-#include <limits>
-#include <numeric>
 #include <sstream>
-#include <stdexcept>
+#include <iterator>
+#include <utility>
 
 namespace llvmdsdl
 {

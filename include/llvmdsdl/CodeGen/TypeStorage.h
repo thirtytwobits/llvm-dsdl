@@ -7,14 +7,15 @@
 #ifndef LLVMDSDL_CODEGEN_TYPE_STORAGE_H
 #define LLVMDSDL_CODEGEN_TYPE_STORAGE_H
 
-#include "llvmdsdl/Semantics/Model.h"
-
 #include <cstdint>
 #include <optional>
 #include <utility>
 
+#include "llvmdsdl/Semantics/Model.h"
+
 namespace llvmdsdl
 {
+enum class ArrayKind;
 
 /// @file
 /// @brief Scalar storage and saturation helper utilities for codegen.

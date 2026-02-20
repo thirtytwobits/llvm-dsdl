@@ -1,3 +1,4 @@
+// Package dsdlruntime contains unit tests for the Go DSDL runtime helpers.
 package dsdlruntime
 
 import (
@@ -6,6 +7,7 @@ import (
 	"testing"
 )
 
+// getBitRef returns one bit from buf at offset using bounds-safe reference logic.
 func getBitRef(buf []byte, offset int) uint8 {
 	if offset < 0 {
 		return 0
@@ -17,6 +19,7 @@ func getBitRef(buf []byte, offset int) uint8 {
 	return (buf[byteIndex] >> uint(offset%8)) & 1
 }
 
+// copyBitsRef is a simple reference implementation used to validate CopyBits.
 func copyBitsRef(dst []byte, dstOffsetBits, lengthBits int, src []byte, srcOffsetBits int) {
 	for i := 0; i < lengthBits; i++ {
 		bit := getBitRef(src, srcOffsetBits+i)
@@ -32,6 +35,7 @@ func copyBitsRef(dst []byte, dstOffsetBits, lengthBits int, src []byte, srcOffse
 	}
 }
 
+// TestChooseMin validates minimum selection behavior.
 func TestChooseMin(t *testing.T) {
 	if got := ChooseMin(2, 9); got != 2 {
 		t.Fatalf("ChooseMin(2,9) = %d, want 2", got)
@@ -41,6 +45,7 @@ func TestChooseMin(t *testing.T) {
 	}
 }
 
+// TestSaturateFragmentBits validates fragment saturation boundaries.
 func TestSaturateFragmentBits(t *testing.T) {
 	if got := SaturateFragmentBits(2, 0, 9); got != 9 {
 		t.Fatalf("SaturateFragmentBits(2,0,9) = %d, want 9", got)
@@ -53,6 +58,7 @@ func TestSaturateFragmentBits(t *testing.T) {
 	}
 }
 
+// TestCopyBitsUnalignedMatchesReference validates one fixed unaligned copy case.
 func TestCopyBitsUnalignedMatchesReference(t *testing.T) {
 	src := []byte{0xB6, 0x55, 0xE1}
 	dst := []byte{0x00, 0x00, 0x00}
@@ -68,6 +74,8 @@ func TestCopyBitsUnalignedMatchesReference(t *testing.T) {
 	}
 }
 
+// TestCopyBitsRandomizedAgainstReference validates CopyBits against a stable
+// reference implementation across randomized inputs.
 func TestCopyBitsRandomizedAgainstReference(t *testing.T) {
 	rng := rand.New(rand.NewSource(0x5EEDC0DE))
 	for iter := 0; iter < 1000; iter++ {
@@ -118,6 +126,8 @@ func TestCopyBitsRandomizedAgainstReference(t *testing.T) {
 	}
 }
 
+// TestGetBitsImplicitZeroExtension validates zero-extension when reads run past
+// the source buffer.
 func TestGetBitsImplicitZeroExtension(t *testing.T) {
 	input := []byte{0xFF}
 	var out [2]byte
@@ -127,6 +137,7 @@ func TestGetBitsImplicitZeroExtension(t *testing.T) {
 	}
 }
 
+// TestSetUxxAndGetU32RoundTrip validates unsigned integer round-trip behavior.
 func TestSetUxxAndGetU32RoundTrip(t *testing.T) {
 	buf := make([]byte, 8)
 	if rc := SetUxx(buf, 3, 0xABCDE, 20); rc != DSDL_RUNTIME_SUCCESS {
@@ -138,6 +149,7 @@ func TestSetUxxAndGetU32RoundTrip(t *testing.T) {
 	}
 }
 
+// TestSetUxxBufferTooSmall validates error reporting for out-of-range writes.
 func TestSetUxxBufferTooSmall(t *testing.T) {
 	buf := make([]byte, 1)
 	rc := SetUxx(buf, 7, 0x3, 2)
@@ -146,6 +158,7 @@ func TestSetUxxBufferTooSmall(t *testing.T) {
 	}
 }
 
+// TestSetBitBufferTooSmall validates one-bit write bounds checks.
 func TestSetBitBufferTooSmall(t *testing.T) {
 	buf := make([]byte, 1)
 	rc := SetBit(buf, 8, true)
@@ -154,6 +167,7 @@ func TestSetBitBufferTooSmall(t *testing.T) {
 	}
 }
 
+// TestSignedGetSignExtension validates narrow signed sign-extension behavior.
 func TestSignedGetSignExtension(t *testing.T) {
 	negOne3Bit := []byte{0x07} // 0b111 => -1 when interpreted as signed 3-bit
 	if got := GetI8(negOne3Bit, 0, 3); got != -1 {
@@ -165,6 +179,8 @@ func TestSignedGetSignExtension(t *testing.T) {
 	}
 }
 
+// TestSignedGetSignExtensionWiderTypes validates signed sign extension for wider
+// destination types.
 func TestSignedGetSignExtensionWiderTypes(t *testing.T) {
 	if got := GetI16([]byte{0x1F}, 0, 5); got != -1 {
 		t.Fatalf("GetI16 sign extension mismatch: got %d want -1", got)
@@ -177,6 +193,7 @@ func TestSignedGetSignExtensionWiderTypes(t *testing.T) {
 	}
 }
 
+// TestFloat16PackUnpackSpecials validates NaN and infinity conversion behavior.
 func TestFloat16PackUnpackSpecials(t *testing.T) {
 	if got := Float16Pack(float32(math.Inf(1))); got != 0x7C00 {
 		t.Fatalf("Float16Pack(+Inf)=0x%04X, want 0x7C00", got)
@@ -193,6 +210,7 @@ func TestFloat16PackUnpackSpecials(t *testing.T) {
 	}
 }
 
+// TestSetGetFloatsRoundTrip validates float32/float64 round-trip behavior.
 func TestSetGetFloatsRoundTrip(t *testing.T) {
 	buf := make([]byte, 16)
 
@@ -213,6 +231,7 @@ func TestSetGetFloatsRoundTrip(t *testing.T) {
 	}
 }
 
+// TestGetUnsignedOutOfRangeIsZeroExtended validates out-of-range unsigned reads.
 func TestGetUnsignedOutOfRangeIsZeroExtended(t *testing.T) {
 	buf := []byte{0xAA}
 	if got := GetU16(buf, 16, 16); got != 0 {

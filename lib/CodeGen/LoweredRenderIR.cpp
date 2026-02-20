@@ -11,8 +11,11 @@
 
 #include <utility>
 
+#include "llvmdsdl/Semantics/Model.h"
+
 namespace llvmdsdl
 {
+struct LoweredSectionFacts;
 
 LoweredBodyRenderIR buildLoweredBodyRenderIR(const SemanticSection&       section,
                                              const LoweredSectionFacts*   sectionFacts,

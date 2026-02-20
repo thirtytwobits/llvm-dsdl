@@ -7,9 +7,6 @@
 #ifndef LLVMDSDL_SEMANTICS_EVALUATOR_H
 #define LLVMDSDL_SEMANTICS_EVALUATOR_H
 
-#include "llvmdsdl/Frontend/AST.h"
-#include "llvmdsdl/Support/Diagnostics.h"
-
 #include <functional>
 #include <map>
 #include <optional>
@@ -17,8 +14,13 @@
 #include <string>
 #include <variant>
 
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Frontend/SourceLocation.h"
+#include "llvmdsdl/Support/Rational.h"
+
 namespace llvmdsdl
 {
+class DiagnosticEngine;
 
 /// @file
 /// @brief Constant-expression evaluator interfaces.

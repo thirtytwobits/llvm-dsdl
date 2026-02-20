@@ -11,16 +11,19 @@
 
 #include "llvmdsdl/Frontend/Discovery.h"
 #include "llvmdsdl/Frontend/Lexer.h"
+#include "llvmdsdl/Frontend/SourceLocation.h"
+#include "llvmdsdl/Support/Diagnostics.h"
+#include "llvmdsdl/Support/Rational.h"
 
 #include "llvm/Support/Error.h"
 
-#include <algorithm>
 #include <cctype>
-#include <cmath>
-#include <functional>
+#include <cstdint>
 #include <limits>
 #include <optional>
 #include <regex>
+#include <utility>
+#include <variant>
 
 namespace llvmdsdl
 {

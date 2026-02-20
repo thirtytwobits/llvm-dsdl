@@ -15,6 +15,7 @@ bool runTsLoweredPlanTests();
 bool runHelperSymbolResolverTests();
 bool runWireLayoutFactsTests();
 bool runTypeStorageTests();
+bool runLoweredMetadataHardeningTests();
 
 int main()
 {
@@ -34,6 +35,7 @@ int main()
     ok      = runHelperSymbolResolverTests() && ok;
     ok      = runWireLayoutFactsTests() && ok;
     ok      = runTypeStorageTests() && ok;
+    ok      = runLoweredMetadataHardeningTests() && ok;
     if (!ok)
     {
         std::cerr << "unit tests failed\n";

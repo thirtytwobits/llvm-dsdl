@@ -7,14 +7,16 @@
 #ifndef LLVMDSDL_CODEGEN_LOWERED_RENDER_IR_H
 #define LLVMDSDL_CODEGEN_LOWERED_RENDER_IR_H
 
-#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
-#include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
-
 #include <functional>
 #include <vector>
 
+#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
+
 namespace llvmdsdl
 {
+struct LoweredSectionFacts;
+struct SemanticSection;
 
 /// @file
 /// @brief Language-agnostic lowered render IR used by backend emitters.

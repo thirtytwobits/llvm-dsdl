@@ -7,13 +7,12 @@
 #ifndef LLVMDSDL_CODEGEN_WIRE_LAYOUT_FACTS_H
 #define LLVMDSDL_CODEGEN_WIRE_LAYOUT_FACTS_H
 
-#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
-#include "llvmdsdl/Semantics/Model.h"
-
 #include <cstdint>
 
 namespace llvmdsdl
 {
+struct LoweredSectionFacts;
+struct SemanticSection;
 
 /// @file
 /// @brief Wire-layout fact resolution helpers.

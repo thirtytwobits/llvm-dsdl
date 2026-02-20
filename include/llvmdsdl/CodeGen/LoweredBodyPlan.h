@@ -12,6 +12,8 @@
 
 namespace llvmdsdl
 {
+struct LoweredSectionFacts;
+struct SemanticSection;
 
 /// @file
 /// @brief Composite lowered body plan combining statements and helper bindings.

@@ -1,5 +1,14 @@
-// OpenCyphal common serialization support routines adapted for llvm-dsdl.
-// This runtime is header-only and intentionally aligned with Nunavut behavior.
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// C/C++ DSDL serialization runtime primitives shared by generated code.
+///
+/// This header provides bit-copy, integer, and floating-point helpers used by
+/// generated serializers and deserializers. The implementation is intentionally
+/// header-only and aligned with OpenCyphal/Nunavut runtime semantics so that
+/// generated code remains portable across integration environments.
+///
+//===----------------------------------------------------------------------===//
 
 #ifndef LLVMDSDL_RUNTIME_DSDL_RUNTIME_H
 #define LLVMDSDL_RUNTIME_DSDL_RUNTIME_H
@@ -33,20 +42,32 @@ extern "C"
 
     _Static_assert(sizeof(size_t) >= sizeof(size_t), "Unexpected target size_t width");
 
-/// Runtime returns 0 for success and < 0 for any failure.
-/// to detect errors or error_value == 0 for success.
+/// @brief Runtime success code.
+///
+/// Runtime helpers return `0` for success and a negative error code for
+/// failures.
 #define DSDL_RUNTIME_SUCCESS 0
-// API usage errors:
+
+/// @brief API usage error code for invalid arguments.
 #define DSDL_RUNTIME_ERROR_INVALID_ARGUMENT 2
+
+/// @brief API usage error code for insufficient serialization buffer size.
 #define DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL 3
-// Invalid representation (caused by bad input data, not API misuse):
+
+/// @brief Representation error code for invalid array-length values.
 #define DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH 10
+
+/// @brief Representation error code for invalid union tag values.
 #define DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG 11
+
+/// @brief Representation error code for malformed delimiter headers.
 #define DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_DELIMITER_HEADER 12
 
-/// Detect whether the target platform is compatible with IEEE 754.
+/// @brief Compile-time check for IEEE-754 single-precision compatibility.
 #define DSDL_RUNTIME_PLATFORM_IEEE754_FLOAT \
     ((FLT_RADIX == 2) && (FLT_MANT_DIG == 24) && (FLT_MIN_EXP == -125) && (FLT_MAX_EXP == 128))
+
+/// @brief Compile-time check for IEEE-754 double-precision compatibility.
 #define DSDL_RUNTIME_PLATFORM_IEEE754_DOUBLE \
     ((FLT_RADIX == 2) && (DBL_MANT_DIG == 53) && (DBL_MIN_EXP == -1021) && (DBL_MAX_EXP == 1024))
 
@@ -58,14 +79,26 @@ extern "C"
 
     // ---------------------------------------------------- HELPERS ----------------------------------------------------
 
-    /// Returns the smallest value.
+    /// @brief Returns the smaller of two values.
+    /// @param[in] a First value.
+    /// @param[in] b Second value.
+    /// @return The minimum of `a` and `b`.
     static inline size_t dsdl_runtime_choose_min(const size_t a, const size_t b)
     {
         return (a < b) ? a : b;
     }
 
-    /// Calculate the number of bits to safely copy from/to a serialized buffer.
-    /// Mind the units! By convention, buffer size is specified in bytes, but fragment length and offset are in bits.
+    /// @brief Computes a safe bit-copy length for a bounded byte buffer.
+    ///
+    /// @details Buffer size is expressed in bytes, while offsets and lengths are
+    /// expressed in bits. This helper saturates the requested bit length to what
+    /// can be consumed from `fragment_offset_bits` to the end of the buffer.
+    ///
+    /// @param[in] buffer_size_bytes Total source/destination buffer size in bytes.
+    /// @param[in] fragment_offset_bits Requested fragment start offset in bits.
+    /// @param[in] fragment_length_bits Requested fragment length in bits.
+    /// @return Saturated bit count that can be safely read/written.
+    ///
     ///
     ///      buffer                                                                buffer
     ///      origin                                                                 end
@@ -85,17 +118,20 @@ extern "C"
     // ---------------------------------------------------- BIT ARRAY
     // ----------------------------------------------------
 
-    /// Copy the specified number of bits from the source buffer into the destination buffer in accordance with the
-    /// DSDL bit-level serialization specification. The offsets may be arbitrary (may exceed 8 bits).
-    /// If both offsets are byte-aligned, the function invokes memmove() and possibly adjusts the last byte separately.
-    /// If the source and the destination overlap AND the offsets are not byte-aligned, the behavior is undefined.
-    /// If either source or destination pointers are NULL, the behavior is undefined.
-    /// Arguments:
-    ///     dst             Destination buffer. Shall be at least ceil(length_bits/8) bytes large.
-    ///     dst_offset_bits Offset in bits from the destination pointer. May exceed 8.
-    ///     length_bits     The number of bits to copy. Both source and destination shall be large enough.
-    ///     src             Source buffer. Shall be at least ceil(length_bits/8) bytes large.
-    ///     src_offset_bits Offset in bits from the source pointer. May exceed 8.
+    /// @brief Copies a bit fragment from `src` into `dst` using DSDL bit order.
+    ///
+    /// @details
+    /// Offsets are bit-based and may be unaligned. Byte-aligned copies use an
+    /// optimized `memmove` path; unaligned copies use a bitwise transfer path.
+    ///
+    /// If `src` and `dst` overlap while offsets are not byte-aligned, behavior is
+    /// undefined.
+    ///
+    /// @param[out] dst Destination buffer.
+    /// @param[in] dst_offset_bits Destination offset in bits.
+    /// @param[in] length_bits Number of bits to copy.
+    /// @param[in] src Source buffer.
+    /// @param[in] src_offset_bits Source offset in bits.
     static inline void dsdl_runtime_copy_bits(void* const       dst,
                                               const size_t      dst_offset_bits,
                                               const size_t      length_bits,
@@ -181,12 +217,18 @@ extern "C"
         }
     }
 
-    /// This function is intended for deserialization of contiguous sequences of zero-cost primitives.
-    /// It extracts (len_bits) bits that are offset by (off_bits) from the origin of (buf) whose size is
-    /// (buf_size_bytes). If the requested (len_bits+off_bits) overruns the buffer, the missing bits are implicitly
-    /// zero-extended. If (len_bits % 8 != 0), the output buffer is right-zero-padded up to the next byte boundary. If
-    /// (off_bits % 8 == 0), the operation is delegated to memmove(); otherwise, a much slower unaligned bit copy
-    /// algorithm is employed. See @ref dsdl_runtime_copy_bits() for further details.
+    /// @brief Reads a bit fragment and zero-extends out-of-range data.
+    ///
+    /// @details
+    /// This helper is used by primitive deserializers. If
+    /// `(off_bits + len_bits)` exceeds `buf_size_bytes * 8`, missing bits are
+    /// treated as zero (implicit zero extension).
+    ///
+    /// @param[out] output Destination byte array for extracted bits.
+    /// @param[in] buf Source serialized buffer.
+    /// @param[in] buf_size_bytes Source buffer size in bytes.
+    /// @param[in] off_bits Source offset in bits.
+    /// @param[in] len_bits Requested bit count.
     static inline void dsdl_runtime_get_bits(void* const       output,
                                              const void* const buf,
                                              const size_t      buf_size_bytes,
@@ -205,18 +247,12 @@ extern "C"
 
     // ---------------------------------------------------- INTEGER ----------------------------------------------------
 
-    /// Serialize a DSDL field value at the specified bit offset from the beginning of the destination buffer.
-    /// The behavior is undefined if the input pointer is NULL. The time complexity is linear of the bit length.
-    /// One-bit-wide signed integers are processed without raising an error but the result is unspecified.
-    ///
-    /// Arguments:
-    ///     buf             Destination buffer where the result will be stored.
-    ///     buf_size_bytes  Size of the above, in bytes.
-    ///     off_bits        Offset, in bits, from the beginning of the buffer. May exceed one byte.
-    ///     value           The value itself (in case of integers it is promoted to 64-bit for unification).
-    ///     len_bits        Length of the serialized representation, in bits. Zero has no effect. Values >64 bit
-    ///     saturated.
-
+    /// @brief Serializes a one-bit boolean value at `off_bits`.
+    /// @param[out] buf Destination serialized buffer.
+    /// @param[in] buf_size_bytes Destination buffer size in bytes.
+    /// @param[in] off_bits Destination bit offset.
+    /// @param[in] value Boolean value to serialize.
+    /// @return `DSDL_RUNTIME_SUCCESS` or a negative error code.
     static inline int8_t dsdl_runtime_set_bit(uint8_t* const buf,
                                               const size_t   buf_size_bytes,
                                               const size_t   off_bits,
@@ -232,6 +268,14 @@ extern "C"
         return DSDL_RUNTIME_SUCCESS;
     }
 
+    /// @brief Serializes an unsigned integer fragment in little-endian bit order.
+    /// @param[out] buf Destination serialized buffer.
+    /// @param[in] buf_size_bytes Destination buffer size in bytes.
+    /// @param[in] off_bits Destination bit offset.
+    /// @param[in] value Unsigned value to serialize.
+    /// @param[in] len_bits Serialized bit width; values greater than 64 are
+    /// saturated to 64.
+    /// @return `DSDL_RUNTIME_SUCCESS` or a negative error code.
     static inline int8_t dsdl_runtime_set_uxx(uint8_t* const buf,
                                               const size_t   buf_size_bytes,
                                               const size_t   off_bits,
@@ -259,6 +303,13 @@ extern "C"
         return DSDL_RUNTIME_SUCCESS;
     }
 
+    /// @brief Serializes a signed integer fragment in little-endian bit order.
+    /// @param[out] buf Destination serialized buffer.
+    /// @param[in] buf_size_bytes Destination buffer size in bytes.
+    /// @param[in] off_bits Destination bit offset.
+    /// @param[in] value Signed value to serialize.
+    /// @param[in] len_bits Serialized bit width.
+    /// @return `DSDL_RUNTIME_SUCCESS` or a negative error code.
     static inline int8_t dsdl_runtime_set_ixx(uint8_t* const buf,
                                               const size_t   buf_size_bytes,
                                               const size_t   off_bits,
@@ -272,30 +323,26 @@ extern "C"
         return dsdl_runtime_set_uxx(buf, buf_size_bytes, off_bits, (uint64_t) value, len_bits);
     }
 
-    /// Deserialize a DSDL field value located at the specified bit offset from the beginning of the source buffer.
-    /// If the deserialized value extends beyond the end of the buffer, the missing bits are taken as zero, as required
-    /// by the DSDL specification (see Implicit Zero Extension Rule, IZER).
+    /// @brief Deserializes an unsigned integer up to 8 bits wide.
     ///
-    /// If len_bits is greater than the return type, extra bits will be truncated per standard narrowing conversion
-    /// rules. If len_bits is shorter than the return type, missing bits will be zero per standard integer promotion
-    /// rules. Essentially, for integers, it would be enough to have 64-bit versions only; narrower variants exist only
-    /// to avoid narrowing type conversions of the result and for some performance gains.
+    /// @details Reads beyond the end of the source buffer are implicitly
+    /// zero-extended.
     ///
-    /// The behavior is undefined if the input pointer is NULL. The time complexity is linear of the bit length.
-    /// One-bit-wide signed integers are processed without raising an error but the result is unspecified.
-    ///
-    /// Arguments:
-    ///     buf             Source buffer where the serialized representation will be read from.
-    ///     buf_size_bytes  The size of the source buffer, in bytes. Reads past this limit will return zero bits.
-    ///     off_bits        Offset, in bits, from the beginning of the buffer. May exceed one byte.
-    ///     len_bits        Length of the serialized representation, in bits. Zero returns 0. Out-of-range values
-    ///     saturated.
-
+    /// @param[in] buf Source serialized buffer.
+    /// @param[in] buf_size_bytes Source buffer size in bytes.
+    /// @param[in] off_bits Source bit offset.
+    /// @param[in] len_bits Requested bit width.
+    /// @return Deserialized value.
     static inline uint8_t dsdl_runtime_get_u8(const uint8_t* const buf,
                                               const size_t         buf_size_bytes,
                                               const size_t         off_bits,
                                               const uint8_t        len_bits);
 
+    /// @brief Deserializes a single bit as boolean.
+    /// @param[in] buf Source serialized buffer.
+    /// @param[in] buf_size_bytes Source buffer size in bytes.
+    /// @param[in] off_bits Source bit offset.
+    /// @return `true` if the extracted bit is one; otherwise `false`.
     static inline bool dsdl_runtime_get_bit(const uint8_t* const buf,
                                             const size_t         buf_size_bytes,
                                             const size_t         off_bits)
@@ -317,6 +364,12 @@ extern "C"
         return val;
     }
 
+    /// @brief Deserializes an unsigned integer up to 16 bits wide.
+    /// @param[in] buf Source serialized buffer.
+    /// @param[in] buf_size_bytes Source buffer size in bytes.
+    /// @param[in] off_bits Source bit offset.
+    /// @param[in] len_bits Requested bit width.
+    /// @return Deserialized value.
     static inline uint16_t dsdl_runtime_get_u16(const uint8_t* const buf,
                                                 const size_t         buf_size_bytes,
                                                 const size_t         off_bits,
@@ -331,6 +384,12 @@ extern "C"
         return (uint16_t) (tmp[0] | (uint16_t) (((uint16_t) tmp[1]) << 8U));
     }
 
+    /// @brief Deserializes an unsigned integer up to 32 bits wide.
+    /// @param[in] buf Source serialized buffer.
+    /// @param[in] buf_size_bytes Source buffer size in bytes.
+    /// @param[in] off_bits Source bit offset.
+    /// @param[in] len_bits Requested bit width.
+    /// @return Deserialized value.
     static inline uint32_t dsdl_runtime_get_u32(const uint8_t* const buf,
                                                 const size_t         buf_size_bytes,
                                                 const size_t         off_bits,
@@ -346,6 +405,12 @@ extern "C"
                            ((uint32_t) tmp[3] << 24U));
     }
 
+    /// @brief Deserializes an unsigned integer up to 64 bits wide.
+    /// @param[in] buf Source serialized buffer.
+    /// @param[in] buf_size_bytes Source buffer size in bytes.
+    /// @param[in] off_bits Source bit offset.
+    /// @param[in] len_bits Requested bit width.
+    /// @return Deserialized value.
     static inline uint64_t dsdl_runtime_get_u64(const uint8_t* const buf,
                                                 const size_t         buf_size_bytes,
                                                 const size_t         off_bits,
@@ -362,6 +427,12 @@ extern "C"
                            ((uint64_t) tmp[6] << 48U) | ((uint64_t) tmp[7] << 56U));
     }
 
+    /// @brief Deserializes a signed integer up to 8 bits wide.
+    /// @param[in] buf Source serialized buffer.
+    /// @param[in] buf_size_bytes Source buffer size in bytes.
+    /// @param[in] off_bits Source bit offset.
+    /// @param[in] len_bits Requested bit width.
+    /// @return Sign-extended deserialized value.
     static inline int8_t dsdl_runtime_get_i8(const uint8_t* const buf,
                                              const size_t         buf_size_bytes,
                                              const size_t         off_bits,
@@ -378,6 +449,12 @@ extern "C"
         return neg ? (int8_t) ((-(int8_t) (uint8_t) ~val) - 1) : (int8_t) val;
     }
 
+    /// @brief Deserializes a signed integer up to 16 bits wide.
+    /// @param[in] buf Source serialized buffer.
+    /// @param[in] buf_size_bytes Source buffer size in bytes.
+    /// @param[in] off_bits Source bit offset.
+    /// @param[in] len_bits Requested bit width.
+    /// @return Sign-extended deserialized value.
     static inline int16_t dsdl_runtime_get_i16(const uint8_t* const buf,
                                                const size_t         buf_size_bytes,
                                                const size_t         off_bits,
@@ -393,6 +470,12 @@ extern "C"
         return neg ? (int16_t) ((-(int16_t) (uint16_t) ~val) - 1) : (int16_t) val;
     }
 
+    /// @brief Deserializes a signed integer up to 32 bits wide.
+    /// @param[in] buf Source serialized buffer.
+    /// @param[in] buf_size_bytes Source buffer size in bytes.
+    /// @param[in] off_bits Source bit offset.
+    /// @param[in] len_bits Requested bit width.
+    /// @return Sign-extended deserialized value.
     static inline int32_t dsdl_runtime_get_i32(const uint8_t* const buf,
                                                const size_t         buf_size_bytes,
                                                const size_t         off_bits,
@@ -408,6 +491,12 @@ extern "C"
         return neg ? (int32_t) ((-(int32_t) ~val) - 1) : (int32_t) val;
     }
 
+    /// @brief Deserializes a signed integer up to 64 bits wide.
+    /// @param[in] buf Source serialized buffer.
+    /// @param[in] buf_size_bytes Source buffer size in bytes.
+    /// @param[in] off_bits Source bit offset.
+    /// @param[in] len_bits Requested bit width.
+    /// @return Sign-extended deserialized value.
     static inline int64_t dsdl_runtime_get_i64(const uint8_t* const buf,
                                                const size_t         buf_size_bytes,
                                                const size_t         off_bits,
@@ -429,7 +518,9 @@ extern "C"
                    "The target platform does not support IEEE754 floating point operations.");
     _Static_assert(32U == (sizeof(float) * 8U), "Unsupported floating point model");
 
-    /// Converts a single-precision float into the binary representation of the value as a half-precision IEEE754 value.
+    /// @brief Converts a 32-bit float into IEEE-754 binary16 representation.
+    /// @param[in] value Single-precision floating-point value.
+    /// @return Packed IEEE-754 binary16 bit pattern.
     static inline uint16_t dsdl_runtime_float16_pack(const float value)
     {
         typedef union  // NOSONAR
@@ -478,6 +569,9 @@ extern "C"
         return out;
     }
 
+    /// @brief Converts an IEEE-754 binary16 value into 32-bit float.
+    /// @param[in] value Packed IEEE-754 binary16 bit pattern.
+    /// @return Single-precision floating-point value.
     static inline float dsdl_runtime_float16_unpack(const uint16_t value)
     {
         typedef union  // NOSONAR
@@ -503,6 +597,12 @@ extern "C"
         return out.real;
     }
 
+    /// @brief Serializes a binary16 floating-point value.
+    /// @param[out] buf Destination serialized buffer.
+    /// @param[in] buf_size_bytes Destination buffer size in bytes.
+    /// @param[in] off_bits Destination bit offset.
+    /// @param[in] value Single-precision value to convert and serialize.
+    /// @return `DSDL_RUNTIME_SUCCESS` or a negative error code.
     static inline int8_t dsdl_runtime_set_f16(uint8_t* const buf,
                                               const size_t   buf_size_bytes,
                                               const size_t   off_bits,
@@ -511,6 +611,11 @@ extern "C"
         return dsdl_runtime_set_uxx(buf, buf_size_bytes, off_bits, dsdl_runtime_float16_pack(value), 16U);
     }
 
+    /// @brief Deserializes a binary16 floating-point value.
+    /// @param[in] buf Source serialized buffer.
+    /// @param[in] buf_size_bytes Source buffer size in bytes.
+    /// @param[in] off_bits Source bit offset.
+    /// @return Deserialized single-precision value.
     static inline float dsdl_runtime_get_f16(const uint8_t* const buf,
                                              const size_t         buf_size_bytes,
                                              const size_t         off_bits)
@@ -524,6 +629,12 @@ extern "C"
                    "The target platform does not support IEEE754 floating point operations.");
     _Static_assert(32U == (sizeof(float) * 8U), "Unsupported floating point model");
 
+    /// @brief Serializes a 32-bit IEEE-754 floating-point value.
+    /// @param[out] buf Destination serialized buffer.
+    /// @param[in] buf_size_bytes Destination buffer size in bytes.
+    /// @param[in] off_bits Destination bit offset.
+    /// @param[in] value Floating-point value to serialize.
+    /// @return `DSDL_RUNTIME_SUCCESS` or a negative error code.
     static inline int8_t dsdl_runtime_set_f32(uint8_t* const buf,
                                               const size_t   buf_size_bytes,
                                               const size_t   off_bits,
@@ -540,6 +651,11 @@ extern "C"
         return dsdl_runtime_set_uxx(buf, buf_size_bytes, off_bits, tmp.in, sizeof(tmp) * 8U);
     }
 
+    /// @brief Deserializes a 32-bit IEEE-754 floating-point value.
+    /// @param[in] buf Source serialized buffer.
+    /// @param[in] buf_size_bytes Source buffer size in bytes.
+    /// @param[in] off_bits Source bit offset.
+    /// @return Deserialized floating-point value.
     static inline float dsdl_runtime_get_f32(const uint8_t* const buf,
                                              const size_t         buf_size_bytes,
                                              const size_t         off_bits)
@@ -561,6 +677,12 @@ extern "C"
                    "The target platform does not support IEEE754 double-precision floating point operations.");
     _Static_assert(64U == (sizeof(double) * 8U), "Unsupported floating point model");
 
+    /// @brief Serializes a 64-bit IEEE-754 floating-point value.
+    /// @param[out] buf Destination serialized buffer.
+    /// @param[in] buf_size_bytes Destination buffer size in bytes.
+    /// @param[in] off_bits Destination bit offset.
+    /// @param[in] value Floating-point value to serialize.
+    /// @return `DSDL_RUNTIME_SUCCESS` or a negative error code.
     static inline int8_t dsdl_runtime_set_f64(uint8_t* const buf,
                                               const size_t   buf_size_bytes,
                                               const size_t   off_bits,
@@ -577,6 +699,11 @@ extern "C"
         return dsdl_runtime_set_uxx(buf, buf_size_bytes, off_bits, tmp.in, sizeof(tmp) * 8U);
     }
 
+    /// @brief Deserializes a 64-bit IEEE-754 floating-point value.
+    /// @param[in] buf Source serialized buffer.
+    /// @param[in] buf_size_bytes Source buffer size in bytes.
+    /// @param[in] off_bits Source bit offset.
+    /// @return Deserialized floating-point value.
     static inline double dsdl_runtime_get_f64(const uint8_t* const buf,
                                               const size_t         buf_size_bytes,
                                               const size_t         off_bits)

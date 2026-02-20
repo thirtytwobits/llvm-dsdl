@@ -38,9 +38,33 @@ find_program(LLVMDSDL_CLANG_FORMAT_EXE
         clang-format-18 clang-format-17 clang-format-16 clang-format-15
 )
 
+find_program(LLVMDSDL_CLANG_TIDY_EXE
+  NAMES clang-tidy clang-tidy-21 clang-tidy-20 clang-tidy-19
+        clang-tidy-18 clang-tidy-17 clang-tidy-16 clang-tidy-15
+)
+
+find_program(LLVMDSDL_IWYU_EXE
+  NAMES include-what-you-use iwyu include-what-you-use-21
+        include-what-you-use-20 include-what-you-use-19
+        include-what-you-use-18 include-what-you-use-17
+        include-what-you-use-16 include-what-you-use-15
+)
+
 if(NOT LLVMDSDL_CLANG_FORMAT_EXE)
   message(WARNING
     "clang-format not found; check-format/format-source targets will fail "
+    "until it is installed.")
+endif()
+
+if(NOT LLVMDSDL_CLANG_TIDY_EXE)
+  message(WARNING
+    "clang-tidy not found; check-clang-tidy target will fail "
+    "until it is installed.")
+endif()
+
+if(NOT LLVMDSDL_IWYU_EXE)
+  message(WARNING
+    "include-what-you-use not found; check-iwyu target will fail "
     "until it is installed.")
 endif()
 
@@ -68,6 +92,34 @@ add_custom_target(format-source
   USES_TERMINAL
   VERBATIM
   COMMENT "Reformatting project source with clang-format"
+)
+
+add_custom_target(check-clang-tidy
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DCLANG_TIDY=${LLVMDSDL_CLANG_TIDY_EXE}
+      -DLLVMDSDL_SOURCE_DIR=${LLVMDSDL_SOURCE_DIR}
+      -DLLVMDSDL_BINARY_DIR=${LLVMDSDL_BINARY_DIR}
+      -P ${LLVMDSDL_SOURCE_DIR}/cmake/CheckClangTidy.cmake
+  USES_TERMINAL
+  VERBATIM
+  COMMENT "Checking source diagnostics with clang-tidy"
+)
+
+add_custom_target(check-iwyu
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DINCLUDE_WHAT_YOU_USE=${LLVMDSDL_IWYU_EXE}
+      -DLLVMDSDL_SOURCE_DIR=${LLVMDSDL_SOURCE_DIR}
+      -DLLVMDSDL_BINARY_DIR=${LLVMDSDL_BINARY_DIR}
+      -P ${LLVMDSDL_SOURCE_DIR}/cmake/CheckIncludeWhatYouUse.cmake
+  USES_TERMINAL
+  VERBATIM
+  COMMENT "Checking source includes with include-what-you-use"
+)
+
+add_custom_target(check-include-what-you-use
+  DEPENDS check-iwyu
 )
 
 add_subdirectory(include/llvmdsdl)

@@ -10,6 +10,7 @@
 #include "llvmdsdl/Frontend/Lexer.h"
 
 #include <cctype>
+#include <utility>
 
 namespace llvmdsdl
 {

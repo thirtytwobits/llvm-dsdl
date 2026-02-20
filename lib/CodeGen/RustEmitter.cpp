@@ -8,21 +8,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/RustEmitter.h"
-#include "llvmdsdl/CodeGen/ArrayWirePlan.h"
-#include "llvmdsdl/CodeGen/HelperBindingRender.h"
-#include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
-#include "llvmdsdl/CodeGen/LoweredRenderIR.h"
-#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
-#include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
-#include "llvmdsdl/CodeGen/TypeStorage.h"
-#include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 
-#include "llvm/ADT/StringExtras.h"
-#include "llvm/Support/FileSystem.h"
-#include "llvm/Support/FormatVariadic.h"
-#include "llvm/Support/raw_ostream.h"
-
-#include <algorithm>
+#include <llvm/ADT/StringRef.h>
+#include <llvm/Support/Error.h>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
@@ -32,9 +20,36 @@
 #include <sstream>
 #include <unordered_map>
 #include <vector>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <system_error>
+#include <utility>
+#include <variant>
+
+#include "llvmdsdl/CodeGen/ArrayWirePlan.h"
+#include "llvmdsdl/CodeGen/HelperBindingRender.h"
+#include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
+#include "llvmdsdl/CodeGen/LoweredRenderIR.h"
+#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
+#include "llvmdsdl/CodeGen/TypeStorage.h"
+#include "llvmdsdl/CodeGen/WireLayoutFacts.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Semantics/BitLengthSet.h"
+#include "llvmdsdl/Semantics/Evaluator.h"
+#include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/Rational.h"
+#include "mlir/IR/BuiltinOps.h"
 
 namespace llvmdsdl
 {
+class DiagnosticEngine;
+
 namespace
 {
 

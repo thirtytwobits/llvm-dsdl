@@ -7,21 +7,40 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#include "llvmdsdl/Transforms/Passes.h"
-#include "llvmdsdl/Transforms/LoweredSerDesContract.h"
-
-#include "mlir/Dialect/EmitC/IR/EmitC.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/Builders.h"
-#include "mlir/Pass/Pass.h"
-
+#include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/Twine.h>
+#include <llvm/ADT/ilist_iterator.h>
+#include <llvm/Support/Casting.h>
+#include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/LogicalResult.h>
+#include <llvm/Support/TypeName.h>
+#include <mlir/IR/Block.h>
+#include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/Diagnostics.h>
+#include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/Location.h>
+#include <mlir/IR/Operation.h>
+#include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/Region.h>
+#include <mlir/Pass/PassRegistry.h>
+#include <mlir/Support/LLVM.h>
 #include <algorithm>
 #include <cstdint>
 #include <set>
 #include <sstream>
 #include <string>
 #include <vector>
+#include <cstddef>
+#include <memory>
+#include <utility>
+
+#include "llvmdsdl/Transforms/LoweredSerDesContract.h"
+#include "llvmdsdl/Transforms/Passes.h"
+#include <mlir/Dialect/EmitC/IR/EmitC.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinOps.h>
+#include <mlir/Pass/Pass.h>
 
 namespace llvmdsdl
 {

@@ -8,21 +8,19 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/CEmitter.h"
-#include "llvmdsdl/CodeGen/TypeStorage.h"
 
-#include "llvmdsdl/Transforms/Passes.h"
-
-#include "mlir/Conversion/Passes.h"
-#include "mlir/Pass/PassManager.h"
-#include "mlir/Target/Cpp/CppEmitter.h"
-#include "mlir/Transforms/Passes.h"
-
-#include "llvm/ADT/StringExtras.h"
-#include "llvm/Support/FileSystem.h"
-#include "llvm/Support/FormatVariadic.h"
-#include "llvm/Support/Path.h"
-#include "llvm/Support/raw_ostream.h"
-
+#include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/ilist_iterator.h>
+#include <llvm/Support/Casting.h>
+#include <llvm/Support/Error.h>
+#include <llvm/Support/LogicalResult.h>
+#include <mlir/IR/Attributes.h>
+#include <mlir/IR/Block.h>
+#include <mlir/IR/Operation.h>
+#include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Region.h>
+#include <mlir/Support/LLVM.h>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
@@ -30,6 +28,28 @@
 #include <sstream>
 #include <unordered_map>
 #include <vector>
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <system_error>
+#include <tuple>
+#include <variant>
+
+#include "llvmdsdl/CodeGen/TypeStorage.h"
+#include "llvmdsdl/Transforms/Passes.h"
+#include "mlir/Conversion/Passes.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Target/Cpp/CppEmitter.h"
+#include "mlir/Transforms/Passes.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Semantics/Evaluator.h"
+#include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/Diagnostics.h"
+#include "llvmdsdl/Support/Rational.h"
+#include "mlir/IR/BuiltinAttributes.h"
 
 namespace llvmdsdl
 {

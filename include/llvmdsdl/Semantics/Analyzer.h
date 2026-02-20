@@ -7,14 +7,13 @@
 #ifndef LLVMDSDL_SEMANTICS_ANALYZER_H
 #define LLVMDSDL_SEMANTICS_ANALYZER_H
 
-#include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Model.h"
-#include "llvmdsdl/Support/Diagnostics.h"
-
 #include "llvm/Support/Error.h"
 
 namespace llvmdsdl
 {
+class DiagnosticEngine;
+struct ASTModule;
 
 /// @file
 /// @brief Semantic analysis entry points.

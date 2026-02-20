@@ -1,14 +1,14 @@
+#include <llvm/Support/LogicalResult.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/EmitC/IR/EmitC.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/DialectRegistry.h>
+
 #include "llvmdsdl/IR/DSDLDialect.h"
 #include "llvmdsdl/Transforms/Passes.h"
-
-#include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/EmitC/IR/EmitC.h"
-#include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
-
 #include "llvm/Support/InitLLVM.h"
-#include "llvm/Support/raw_ostream.h"
 
 int main(int argc, char** argv)
 {

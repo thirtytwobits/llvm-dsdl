@@ -11,17 +11,20 @@
 
 #include "llvmdsdl/IR/DSDLOps.h"
 
-#include "mlir/IR/DialectImplementation.h"
+#include <llvm/Support/Casting.h>  // IWYU pragma: keep
+#include <llvm/Support/LogicalResult.h>  // IWYU pragma: keep
+
+#include "mlir/IR/DialectImplementation.h"  // IWYU pragma: keep
 
 using namespace mlir;
 using namespace mlir::dsdl;
 
-#include "llvmdsdl/IR/DSDLDialect.cpp.inc"
+#include "llvmdsdl/IR/DSDLDialect.cpp.inc"  // IWYU pragma: keep
 
 void DSDLDialect::initialize()
 {
     addOperations<
 #define GET_OP_LIST
-#include "llvmdsdl/IR/DSDLOps.cpp.inc"
+#include "llvmdsdl/IR/DSDLOps.cpp.inc"  // IWYU pragma: keep
         >();
 }

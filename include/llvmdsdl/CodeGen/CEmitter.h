@@ -7,17 +7,15 @@
 #ifndef LLVMDSDL_CODEGEN_CEMITTER_H
 #define LLVMDSDL_CODEGEN_CEMITTER_H
 
-#include "llvmdsdl/Semantics/Model.h"
-#include "llvmdsdl/Support/Diagnostics.h"
+#include <string>
 
 #include "mlir/IR/BuiltinOps.h"
-
 #include "llvm/Support/Error.h"
-
-#include <string>
 
 namespace llvmdsdl
 {
+class DiagnosticEngine;
+struct SemanticModule;
 
 /// @file
 /// @brief C backend emission entry points.

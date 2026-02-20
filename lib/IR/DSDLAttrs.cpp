@@ -8,14 +8,15 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/IR/DSDLAttrs.h"
+#include "llvmdsdl/IR/DSDLDialect.h"  // IWYU pragma: keep
 
-#include "mlir/IR/Builders.h"
-#include "mlir/IR/DialectImplementation.h"
-#include "mlir/IR/OpImplementation.h"
-#include "llvm/ADT/TypeSwitch.h"
+#include "llvm/ADT/TypeSwitch.h"  // IWYU pragma: keep
+#include "mlir/IR/Builders.h"  // IWYU pragma: keep
+#include "mlir/IR/DialectImplementation.h"  // IWYU pragma: keep
+#include "mlir/IR/OpImplementation.h"  // IWYU pragma: keep
 
 using namespace mlir;
 using namespace mlir::dsdl;
 
 #define GET_ATTRDEF_CLASSES
-#include "llvmdsdl/IR/DSDLAttrs.cpp.inc"
+#include "llvmdsdl/IR/DSDLAttrs.cpp.inc"  // IWYU pragma: keep

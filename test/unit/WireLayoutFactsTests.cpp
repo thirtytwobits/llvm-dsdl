@@ -1,6 +1,10 @@
-#include "llvmdsdl/CodeGen/WireLayoutFacts.h"
-
 #include <iostream>
+#include <optional>
+#include <vector>
+
+#include "llvmdsdl/CodeGen/WireLayoutFacts.h"
+#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/Semantics/Model.h"
 
 bool runWireLayoutFactsTests()
 {

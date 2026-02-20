@@ -85,6 +85,23 @@ file(WRITE
   "uint8 y\n"
   "@sealed\n"
 )
+file(WRITE
+  "${fixture_root}/DeepLeaf.1.0.dsdl"
+  "uint8[<=3] payload\n"
+  "@sealed\n"
+)
+file(WRITE
+  "${fixture_root}/DeepInner.1.0.dsdl"
+  "demo.DeepLeaf.1.0 node\n"
+  "demo.DeepLeaf.1.0[<=2] nodes\n"
+  "@sealed\n"
+)
+file(WRITE
+  "${fixture_root}/DeepOuter.1.0.dsdl"
+  "demo.DeepInner.1.0 root\n"
+  "demo.DeepInner.1.0[<=2] children\n"
+  "@sealed\n"
+)
 
 execute_process(
   COMMAND
@@ -156,6 +173,12 @@ if("${CMAKE_MATCH_1}" STREQUAL "")
 endif()
 set(ts_svc_module "${CMAKE_MATCH_1}")
 
+string(REGEX MATCH "export \\* as ([A-Za-z0-9_]+) from \"\\./[^\"]*deep_outer_1_0\";" deep_outer_export "${ts_index_content}")
+if("${CMAKE_MATCH_1}" STREQUAL "")
+  message(FATAL_ERROR "failed to locate deep_outer_1_0 export alias in ${ts_index}")
+endif()
+set(ts_deep_outer_module "${CMAKE_MATCH_1}")
+
 set(c_harness_src "${work_dir}/c_ts_parity_harness.c")
 file(WRITE
   "${c_harness_src}"
@@ -172,6 +195,9 @@ file(WRITE
 #include "demo/Delimited_1_0.h"
 #include "demo/UsesDelimited_1_0.h"
 #include "demo/Svc_1_0.h"
+#include "demo/DeepLeaf_1_0.h"
+#include "demo/DeepInner_1_0.h"
+#include "demo/DeepOuter_1_0.h"
 
 static uint32_t prng_next(uint32_t* state) {
   uint32_t x = *state;
@@ -425,16 +451,16 @@ static int run_scalar_truncated_input(uint32_t* out_checksum) {
   uint8_t bytes[4] = {0};
   size_t size = sizeof(bytes);
   if (demo__Scalar__serialize_(&in_obj, bytes, &size) != 0 || size != 2U) {
-    return 24;
+    return 28;
   }
 
   demo__Scalar out_obj = {0};
   size_t short_size = 1U;
   if (demo__Scalar__deserialize_(&out_obj, bytes, &short_size) != 0) {
-    return 25;
+    return 29;
   }
   if (out_obj.value != 0x56U || short_size != 1U) {
-    return 26;
+    return 30;
   }
 
   uint32_t hash = 2166136261U;
@@ -450,16 +476,16 @@ static int run_svc_request_truncated_input(uint32_t* out_checksum) {
   uint8_t bytes[4] = {0};
   size_t size = sizeof(bytes);
   if (demo__Svc__Request__serialize_(&in_obj, bytes, &size) != 0 || size != 2U) {
-    return 27;
+    return 31;
   }
 
   demo__Svc__Request out_obj = {0};
   size_t short_size = 1U;
   if (demo__Svc__Request__deserialize_(&out_obj, bytes, &short_size) != 0) {
-    return 28;
+    return 32;
   }
   if (out_obj.x != 0x67U || short_size != 1U) {
-    return 29;
+    return 33;
   }
 
   uint32_t hash = 2166136261U;
@@ -474,7 +500,7 @@ static int run_vector_invalid_length_deserialize(uint32_t* out_checksum) {
   size_t size = 1U;
   demo__Vector out_obj = {0};
   if (demo__Vector__deserialize_(&out_obj, bytes, &size) == 0) {
-    return 30;
+    return 34;
   }
   uint32_t hash = 2166136261U;
   hash = hash_u8(hash, 1U);
@@ -488,7 +514,7 @@ static int run_vector_invalid_length_serialize(uint32_t* out_checksum) {
   uint8_t bytes[16] = {0};
   size_t size = sizeof(bytes);
   if (demo__Vector__serialize_(&in_obj, bytes, &size) == 0) {
-    return 31;
+    return 35;
   }
   uint32_t hash = 2166136261U;
   hash = hash_u8(hash, 1U);
@@ -501,7 +527,7 @@ static int run_union_invalid_tag_deserialize(uint32_t* out_checksum) {
   size_t size = 1U;
   demo__UnionTag out_obj = {0};
   if (demo__UnionTag__deserialize_(&out_obj, bytes, &size) == 0) {
-    return 32;
+    return 36;
   }
   uint32_t hash = 2166136261U;
   hash = hash_u8(hash, 1U);
@@ -515,7 +541,7 @@ static int run_delimiter_bad_header_deserialize(uint32_t* out_checksum) {
   uint8_t bytes[16] = {0};
   size_t size = sizeof(bytes);
   if (demo__UsesDelimited__serialize_(&in_obj, bytes, &size) != 0 || size != 5U) {
-    return 33;
+    return 37;
   }
   bytes[0] = 6U;
   bytes[1] = 0U;
@@ -525,7 +551,21 @@ static int run_delimiter_bad_header_deserialize(uint32_t* out_checksum) {
   demo__UsesDelimited out_obj = {0};
   size_t consumed = size;
   if (demo__UsesDelimited__deserialize_(&out_obj, bytes, &consumed) == 0) {
-    return 34;
+    return 38;
+  }
+  uint32_t hash = 2166136261U;
+  hash = hash_u8(hash, 1U);
+  *out_checksum = hash;
+  return 0;
+}
+
+static int run_deep_outer_invalid_length_serialize(uint32_t* out_checksum) {
+  demo__DeepOuter in_obj = {0};
+  in_obj.root.node.payload.count = 4U;
+  uint8_t bytes[256] = {0};
+  size_t size = sizeof(bytes);
+  if (demo__DeepOuter__serialize_(&in_obj, bytes, &size) == 0) {
+    return 39;
   }
   uint32_t hash = 2166136261U;
   hash = hash_u8(hash, 1U);
@@ -620,7 +660,13 @@ int main(int argc, char** argv) {
   printf("PASS delimiter_bad_header_deserialize directed checksum=%08x\n", checksum);
   ++directed_cases;
 
-  printf("PASS c/ts directed coverage union_tag_error=1 delimiter_error=1 length_prefix_error=2 truncation=2\n");
+  if (run_deep_outer_invalid_length_serialize(&checksum) != 0) {
+    return 114;
+  }
+  printf("PASS deep_outer_invalid_length_serialize directed checksum=%08x\n", checksum);
+  ++directed_cases;
+
+  printf("PASS c/ts directed coverage union_tag_error=1 delimiter_error=1 length_prefix_error=3 truncation=2\n");
   printf("PASS c/ts inventory random_cases=%zu directed_cases=%zu\n", random_cases, directed_cases);
   printf("PASS c/ts parity random_iterations=%zu random_cases=%zu directed_cases=%zu\n",
          iterations,
@@ -648,6 +694,9 @@ execute_process(
       "${c_out}/demo/Delimited_1_0.c"
       "${c_out}/demo/UsesDelimited_1_0.c"
       "${c_out}/demo/Svc_1_0.c"
+      "${c_out}/demo/DeepLeaf_1_0.c"
+      "${c_out}/demo/DeepInner_1_0.c"
+      "${c_out}/demo/DeepOuter_1_0.c"
       -o "${c_harness_bin}"
   RESULT_VARIABLE c_cc_result
   OUTPUT_VARIABLE c_cc_stdout
@@ -673,7 +722,7 @@ endif()
 
 set(ts_harness_template
   [=[
-import { @ts_scalar_module@, @ts_vector_module@, @ts_union_module@, @ts_delimited_module@, @ts_svc_module@ } from "./index";
+import { @ts_scalar_module@, @ts_vector_module@, @ts_union_module@, @ts_delimited_module@, @ts_svc_module@, @ts_deep_outer_module@ } from "./index";
 
 const randomIterations = @random_iterations@;
 
@@ -945,6 +994,28 @@ function runDelimiterBadHeaderDeserialize(): number {
   return hash >>> 0;
 }
 
+function runDeepOuterInvalidLengthSerialize(): number {
+  const value: @ts_deep_outer_module@.DeepOuter_1_0 = {
+    root: {
+      node: { payload: [1, 2, 3, 4] },
+      nodes: [],
+    },
+    children: [],
+  };
+  let rejected = false;
+  try {
+    @ts_deep_outer_module@.serializeDeepOuter_1_0(value);
+  } catch (_err) {
+    rejected = true;
+  }
+  if (!rejected) {
+    throw new Error("deep outer invalid length serialize unexpectedly accepted");
+  }
+  let hash = 0x811c9dc5 >>> 0;
+  hash = hashU8(hash, 1);
+  return hash >>> 0;
+}
+
 let randomCases = 0;
 let directedCases = 0;
 
@@ -996,7 +1067,11 @@ checksum = runDelimiterBadHeaderDeserialize();
 console.log(`PASS delimiter_bad_header_deserialize directed checksum=${hex32(checksum)}`);
 directedCases += 1;
 
-console.log("PASS c/ts directed coverage union_tag_error=1 delimiter_error=1 length_prefix_error=2 truncation=2");
+checksum = runDeepOuterInvalidLengthSerialize();
+console.log(`PASS deep_outer_invalid_length_serialize directed checksum=${hex32(checksum)}`);
+directedCases += 1;
+
+console.log("PASS c/ts directed coverage union_tag_error=1 delimiter_error=1 length_prefix_error=3 truncation=2");
 console.log(`PASS c/ts inventory random_cases=${randomCases} directed_cases=${directedCases}`);
 console.log(`PASS c/ts parity random_iterations=${randomIterations} random_cases=${randomCases} directed_cases=${directedCases}`);
 ]=]
@@ -1059,7 +1134,7 @@ set(parity_output "${c_output}")
 
 set(min_random_iterations 128)
 set(expected_random_cases 6)
-set(expected_directed_cases 6)
+set(expected_directed_cases 7)
 string(REGEX MATCH
   "PASS c/ts parity random_iterations=([0-9]+) random_cases=([0-9]+) directed_cases=([0-9]+)"
   parity_summary_line
@@ -1133,6 +1208,7 @@ set(required_markers
   "PASS vector_invalid_length_serialize directed checksum="
   "PASS union_invalid_tag_deserialize directed checksum="
   "PASS delimiter_bad_header_deserialize directed checksum="
+  "PASS deep_outer_invalid_length_serialize directed checksum="
 )
 foreach(marker IN LISTS required_markers)
   string(FIND "${parity_output}" "${marker}" marker_pos)
@@ -1148,7 +1224,7 @@ string(REGEX MATCH
 if(NOT directed_coverage_line)
   message(FATAL_ERROR "missing C/TS directed coverage summary marker")
 endif()
-if(NOT CMAKE_MATCH_1 EQUAL 1 OR NOT CMAKE_MATCH_2 EQUAL 1 OR NOT CMAKE_MATCH_3 EQUAL 2 OR NOT CMAKE_MATCH_4 EQUAL 2)
+if(NOT CMAKE_MATCH_1 EQUAL 1 OR NOT CMAKE_MATCH_2 EQUAL 1 OR NOT CMAKE_MATCH_3 EQUAL 3 OR NOT CMAKE_MATCH_4 EQUAL 2)
   message(FATAL_ERROR
     "C/TS directed coverage mismatch: union_tag_error=${CMAKE_MATCH_1}, delimiter_error=${CMAKE_MATCH_2}, "
     "length_prefix_error=${CMAKE_MATCH_3}, truncation=${CMAKE_MATCH_4}")

@@ -1,8 +1,13 @@
-#include "llvmdsdl/CodeGen/HelperBindingRender.h"
-
 #include <iostream>
 #include <string>
 #include <vector>
+#include <functional>
+#include <optional>
+
+#include "llvmdsdl/CodeGen/HelperBindingRender.h"
+#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+#include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
+#include "llvmdsdl/Frontend/AST.h"
 
 namespace
 {

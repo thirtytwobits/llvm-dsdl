@@ -7,14 +7,16 @@
 #ifndef LLVMDSDL_CODEGEN_SERDES_STATEMENT_PLAN_H
 #define LLVMDSDL_CODEGEN_SERDES_STATEMENT_PLAN_H
 
-#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
-
 #include <cstdint>
 #include <optional>
 #include <vector>
 
 namespace llvmdsdl
 {
+struct LoweredFieldFacts;
+struct LoweredSectionFacts;
+struct SemanticField;
+struct SemanticSection;
 
 /// @file
 /// @brief Deterministic lowered statement ordering for section body emission.

@@ -7,17 +7,18 @@
 #ifndef LLVMDSDL_CODEGEN_CPPEMITTER_H
 #define LLVMDSDL_CODEGEN_CPPEMITTER_H
 
-#include "llvmdsdl/Semantics/Model.h"
-#include "llvmdsdl/Support/Diagnostics.h"
-
-#include "mlir/IR/BuiltinOps.h"
+#include <string>
 
 #include "llvm/Support/Error.h"
 
-#include <string>
+namespace mlir {
+class ModuleOp;
+}  // namespace mlir
 
 namespace llvmdsdl
 {
+class DiagnosticEngine;
+struct SemanticModule;
 
 /// @file
 /// @brief C++ backend emission entry points.

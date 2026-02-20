@@ -7,12 +7,11 @@
 #ifndef LLVMDSDL_FRONTEND_AST_PRINTER_H
 #define LLVMDSDL_FRONTEND_AST_PRINTER_H
 
-#include "llvmdsdl/Frontend/AST.h"
-
 #include <string>
 
 namespace llvmdsdl
 {
+struct ASTModule;
 
 /// @file
 /// @brief AST pretty-printer entry points.

@@ -7,9 +7,6 @@
 #ifndef LLVMDSDL_CODEGEN_HELPER_BINDING_RENDER_H
 #define LLVMDSDL_CODEGEN_HELPER_BINDING_RENDER_H
 
-#include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
-#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
-
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -17,6 +14,8 @@
 
 namespace llvmdsdl
 {
+struct ScalarHelperDescriptor;
+struct SectionHelperBindingPlan;
 
 /// @file
 /// @brief Render helpers for language-specific helper-binding snippets.

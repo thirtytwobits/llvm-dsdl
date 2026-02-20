@@ -9,6 +9,8 @@
 
 #include "llvmdsdl/Support/Diagnostics.h"
 
+#include <utility>
+
 namespace llvmdsdl
 {
 

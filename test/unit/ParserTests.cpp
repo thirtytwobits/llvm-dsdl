@@ -1,8 +1,15 @@
+#include <llvm/Support/Error.h>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <utility>
+#include <variant>
+#include <vector>
+
 #include "llvmdsdl/Frontend/Lexer.h"
 #include "llvmdsdl/Frontend/Parser.h"
 #include "llvmdsdl/Support/Diagnostics.h"
-
-#include <iostream>
+#include "llvmdsdl/Frontend/AST.h"
 
 bool runParserTests()
 {

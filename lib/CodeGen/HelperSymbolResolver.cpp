@@ -9,8 +9,12 @@
 
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
 
+#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
+
 namespace llvmdsdl
 {
+struct SemanticFieldType;
 
 std::string resolveSectionCapacityCheckHelperSymbol(const LoweredSectionFacts* const sectionFacts)
 {

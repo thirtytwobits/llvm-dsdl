@@ -9,13 +9,30 @@
 
 #include "llvmdsdl/Lowering/LowerToMLIR.h"
 
-#include "llvmdsdl/IR/DSDLOps.h"
-
-#include "mlir/IR/Builders.h"
-
+#include <llvm/ADT/StringRef.h>
+#include <mlir/IR/Attributes.h>
+#include <mlir/IR/Block.h>
+#include <mlir/IR/Location.h>
+#include <mlir/IR/Operation.h>
+#include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Region.h>
 #include <algorithm>
 #include <cctype>
 #include <set>
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include "mlir/IR/Builders.h"
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Semantics/BitLengthSet.h"
+#include "llvmdsdl/Semantics/Evaluator.h"
+#include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/Diagnostics.h"
+#include "mlir/IR/BuiltinAttributes.h"
 
 namespace llvmdsdl
 {

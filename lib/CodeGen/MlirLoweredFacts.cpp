@@ -10,18 +10,33 @@
 
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 
-#include "llvmdsdl/Transforms/Passes.h"
-#include "llvmdsdl/Transforms/LoweredSerDesContract.h"
-
-#include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Pass/Pass.h"
-#include "mlir/Pass/PassManager.h"
-
+#include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/ilist_iterator.h>
+#include <llvm/Support/Casting.h>
+#include <llvm/Support/LogicalResult.h>
+#include <mlir/IR/Block.h>
+#include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/Operation.h>
+#include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Region.h>
+#include <mlir/Support/LLVM.h>
 #include <algorithm>
 #include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
+
+#include "llvmdsdl/Transforms/Passes.h"
+#include "llvmdsdl/Transforms/LoweredSerDesContract.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Pass/Pass.h"  // IWYU pragma: keep
+#include "mlir/Pass/PassManager.h"
+#include "llvmdsdl/Frontend/AST.h"
+#include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/Diagnostics.h"
+#include "mlir/IR/BuiltinOps.h"
 
 namespace llvmdsdl
 {

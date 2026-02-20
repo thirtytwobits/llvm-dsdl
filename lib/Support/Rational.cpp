@@ -10,7 +10,6 @@
 #include "llvmdsdl/Support/Rational.h"
 
 #include <cstdlib>
-#include <limits>
 #include <sstream>
 
 namespace llvmdsdl
