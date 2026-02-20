@@ -49,4 +49,32 @@ LoweredBodyRenderIR buildLoweredBodyRenderIR(const SemanticSection&       sectio
     return out;
 }
 
+void forEachLoweredRenderStep(const LoweredBodyRenderIR& renderIR, const LoweredRenderStepCallbacks& callbacks)
+{
+    for (const auto& step : renderIR.steps)
+    {
+        switch (step.kind)
+        {
+        case LoweredRenderStepKind::UnionDispatch:
+            if (callbacks.onUnionDispatch)
+            {
+                callbacks.onUnionDispatch(step.unionBranches);
+            }
+            break;
+        case LoweredRenderStepKind::Field:
+            if (step.fieldStep.field != nullptr && callbacks.onField)
+            {
+                callbacks.onField(step.fieldStep);
+            }
+            break;
+        case LoweredRenderStepKind::Padding:
+            if (step.fieldStep.field != nullptr && callbacks.onPadding)
+            {
+                callbacks.onPadding(step.fieldStep);
+            }
+            break;
+        }
+    }
+}
+
 }  // namespace llvmdsdl

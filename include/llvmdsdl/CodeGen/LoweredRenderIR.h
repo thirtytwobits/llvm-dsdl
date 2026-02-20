@@ -10,6 +10,7 @@
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
 #include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
 
+#include <functional>
 #include <vector>
 
 namespace llvmdsdl
@@ -55,6 +56,19 @@ struct LoweredBodyRenderIR final
     SectionHelperBindingPlan helperBindings;
 };
 
+/// @brief Callback bundle for traversing lowered render steps.
+struct LoweredRenderStepCallbacks final
+{
+    /// @brief Called for union-dispatch steps.
+    std::function<void(const std::vector<PlannedFieldStep>&)> onUnionDispatch;
+
+    /// @brief Called for non-padding field steps.
+    std::function<void(const PlannedFieldStep&)> onField;
+
+    /// @brief Called for padding steps.
+    std::function<void(const PlannedFieldStep&)> onPadding;
+};
+
 /// @brief Builds render IR from semantic section and lowered metadata.
 /// @param[in] section Semantic section.
 /// @param[in] sectionFacts Lowered section facts.
@@ -63,6 +77,11 @@ struct LoweredBodyRenderIR final
 LoweredBodyRenderIR buildLoweredBodyRenderIR(const SemanticSection&     section,
                                              const LoweredSectionFacts* sectionFacts,
                                              HelperBindingDirection     direction);
+
+/// @brief Traverses lowered render steps with shared dispatch semantics.
+/// @param[in] renderIR Lowered render body.
+/// @param[in] callbacks Callback bundle invoked per step kind.
+void forEachLoweredRenderStep(const LoweredBodyRenderIR& renderIR, const LoweredRenderStepCallbacks& callbacks);
 
 }  // namespace llvmdsdl
 

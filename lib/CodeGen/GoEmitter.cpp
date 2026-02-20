@@ -535,40 +535,27 @@ public:
             emitLine(out, 1, "}");
         }
 
-        for (const auto& step : renderIR.steps)
-        {
-            switch (step.kind)
-            {
-            case LoweredRenderStepKind::UnionDispatch:
-                emitSerializeUnion(out, section, step.unionBranches, 1, sectionFacts, renderIR.helperBindings);
-                break;
-            case LoweredRenderStepKind::Field: {
-                const auto* const field = step.fieldStep.field;
-                if (field == nullptr)
-                {
-                    continue;
-                }
-                emitAlignSerialize(out, field->resolvedType.alignmentBits, 1);
-                emitSerializeAny(out,
-                                 field->resolvedType,
-                                 "obj." + toExportedIdent(field->name),
-                                 1,
-                                 step.fieldStep.arrayLengthPrefixBits,
-                                 step.fieldStep.fieldFacts);
-                break;
-            }
-            case LoweredRenderStepKind::Padding: {
-                const auto* const field = step.fieldStep.field;
-                if (field == nullptr)
-                {
-                    continue;
-                }
-                emitAlignSerialize(out, field->resolvedType.alignmentBits, 1);
-                emitSerializePadding(out, field->resolvedType, 1);
-                break;
-            }
-            }
-        }
+        LoweredRenderStepCallbacks callbacks;
+        callbacks.onUnionDispatch =
+            [this, &out, &section, sectionFacts, &renderIR](const std::vector<PlannedFieldStep>& unionBranches) {
+                emitSerializeUnion(out, section, unionBranches, 1, sectionFacts, renderIR.helperBindings);
+            };
+        callbacks.onField = [this, &out](const PlannedFieldStep& fieldStep) {
+            const auto* const field = fieldStep.field;
+            emitAlignSerialize(out, field->resolvedType.alignmentBits, 1);
+            emitSerializeAny(out,
+                             field->resolvedType,
+                             "obj." + toExportedIdent(field->name),
+                             1,
+                             fieldStep.arrayLengthPrefixBits,
+                             fieldStep.fieldFacts);
+        };
+        callbacks.onPadding = [this, &out](const PlannedFieldStep& fieldStep) {
+            const auto* const field = fieldStep.field;
+            emitAlignSerialize(out, field->resolvedType.alignmentBits, 1);
+            emitSerializePadding(out, field->resolvedType, 1);
+        };
+        forEachLoweredRenderStep(renderIR, callbacks);
 
         emitAlignSerialize(out, 8, 1);
         emitLine(out, 1, "return dsdlruntime.DSDL_RUNTIME_SUCCESS, offsetBits / 8");
@@ -590,40 +577,27 @@ public:
         const auto renderIR = buildLoweredBodyRenderIR(section, sectionFacts, HelperBindingDirection::Deserialize);
         emitDeserializeMlirHelperBindings(out, renderIR.helperBindings, 1);
 
-        for (const auto& step : renderIR.steps)
-        {
-            switch (step.kind)
-            {
-            case LoweredRenderStepKind::UnionDispatch:
-                emitDeserializeUnion(out, section, step.unionBranches, 1, sectionFacts, renderIR.helperBindings);
-                break;
-            case LoweredRenderStepKind::Field: {
-                const auto* const field = step.fieldStep.field;
-                if (field == nullptr)
-                {
-                    continue;
-                }
-                emitAlignDeserialize(out, field->resolvedType.alignmentBits, 1);
-                emitDeserializeAny(out,
-                                   field->resolvedType,
-                                   "obj." + toExportedIdent(field->name),
-                                   1,
-                                   step.fieldStep.arrayLengthPrefixBits,
-                                   step.fieldStep.fieldFacts);
-                break;
-            }
-            case LoweredRenderStepKind::Padding: {
-                const auto* const field = step.fieldStep.field;
-                if (field == nullptr)
-                {
-                    continue;
-                }
-                emitAlignDeserialize(out, field->resolvedType.alignmentBits, 1);
-                emitDeserializePadding(out, field->resolvedType, 1);
-                break;
-            }
-            }
-        }
+        LoweredRenderStepCallbacks callbacks;
+        callbacks.onUnionDispatch =
+            [this, &out, &section, sectionFacts, &renderIR](const std::vector<PlannedFieldStep>& unionBranches) {
+                emitDeserializeUnion(out, section, unionBranches, 1, sectionFacts, renderIR.helperBindings);
+            };
+        callbacks.onField = [this, &out](const PlannedFieldStep& fieldStep) {
+            const auto* const field = fieldStep.field;
+            emitAlignDeserialize(out, field->resolvedType.alignmentBits, 1);
+            emitDeserializeAny(out,
+                               field->resolvedType,
+                               "obj." + toExportedIdent(field->name),
+                               1,
+                               fieldStep.arrayLengthPrefixBits,
+                               fieldStep.fieldFacts);
+        };
+        callbacks.onPadding = [this, &out](const PlannedFieldStep& fieldStep) {
+            const auto* const field = fieldStep.field;
+            emitAlignDeserialize(out, field->resolvedType.alignmentBits, 1);
+            emitDeserializePadding(out, field->resolvedType, 1);
+        };
+        forEachLoweredRenderStep(renderIR, callbacks);
 
         emitAlignDeserialize(out, 8, 1);
         emitLine(out, 1, "consumedBits := dsdlruntime.ChooseMin(offsetBits, capacityBits)");

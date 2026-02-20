@@ -40,6 +40,8 @@ The following project rules are retained and should not regress:
 
 Objective: finish optional-stretch convergence so backends are thin render adapters over shared lowered products.
 
+Status: Completed on February 19, 2026.
+
 Tasks:
 
 1. Inventory remaining backend-local semantic traversal branches in:
@@ -56,6 +58,29 @@ Acceptance:
 1. No new backend-local semantic fallback paths introduced.
 2. Existing parity and integration suites remain green, including optimized lanes.
 3. `DESIGN.md` reflects final shared-vs-backend boundary with concrete examples.
+
+Completion evidence (February 19, 2026):
+
+1. Added shared lowered render-step traversal API in:
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/include/llvmdsdl/CodeGen/LoweredRenderIR.h`
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/lib/CodeGen/LoweredRenderIR.cpp`
+2. Rewired C++/Rust/Go emitters to use the shared traversal dispatch instead of duplicating step-kind walk logic:
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/lib/CodeGen/CppEmitter.cpp`
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/lib/CodeGen/RustEmitter.cpp`
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/lib/CodeGen/GoEmitter.cpp`
+3. Moved TypeScript runtime section semantic planning out of the emitter into shared planning module:
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/include/llvmdsdl/CodeGen/TsLoweredPlan.h`
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/lib/CodeGen/TsLoweredPlan.cpp`
+   - emitter now consumes shared TS runtime plans in `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/lib/CodeGen/TsEmitter.cpp`
+4. Added/expanded unit coverage:
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/test/unit/LoweredRenderIRTests.cpp`
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/test/unit/TsLoweredPlanTests.cpp`
+5. Validation commands:
+   - `cmake --build build/dev-homebrew --target format-source -j1`
+   - `cmake --build build/dev-homebrew --target check-format -j1`
+   - `cmake --build build/dev-homebrew --target llvmdsdl-unit-tests -j4`
+   - `ctest --test-dir build/dev-homebrew -R llvmdsdl-unit-tests --output-on-failure`
+   - `ctest --test-dir build/dev-homebrew --output-on-failure` (`91/91` passed)
 
 ## Workstream B: Profile and Runtime Specialization Expansion (Priority P1)
 

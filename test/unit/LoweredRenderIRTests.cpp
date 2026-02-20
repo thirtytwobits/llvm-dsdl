@@ -1,6 +1,8 @@
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 
 #include <iostream>
+#include <string>
+#include <vector>
 
 bool runLoweredRenderIRTests()
 {
@@ -51,6 +53,24 @@ bool runLoweredRenderIRTests()
             std::cerr << "lowered render ir padding step mismatch\n";
             return false;
         }
+
+        std::vector<std::string>             visited;
+        llvmdsdl::LoweredRenderStepCallbacks callbacks;
+        callbacks.onField = [&visited](const llvmdsdl::PlannedFieldStep& step) {
+            visited.push_back("field:" + step.field->name);
+        };
+        callbacks.onPadding = [&visited](const llvmdsdl::PlannedFieldStep& step) {
+            visited.push_back("padding:" + step.field->name);
+        };
+        callbacks.onUnionDispatch = [&visited](const std::vector<llvmdsdl::PlannedFieldStep>&) {
+            visited.push_back("union");
+        };
+        llvmdsdl::forEachLoweredRenderStep(renderIR, callbacks);
+        if (visited.size() != 2U || visited[0] != "field:scalar" || visited[1] != "padding:_pad0")
+        {
+            std::cerr << "lowered render step traversal mismatch for non-union plan\n";
+            return false;
+        }
     }
 
     {
@@ -99,6 +119,47 @@ bool runLoweredRenderIRTests()
         if (!renderIR.helperBindings.unionTagMask || renderIR.helperBindings.unionTagMask->symbol != "tag_des")
         {
             std::cerr << "lowered render ir union helper mismatch\n";
+            return false;
+        }
+
+        std::vector<std::string>             visited;
+        llvmdsdl::LoweredRenderStepCallbacks callbacks;
+        callbacks.onUnionDispatch = [&visited](const std::vector<llvmdsdl::PlannedFieldStep>& branches) {
+            visited.push_back("union");
+            for (const auto& branch : branches)
+            {
+                visited.push_back("branch:" + branch.field->name);
+            }
+        };
+        callbacks.onField   = [&visited](const llvmdsdl::PlannedFieldStep&) { visited.push_back("field"); };
+        callbacks.onPadding = [&visited](const llvmdsdl::PlannedFieldStep&) { visited.push_back("padding"); };
+        llvmdsdl::forEachLoweredRenderStep(renderIR, callbacks);
+        if (visited.size() != 3U || visited[0] != "union" || visited[1] != "branch:beta" ||
+            visited[2] != "branch:alpha")
+        {
+            std::cerr << "lowered render step traversal mismatch for union plan\n";
+            return false;
+        }
+    }
+
+    {
+        llvmdsdl::LoweredBodyRenderIR renderIR;
+        llvmdsdl::LoweredRenderStep   nullFieldStep;
+        nullFieldStep.kind = llvmdsdl::LoweredRenderStepKind::Field;
+        renderIR.steps.push_back(nullFieldStep);
+        llvmdsdl::LoweredRenderStep nullPaddingStep;
+        nullPaddingStep.kind = llvmdsdl::LoweredRenderStepKind::Padding;
+        renderIR.steps.push_back(nullPaddingStep);
+
+        std::size_t                          fieldCalls   = 0U;
+        std::size_t                          paddingCalls = 0U;
+        llvmdsdl::LoweredRenderStepCallbacks callbacks;
+        callbacks.onField   = [&fieldCalls](const llvmdsdl::PlannedFieldStep&) { ++fieldCalls; };
+        callbacks.onPadding = [&paddingCalls](const llvmdsdl::PlannedFieldStep&) { ++paddingCalls; };
+        llvmdsdl::forEachLoweredRenderStep(renderIR, callbacks);
+        if (fieldCalls != 0U || paddingCalls != 0U)
+        {
+            std::cerr << "lowered render traversal should skip null field/padding steps\n";
             return false;
         }
     }

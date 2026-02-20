@@ -179,5 +179,102 @@ bool runTsLoweredPlanTests()
         }
     }
 
+    {
+        llvmdsdl::SemanticSection section;
+        section.maxBitLength = 32;
+
+        llvmdsdl::SemanticField counter;
+        counter.name                        = "counter";
+        counter.resolvedType.scalarCategory = llvmdsdl::SemanticScalarCategory::UnsignedInt;
+        counter.resolvedType.bitLength      = 8;
+        section.fields.push_back(counter);
+
+        llvmdsdl::SemanticField payload;
+        payload.name                               = "payload";
+        payload.resolvedType.scalarCategory        = llvmdsdl::SemanticScalarCategory::UnsignedInt;
+        payload.resolvedType.bitLength             = 8;
+        payload.resolvedType.arrayKind             = llvmdsdl::ArrayKind::VariableInclusive;
+        payload.resolvedType.arrayCapacity         = 4;
+        payload.resolvedType.arrayLengthPrefixBits = 8;
+        section.fields.push_back(payload);
+
+        llvmdsdl::LoweredSectionFacts facts;
+        facts.fieldsByName["counter"].stepIndex             = 20;
+        facts.fieldsByName["payload"].stepIndex             = 10;
+        facts.fieldsByName["payload"].arrayLengthPrefixBits = 12;
+
+        auto runtimePlanOrErr = llvmdsdl::buildTsRuntimeSectionPlan(section, &facts);
+        if (!runtimePlanOrErr)
+        {
+            std::cerr << "ts runtime plan non-union unexpectedly failed: "
+                      << llvm::toString(runtimePlanOrErr.takeError()) << "\n";
+            return false;
+        }
+        const auto& runtimePlan = *runtimePlanOrErr;
+        if (runtimePlan.isUnion || runtimePlan.fields.size() != 2U)
+        {
+            std::cerr << "ts runtime plan non-union shape mismatch\n";
+            return false;
+        }
+        if (runtimePlan.fields[0].fieldName != "payload" ||
+            runtimePlan.fields[0].arrayKind != llvmdsdl::TsRuntimeArrayKind::Variable ||
+            runtimePlan.fields[0].arrayLengthPrefixBits != 12)
+        {
+            std::cerr << "ts runtime plan non-union array metadata mismatch\n";
+            return false;
+        }
+        if (runtimePlan.fields[1].fieldName != "counter" ||
+            runtimePlan.fields[1].kind != llvmdsdl::TsRuntimeFieldKind::Unsigned)
+        {
+            std::cerr << "ts runtime plan non-union scalar metadata mismatch\n";
+            return false;
+        }
+    }
+
+    {
+        llvmdsdl::SemanticSection section;
+        section.isUnion      = true;
+        section.maxBitLength = 24;
+
+        llvmdsdl::SemanticField alpha;
+        alpha.name                        = "alpha";
+        alpha.unionOptionIndex            = 2;
+        alpha.unionTagBits                = 3;
+        alpha.resolvedType.scalarCategory = llvmdsdl::SemanticScalarCategory::UnsignedInt;
+        alpha.resolvedType.bitLength      = 8;
+        section.fields.push_back(alpha);
+
+        llvmdsdl::SemanticField beta;
+        beta.name                        = "beta";
+        beta.unionOptionIndex            = 1;
+        beta.unionTagBits                = 3;
+        beta.resolvedType.scalarCategory = llvmdsdl::SemanticScalarCategory::SignedInt;
+        beta.resolvedType.bitLength      = 8;
+        section.fields.push_back(beta);
+
+        llvmdsdl::LoweredSectionFacts facts;
+        facts.fieldsByName["alpha"].stepIndex = 20;
+        facts.fieldsByName["beta"].stepIndex  = 10;
+
+        auto runtimePlanOrErr = llvmdsdl::buildTsRuntimeSectionPlan(section, &facts);
+        if (!runtimePlanOrErr)
+        {
+            std::cerr << "ts runtime plan union unexpectedly failed: " << llvm::toString(runtimePlanOrErr.takeError())
+                      << "\n";
+            return false;
+        }
+        const auto& runtimePlan = *runtimePlanOrErr;
+        if (!runtimePlan.isUnion || runtimePlan.unionTagBits != 3 || runtimePlan.fields.size() != 2U)
+        {
+            std::cerr << "ts runtime plan union shape mismatch\n";
+            return false;
+        }
+        if (runtimePlan.fields[0].unionOptionIndex != 1 || runtimePlan.fields[1].unionOptionIndex != 2)
+        {
+            std::cerr << "ts runtime plan union option sorting mismatch\n";
+            return false;
+        }
+    }
+
     return true;
 }
