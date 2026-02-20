@@ -1,4 +1,11 @@
 //===----------------------------------------------------------------------===//
+//
+// Part of the OpenCyphal project, under the MIT licence
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+
+//===----------------------------------------------------------------------===//
 ///
 /// @file
 /// Declarations for DSDL MLIR pass factories and registration entry points.

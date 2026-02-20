@@ -1,4 +1,11 @@
 //===----------------------------------------------------------------------===//
+//
+// Part of the OpenCyphal project, under the MIT licence
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+
+//===----------------------------------------------------------------------===//
 ///
 /// @file
 /// Descriptor types and builder APIs for backend serdes helper generation.

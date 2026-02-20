@@ -1,4 +1,11 @@
 //===----------------------------------------------------------------------===//
+//
+// Part of the OpenCyphal project, under the MIT licence
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+
+//===----------------------------------------------------------------------===//
 ///
 /// @file
 /// Abstract syntax tree declarations representing parsed DSDL definitions.

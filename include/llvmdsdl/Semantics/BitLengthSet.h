@@ -1,4 +1,11 @@
 //===----------------------------------------------------------------------===//
+//
+// Part of the OpenCyphal project, under the MIT licence
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+
+//===----------------------------------------------------------------------===//
 ///
 /// @file
 /// Symbolic bit-length set declarations used by semantic analysis and layout reasoning.

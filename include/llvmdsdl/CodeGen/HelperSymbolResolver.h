@@ -1,4 +1,11 @@
 //===----------------------------------------------------------------------===//
+//
+// Part of the OpenCyphal project, under the MIT licence
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+
+//===----------------------------------------------------------------------===//
 ///
 /// @file
 /// APIs for resolving backend helper symbols from lowered metadata and semantic field types.

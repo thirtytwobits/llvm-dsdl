@@ -1,3 +1,10 @@
+//===----------------------------------------------------------------------===//
+//
+// Part of the OpenCyphal project, under the MIT licence
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>

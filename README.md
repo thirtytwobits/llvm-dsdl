@@ -8,6 +8,8 @@ Canonical project docs:
 - `DEMO.md`: 5-minute demo flow (quick + scale-up paths).
 - `DESIGN.md`: architecture snapshot.
 - `CONTRIBUTING.md` section 15: release readiness runbook.
+- `LICENSE.md`: project license (MIT).
+- `THIRD_PARTY_NOTICES.md`: third-party licensing notices.
 
 It currently provides:
 
@@ -103,7 +105,20 @@ cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target format-
 # Static analysis helpers.
 cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target check-clang-tidy -j1
 cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target check-iwyu -j1
+
+# LLVM source-based coverage (configure with coverage enabled first).
+cmake -S . -B build/coverage -G "Ninja Multi-Config" \
+  -DLLVM_DIR=/opt/homebrew/opt/llvm/lib/cmake/llvm \
+  -DMLIR_DIR=/opt/homebrew/opt/llvm/lib/cmake/mlir \
+  -DLLVMDSDL_ENABLE_LLVM_COVERAGE=ON
+cmake --build build/coverage --config RelWithDebInfo --target coverage-report -j1
 ```
+
+Coverage outputs:
+
+- `build/coverage/coverage/RelWithDebInfo/summary.txt`
+- `build/coverage/coverage/RelWithDebInfo/coverage.lcov`
+- `build/coverage/coverage/RelWithDebInfo/html/index.html`
 
 ## Release Readiness
 

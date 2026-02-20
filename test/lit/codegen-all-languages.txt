@@ -1,0 +1,71 @@
+# RUN: rm -rf %t && mkdir -p %t
+# RUN: %dsdlc cpp --root-namespace-dir %S/fixtures --cpp-profile both --out-dir %t/cpp 2>&1 | FileCheck %s --check-prefix=CPP_SUMMARY
+# RUN: test -f %t/cpp/std/fixtures/vendor/Type_1_0.hpp
+# RUN: test -f %t/cpp/pmr/fixtures/vendor/Type_1_0.hpp
+# RUN: cat %t/cpp/std/fixtures/vendor/Type_1_0.hpp | FileCheck %s --check-prefix=CPP_STD
+# RUN: cat %t/cpp/pmr/fixtures/vendor/Type_1_0.hpp | FileCheck %s --check-prefix=CPP_PMR
+
+# RUN: %dsdlc rust --root-namespace-dir %S/fixtures --rust-profile std --rust-crate-name llvmdsdl_smoke_std --out-dir %t/rust-std 2>&1 | FileCheck %s --check-prefix=RUST_STD_SUMMARY
+# RUN: test -f %t/rust-std/src/fixtures/vendor/helpers_1_0.rs
+# RUN: cat %t/rust-std/Cargo.toml | FileCheck %s --check-prefix=RUST_STD
+
+# RUN: %dsdlc rust --root-namespace-dir %S/fixtures --rust-profile no-std-alloc --rust-runtime-specialization fast --rust-crate-name llvmdsdl_smoke_fast --out-dir %t/rust-fast 2>&1 | FileCheck %s --check-prefix=RUST_FAST_SUMMARY
+# RUN: test -f %t/rust-fast/src/fixtures/vendor/helpers_1_0.rs
+# RUN: cat %t/rust-fast/Cargo.toml | FileCheck %s --check-prefix=RUST_FAST
+
+# RUN: %dsdlc go --root-namespace-dir %S/fixtures --go-module demo/generated/smoke --out-dir %t/go 2>&1 | FileCheck %s --check-prefix=GO_SUMMARY
+# RUN: test -f %t/go/go.mod
+# RUN: test -f %t/go/dsdlruntime/dsdl_runtime.go
+# RUN: test -f %t/go/fixtures/vendor/helpers_1_0.go
+# RUN: cat %t/go/go.mod | FileCheck %s --check-prefix=GO_MODULE
+
+# RUN: %dsdlc ts --root-namespace-dir %S/fixtures --ts-module demo_ts_smoke_portable --ts-runtime-specialization portable --out-dir %t/ts-portable 2>&1 | FileCheck %s --check-prefix=TS_PORTABLE_SUMMARY
+# RUN: test -f %t/ts-portable/dsdl_runtime.ts
+# RUN: test -f %t/ts-portable/fixtures/vendor/helpers_1_0.ts
+# RUN: cat %t/ts-portable/package.json | FileCheck %s --check-prefix=TS_PORTABLE_PACKAGE
+# RUN: cat %t/ts-portable/dsdl_runtime.ts | FileCheck %s --check-prefix=TS_PORTABLE_RUNTIME
+
+# RUN: %dsdlc ts --root-namespace-dir %S/fixtures --ts-module demo_ts_smoke_fast --ts-runtime-specialization fast --out-dir %t/ts-fast 2>&1 | FileCheck %s --check-prefix=TS_FAST_SUMMARY
+# RUN: test -f %t/ts-fast/dsdl_runtime.ts
+# RUN: test -f %t/ts-fast/fixtures/vendor/helpers_1_0.ts
+# RUN: cat %t/ts-fast/package.json | FileCheck %s --check-prefix=TS_FAST_PACKAGE
+# RUN: cat %t/ts-fast/dsdl_runtime.ts | FileCheck %s --check-prefix=TS_FAST_RUNTIME
+
+# CPP_SUMMARY: Run summary:
+# CPP_SUMMARY: command: cpp
+# CPP_SUMMARY: output root:
+# CPP_SUMMARY: files generated:
+
+# CPP_STD: #include <vector>
+# CPP_PMR: #include <memory_resource>
+
+# RUST_STD_SUMMARY: Run summary:
+# RUST_STD_SUMMARY: command: rust
+# RUST_STD_SUMMARY: files generated:
+# RUST_STD: name = "llvmdsdl_smoke_std"
+# RUST_STD: default = ["std"]
+
+# RUST_FAST_SUMMARY: Run summary:
+# RUST_FAST_SUMMARY: command: rust
+# RUST_FAST_SUMMARY: files generated:
+# RUST_FAST: name = "llvmdsdl_smoke_fast"
+# RUST_FAST: default = ["runtime-fast"]
+
+# GO_SUMMARY: Run summary:
+# GO_SUMMARY: command: go
+# GO_SUMMARY: files generated:
+# GO_MODULE: module demo/generated/smoke
+
+# TS_PORTABLE_SUMMARY: Run summary:
+# TS_PORTABLE_SUMMARY: command: ts
+# TS_PORTABLE_SUMMARY: files generated:
+# TS_PORTABLE_PACKAGE: "tsRuntimeSpecialization": "portable"
+# TS_PORTABLE_RUNTIME: export function copyBits(
+# TS_PORTABLE_RUNTIME-NOT: dst.set(src.subarray
+
+# TS_FAST_SUMMARY: Run summary:
+# TS_FAST_SUMMARY: command: ts
+# TS_FAST_SUMMARY: files generated:
+# TS_FAST_PACKAGE: "tsRuntimeSpecialization": "fast"
+# TS_FAST_RUNTIME: dst.set(src.subarray
+# TS_FAST_RUNTIME: return src.slice(

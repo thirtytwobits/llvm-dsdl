@@ -1,3 +1,10 @@
+//===----------------------------------------------------------------------===//
+//
+// Part of the OpenCyphal project, under the MIT licence
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+
 #ifndef LLVMDSDL_DIFFERENTIAL_PARITY_ABI_H
 #define LLVMDSDL_DIFFERENTIAL_PARITY_ABI_H
 

@@ -420,6 +420,23 @@ cmake --build build --config RelWithDebInfo --target dsdlc -j
 cmake --workflow --preset matrix-dev-llvm-env
 ```
 
+### 12.5 Generate LLVM source coverage reports
+
+```bash
+cmake -S . -B build/coverage -G "Ninja Multi-Config" \
+  -DLLVM_DIR=/path/to/llvm/lib/cmake/llvm \
+  -DMLIR_DIR=/path/to/llvm/lib/cmake/mlir \
+  -DLLVMDSDL_ENABLE_LLVM_COVERAGE=ON
+
+cmake --build build/coverage --config RelWithDebInfo --target coverage-report -j1
+```
+
+Coverage artifacts:
+
+- `build/coverage/coverage/RelWithDebInfo/summary.txt`
+- `build/coverage/coverage/RelWithDebInfo/coverage.lcov`
+- `build/coverage/coverage/RelWithDebInfo/html/index.html`
+
 ## 13. Troubleshooting
 
 ### 13.1 `Could not find LLVMConfig.cmake` / `MLIRConfig.cmake`

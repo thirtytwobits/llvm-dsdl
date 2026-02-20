@@ -50,6 +50,48 @@ find_program(LLVMDSDL_IWYU_EXE
         include-what-you-use-16 include-what-you-use-15
 )
 
+option(LLVMDSDL_ENABLE_LLVM_COVERAGE
+       "Enable LLVM source-based coverage instrumentation and reporting targets"
+       OFF)
+
+set(LLVMDSDL_COVERAGE_CTEST_ARGS
+    "--output-on-failure"
+    CACHE STRING
+    "Additional arguments forwarded to ctest by coverage-run (space-separated).")
+
+if(LLVMDSDL_ENABLE_LLVM_COVERAGE)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
+    message(FATAL_ERROR
+      "LLVM source coverage requires Clang/AppleClang. "
+      "Current C++ compiler: ${CMAKE_CXX_COMPILER_ID}")
+  endif()
+
+  add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
+  add_link_options(-fprofile-instr-generate -fcoverage-mapping)
+
+  find_program(LLVMDSDL_LLVM_PROFDATA_EXE
+    NAMES llvm-profdata llvm-profdata-21 llvm-profdata-20 llvm-profdata-19
+          llvm-profdata-18 llvm-profdata-17 llvm-profdata-16
+    HINTS ${LLVM_TOOLS_BINARY_DIR} /opt/homebrew/opt/llvm/bin
+  )
+
+  find_program(LLVMDSDL_LLVM_COV_EXE
+    NAMES llvm-cov llvm-cov-21 llvm-cov-20 llvm-cov-19
+          llvm-cov-18 llvm-cov-17 llvm-cov-16
+    HINTS ${LLVM_TOOLS_BINARY_DIR} /opt/homebrew/opt/llvm/bin
+  )
+
+  if(NOT LLVMDSDL_LLVM_PROFDATA_EXE OR NOT LLVMDSDL_LLVM_COV_EXE)
+    message(FATAL_ERROR
+      "LLVM source coverage is enabled but llvm-profdata/llvm-cov could not be found. "
+      "Set LLVM_TOOLS_BINARY_DIR or ensure tools are on PATH.")
+  endif()
+
+  message(STATUS "LLVM source coverage enabled")
+  message(STATUS "Using llvm-profdata: ${LLVMDSDL_LLVM_PROFDATA_EXE}")
+  message(STATUS "Using llvm-cov: ${LLVMDSDL_LLVM_COV_EXE}")
+endif()
+
 if(NOT LLVMDSDL_CLANG_FORMAT_EXE)
   message(WARNING
     "clang-format not found; check-format/format-source targets will fail "
@@ -146,6 +188,7 @@ if(LLVMDSDL_ENABLE_SELF_CONTAINED_TOOL_BUNDLE)
         -DTOOL_DSDLC=$<TARGET_FILE:dsdlc>
         -DTOOL_DSDLOPT=$<TARGET_FILE:dsdl-opt>
         -DOUTPUT_DIR=${LLVMDSDL_SELF_CONTAINED_TOOLS_DIR}
+        -DLLVMDSDL_SOURCE_DIR=${LLVMDSDL_SOURCE_DIR}
         -P ${LLVMDSDL_SOURCE_DIR}/cmake/BundleSelfContainedTools.cmake
     DEPENDS dsdlc dsdl-opt
     USES_TERMINAL
@@ -288,3 +331,80 @@ endif()
 
 enable_testing()
 add_subdirectory(test)
+
+if(LLVMDSDL_ENABLE_LLVM_COVERAGE)
+  separate_arguments(LLVMDSDL_COVERAGE_CTEST_ARGS_LIST
+                     NATIVE_COMMAND
+                     "${LLVMDSDL_COVERAGE_CTEST_ARGS}")
+
+  set(LLVMDSDL_COVERAGE_CONFIG_SUBDIR "")
+  set(LLVMDSDL_COVERAGE_CTEST_CONFIG_ARGS "")
+  if(CMAKE_CONFIGURATION_TYPES)
+    set(LLVMDSDL_COVERAGE_CONFIG_SUBDIR "/$<CONFIG>")
+    list(APPEND LLVMDSDL_COVERAGE_CTEST_CONFIG_ARGS --build-config $<CONFIG>)
+  elseif(CMAKE_BUILD_TYPE)
+    set(LLVMDSDL_COVERAGE_CONFIG_SUBDIR "/${CMAKE_BUILD_TYPE}")
+  endif()
+
+  set(LLVMDSDL_COVERAGE_DIR
+      "${LLVMDSDL_BINARY_DIR}/coverage${LLVMDSDL_COVERAGE_CONFIG_SUBDIR}")
+  set(LLVMDSDL_COVERAGE_PROFILES_DIR "${LLVMDSDL_COVERAGE_DIR}/profiles")
+  set(LLVMDSDL_COVERAGE_PROFILE_PATTERN
+      "${LLVMDSDL_COVERAGE_PROFILES_DIR}/default-%p-%m.profraw")
+  set(LLVMDSDL_COVERAGE_PROFILE_DATA
+      "${LLVMDSDL_COVERAGE_DIR}/coverage.profdata")
+  set(LLVMDSDL_COVERAGE_SUMMARY
+      "${LLVMDSDL_COVERAGE_DIR}/summary.txt")
+  set(LLVMDSDL_COVERAGE_LCOV
+      "${LLVMDSDL_COVERAGE_DIR}/coverage.lcov")
+  set(LLVMDSDL_COVERAGE_HTML_DIR
+      "${LLVMDSDL_COVERAGE_DIR}/html")
+
+  add_custom_target(coverage-clean
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${LLVMDSDL_COVERAGE_DIR}"
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "Removing coverage artifacts from ${LLVMDSDL_COVERAGE_DIR}"
+  )
+
+  add_custom_target(coverage-run
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${LLVMDSDL_COVERAGE_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_COVERAGE_PROFILES_DIR}"
+    COMMAND
+      ${CMAKE_COMMAND} -E env
+        LLVM_PROFILE_FILE=${LLVMDSDL_COVERAGE_PROFILE_PATTERN}
+        ${CMAKE_CTEST_COMMAND}
+        ${LLVMDSDL_COVERAGE_CTEST_ARGS_LIST}
+        ${LLVMDSDL_COVERAGE_CTEST_CONFIG_ARGS}
+    WORKING_DIRECTORY ${LLVMDSDL_BINARY_DIR}
+    DEPENDS llvmdsdl-unit-tests dsdlc dsdl-opt
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "Running tests with LLVM source coverage instrumentation"
+  )
+
+  add_custom_target(coverage-report
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DLLVM_PROFDATA=${LLVMDSDL_LLVM_PROFDATA_EXE}
+        -DLLVM_COV=${LLVMDSDL_LLVM_COV_EXE}
+        -DPROFILE_DIR=${LLVMDSDL_COVERAGE_PROFILES_DIR}
+        -DPROFILE_DATA=${LLVMDSDL_COVERAGE_PROFILE_DATA}
+        -DREPORT_TXT=${LLVMDSDL_COVERAGE_SUMMARY}
+        -DREPORT_LCOV=${LLVMDSDL_COVERAGE_LCOV}
+        -DREPORT_HTML_DIR=${LLVMDSDL_COVERAGE_HTML_DIR}
+        -DSOURCE_DIR=${LLVMDSDL_SOURCE_DIR}
+        -DBINARY_DIR=${LLVMDSDL_BINARY_DIR}
+        "-DOBJECTS=$<TARGET_FILE:dsdlc>;$<TARGET_FILE:dsdl-opt>;$<TARGET_FILE:llvmdsdl-unit-tests>"
+        "-DIGNORE_FILENAME_REGEX=.*/(build|submodules|\\.venv)/.*"
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/GenerateCoverageReport.cmake
+    DEPENDS coverage-run
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "Generating LLVM source coverage reports (text, lcov, html)"
+  )
+
+  add_custom_target(coverage
+    DEPENDS coverage-report
+  )
+endif()
