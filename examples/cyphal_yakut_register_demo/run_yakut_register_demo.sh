@@ -17,7 +17,7 @@ HEARTBEAT_COUNT="${HEARTBEAT_COUNT:-3}"
 HEARTBEAT_TIMEOUT_SECONDS="${HEARTBEAT_TIMEOUT_SECONDS:-12}"
 
 case "${NODE_BACKEND}" in
-  native|go)
+  native|go|rust)
     ;;
   *)
     echo "Invalid NODE_BACKEND: ${NODE_BACKEND} (expected: native or go)"

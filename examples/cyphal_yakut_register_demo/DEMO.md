@@ -4,6 +4,7 @@ This demo pairs Yakut with either:
 
 1. A native C++ Cyphal node built from this repository using libudpard + POSIX UDP shim.
 2. A Go Cyphal node built from this repository using generated Go types + libudpard via cgo.
+3. A Rust Cyphal node built from this repository using generated Rust types + libudpard FFI.
 
 Both node variants implement:
 
@@ -19,6 +20,7 @@ cd /Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl
 cmake -S . -B build/dev-homebrew
 cmake --build build/dev-homebrew --target cyphal-yakut-register-node -j
 cmake --build build/dev-homebrew --target cyphal-yakut-register-go-node -j
+cmake --build build/dev-homebrew --target cyphal-yakut-register-rust-node -j
 ```
 
 ## Run Native Node
@@ -40,6 +42,18 @@ cd /Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl
 
 build/dev-homebrew/examples/cyphal_yakut_register_demo/go-node/cyphal-yakut-register-go-node-bin \
   --name go \
+  --node-id 42 \
+  --iface 127.0.0.1 \
+  --heartbeat-rate-hz 1
+```
+
+## Run Rust Node
+
+```bash
+cd /Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl
+
+build/dev-homebrew/examples/cyphal_yakut_register_demo/rust-node/target/debug/cyphal-yakut-register-rust-node \
+  --name rust \
   --node-id 42 \
   --iface 127.0.0.1 \
   --heartbeat-rate-hz 1
@@ -100,6 +114,7 @@ Backend-specific targets:
 ```bash
 cmake --build build/dev-homebrew --target run-yakut-register-demo-native -j
 cmake --build build/dev-homebrew --target run-yakut-register-demo-go -j
+cmake --build build/dev-homebrew --target run-yakut-register-demo-rust -j
 cmake --build build/dev-homebrew --target run-yakut-register-demo-all -j
 ```
 
@@ -118,5 +133,6 @@ Backend-specific targets:
 ```bash
 cmake --build build/dev-homebrew --target run-yakut-register-heartbeat-demo-native -j
 cmake --build build/dev-homebrew --target run-yakut-register-heartbeat-demo-go -j
+cmake --build build/dev-homebrew --target run-yakut-register-heartbeat-demo-rust -j
 cmake --build build/dev-homebrew --target run-yakut-register-heartbeat-demo-all -j
 ```

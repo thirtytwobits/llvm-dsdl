@@ -33,6 +33,8 @@ set(LLVMDSDL_YAKUT_DEMO_GEN_DIR
     "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set(LLVMDSDL_YAKUT_DEMO_GEN_GO_DIR
     "${CMAKE_CURRENT_BINARY_DIR}/generated-go")
+set(LLVMDSDL_YAKUT_DEMO_GEN_RUST_DIR
+    "${CMAKE_CURRENT_BINARY_DIR}/generated-rust")
 set(LLVMDSDL_YAKUT_DEMO_LOG_DIR
     "${CMAKE_CURRENT_BINARY_DIR}/run-logs")
 
@@ -157,6 +159,40 @@ add_custom_command(
 add_custom_target(generate-cyphal-yakut-register-demo-go
   DEPENDS ${LLVMDSDL_YAKUT_DEMO_GO_GENERATED_FILES})
 
+set(LLVMDSDL_YAKUT_DEMO_RUST_GENERATED_FILES
+    "${LLVMDSDL_YAKUT_DEMO_GEN_RUST_DIR}/Cargo.toml"
+    "${LLVMDSDL_YAKUT_DEMO_GEN_RUST_DIR}/src/dsdl_runtime.rs"
+    "${LLVMDSDL_YAKUT_DEMO_GEN_RUST_DIR}/src/uavcan/node/heartbeat_1_0.rs"
+    "${LLVMDSDL_YAKUT_DEMO_GEN_RUST_DIR}/src/uavcan/register/access_1_0.rs"
+    "${LLVMDSDL_YAKUT_DEMO_GEN_RUST_DIR}/src/uavcan/register/list_1_0.rs"
+    "${LLVMDSDL_YAKUT_DEMO_GEN_RUST_DIR}/src/uavcan/register/name_1_0.rs"
+    "${LLVMDSDL_YAKUT_DEMO_GEN_RUST_DIR}/src/uavcan/register/value_1_0.rs")
+
+add_custom_command(
+  OUTPUT
+    ${LLVMDSDL_YAKUT_DEMO_RUST_GENERATED_FILES}
+  COMMAND ${CMAKE_COMMAND} -E rm -rf "${LLVMDSDL_YAKUT_DEMO_GEN_RUST_DIR}"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_YAKUT_DEMO_GEN_RUST_DIR}"
+  COMMAND
+    $<TARGET_FILE:dsdlc>
+      rust
+      --root-namespace-dir "${LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT}"
+      --rust-profile std
+      --rust-crate-name cyphal_yakut_demo_generated_rust
+      --out-dir "${LLVMDSDL_YAKUT_DEMO_GEN_RUST_DIR}"
+  DEPENDS
+    dsdlc
+    "${LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT}/node/7509.Heartbeat.1.0.dsdl"
+    "${LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT}/register/384.Access.1.0.dsdl"
+    "${LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT}/register/385.List.1.0.dsdl"
+    "${LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT}/register/Name.1.0.dsdl"
+    "${LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT}/register/Value.1.0.dsdl"
+  VERBATIM
+  COMMENT "Generating uavcan Rust DSDL artifacts for yakut register demo")
+
+add_custom_target(generate-cyphal-yakut-register-demo-rust
+  DEPENDS ${LLVMDSDL_YAKUT_DEMO_RUST_GENERATED_FILES})
+
 set(LLVMDSDL_YAKUT_DEMO_GO_NODE_DIR
     "${CMAKE_CURRENT_BINARY_DIR}/go-node")
 set(LLVMDSDL_YAKUT_DEMO_GO_NODE_BINARY
@@ -241,6 +277,84 @@ else()
     "Skipping Go yakut register demo node targets: go executable unavailable")
 endif()
 
+set(LLVMDSDL_YAKUT_DEMO_RUST_NODE_DIR
+    "${CMAKE_CURRENT_BINARY_DIR}/rust-node")
+set(LLVMDSDL_YAKUT_DEMO_RUST_NODE_BINARY
+    "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_DIR}/target/debug/cyphal-yakut-register-rust-node")
+set(LLVMDSDL_YAKUT_DEMO_RUST_NODE_CARGO_TOML
+    "${CMAKE_CURRENT_BINARY_DIR}/rust-node.Cargo.toml")
+
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/rust_register_node/Cargo.toml.in"
+  "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_CARGO_TOML}"
+  @ONLY)
+
+find_program(LLVMDSDL_YAKUT_DEMO_CARGO_EXECUTABLE cargo QUIET)
+if(LLVMDSDL_YAKUT_DEMO_CARGO_EXECUTABLE)
+  add_custom_command(
+    OUTPUT
+      "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_BINARY}"
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_DIR}/src"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/rust_register_node/main.rs"
+      "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_DIR}/src/main.rs"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/rust_register_node/build.rs"
+      "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_DIR}/build.rs"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/go_register_node/transport_shim.h"
+      "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_DIR}/transport_shim.h"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/go_register_node/transport_shim.c"
+      "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_DIR}/transport_shim.c"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${CMAKE_SOURCE_DIR}/examples/cyphal_ping_pong/src/net/udp_posix.h"
+      "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_DIR}/udp_posix.h"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${CMAKE_SOURCE_DIR}/examples/cyphal_ping_pong/src/net/udp_posix.c"
+      "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_DIR}/udp_posix.c"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${CMAKE_SOURCE_DIR}/libudpard/libudpard/udpard.h"
+      "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_DIR}/udpard.h"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${CMAKE_SOURCE_DIR}/libudpard/libudpard/udpard.c"
+      "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_DIR}/udpard.c"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${CMAKE_SOURCE_DIR}/libudpard/libudpard/_udpard_cavl.h"
+      "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_DIR}/_udpard_cavl.h"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_CARGO_TOML}"
+      "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_DIR}/Cargo.toml"
+    COMMAND
+      ${CMAKE_COMMAND} -E chdir "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_DIR}"
+        ${CMAKE_COMMAND} -E env
+          CARGO_TARGET_DIR=${LLVMDSDL_YAKUT_DEMO_RUST_NODE_DIR}/target
+          ${LLVMDSDL_YAKUT_DEMO_CARGO_EXECUTABLE} build --quiet
+    DEPENDS
+      generate-cyphal-yakut-register-demo-rust
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/rust_register_node/main.rs"
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/rust_register_node/build.rs"
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/rust_register_node/Cargo.toml.in"
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/go_register_node/transport_shim.h"
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/go_register_node/transport_shim.c"
+      "${CMAKE_SOURCE_DIR}/examples/cyphal_ping_pong/src/net/udp_posix.h"
+      "${CMAKE_SOURCE_DIR}/examples/cyphal_ping_pong/src/net/udp_posix.c"
+      "${CMAKE_SOURCE_DIR}/libudpard/libudpard/udpard.h"
+      "${CMAKE_SOURCE_DIR}/libudpard/libudpard/udpard.c"
+      "${CMAKE_SOURCE_DIR}/libudpard/libudpard/_udpard_cavl.h"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    VERBATIM
+    COMMENT "Building Rust yakut register demo node")
+
+  add_custom_target(cyphal-yakut-register-rust-node
+    DEPENDS "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_BINARY}")
+else()
+  message(STATUS
+    "Skipping Rust yakut register demo node targets: cargo executable unavailable")
+endif()
+
 add_custom_target(run-yakut-register-demo-native
   COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_YAKUT_DEMO_LOG_DIR}"
   COMMAND
@@ -323,16 +437,67 @@ if(TARGET cyphal-yakut-register-go-node)
     USES_TERMINAL
     VERBATIM
     COMMENT "Running yakut register demo with heartbeat verification against Go node")
+endif()
 
-  add_custom_target(run-yakut-register-demo-all)
-  add_dependencies(run-yakut-register-demo-all
-    run-yakut-register-demo-native
-    run-yakut-register-demo-go)
+if(TARGET cyphal-yakut-register-rust-node)
+  add_custom_target(run-yakut-register-demo-rust
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_YAKUT_DEMO_LOG_DIR}"
+    COMMAND
+      ${CMAKE_COMMAND} -E env
+        NODE_EXE=${LLVMDSDL_YAKUT_DEMO_RUST_NODE_BINARY}
+        NODE_BACKEND=rust
+        LOG_DIR=${LLVMDSDL_YAKUT_DEMO_LOG_DIR}
+        CYPHAL_PATH_ROOT=${LLVMDSDL_YAKUT_DEMO_CYPHAL_PATH}
+        NODE_ID=${LLVMDSDL_YAKUT_DEMO_NODE_ID}
+        YAKUT_NODE_ID=${LLVMDSDL_YAKUT_DEMO_YAKUT_NODE_ID}
+        IFACE=${LLVMDSDL_YAKUT_DEMO_IFACE}
+        DURATION_SECONDS=${LLVMDSDL_YAKUT_DEMO_DURATION_SECONDS}
+        YAKUT_BIN=${LLVMDSDL_YAKUT_DEMO_YAKUT_BIN}
+        /bin/sh "${CMAKE_CURRENT_SOURCE_DIR}/run_yakut_register_demo.sh"
+    DEPENDS cyphal-yakut-register-rust-node
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "Running yakut register demo against Rust libudpard node")
 
-  add_custom_target(run-yakut-register-heartbeat-demo-all)
-  add_dependencies(run-yakut-register-heartbeat-demo-all
-    run-yakut-register-heartbeat-demo-native
-    run-yakut-register-heartbeat-demo-go)
+  add_custom_target(run-yakut-register-heartbeat-demo-rust
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_YAKUT_DEMO_LOG_DIR}"
+    COMMAND
+      ${CMAKE_COMMAND} -E env
+        NODE_EXE=${LLVMDSDL_YAKUT_DEMO_RUST_NODE_BINARY}
+        NODE_BACKEND=rust
+        LOG_DIR=${LLVMDSDL_YAKUT_DEMO_LOG_DIR}
+        CYPHAL_PATH_ROOT=${LLVMDSDL_YAKUT_DEMO_CYPHAL_PATH}
+        NODE_ID=${LLVMDSDL_YAKUT_DEMO_NODE_ID}
+        YAKUT_NODE_ID=${LLVMDSDL_YAKUT_DEMO_YAKUT_NODE_ID}
+        IFACE=${LLVMDSDL_YAKUT_DEMO_IFACE}
+        DURATION_SECONDS=${LLVMDSDL_YAKUT_DEMO_DURATION_SECONDS}
+        YAKUT_BIN=${LLVMDSDL_YAKUT_DEMO_YAKUT_BIN}
+        VERIFY_HEARTBEAT=1
+        HEARTBEAT_COUNT=${LLVMDSDL_YAKUT_DEMO_HEARTBEAT_COUNT}
+        HEARTBEAT_TIMEOUT_SECONDS=${LLVMDSDL_YAKUT_DEMO_HEARTBEAT_TIMEOUT_SECONDS}
+        /bin/sh "${CMAKE_CURRENT_SOURCE_DIR}/run_yakut_register_demo.sh"
+    DEPENDS cyphal-yakut-register-rust-node
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "Running yakut register demo with heartbeat verification against Rust node")
+endif()
+
+add_custom_target(run-yakut-register-demo-all)
+add_dependencies(run-yakut-register-demo-all run-yakut-register-demo-native)
+if(TARGET run-yakut-register-demo-go)
+  add_dependencies(run-yakut-register-demo-all run-yakut-register-demo-go)
+endif()
+if(TARGET run-yakut-register-demo-rust)
+  add_dependencies(run-yakut-register-demo-all run-yakut-register-demo-rust)
+endif()
+
+add_custom_target(run-yakut-register-heartbeat-demo-all)
+add_dependencies(run-yakut-register-heartbeat-demo-all run-yakut-register-heartbeat-demo-native)
+if(TARGET run-yakut-register-heartbeat-demo-go)
+  add_dependencies(run-yakut-register-heartbeat-demo-all run-yakut-register-heartbeat-demo-go)
+endif()
+if(TARGET run-yakut-register-heartbeat-demo-rust)
+  add_dependencies(run-yakut-register-heartbeat-demo-all run-yakut-register-heartbeat-demo-rust)
 endif()
 
 add_custom_target(run-yakut-register-demo)
