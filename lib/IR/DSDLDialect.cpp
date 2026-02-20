@@ -11,7 +11,7 @@
 
 #include "llvmdsdl/IR/DSDLOps.h"
 
-#include <llvm/Support/Casting.h>  // IWYU pragma: keep
+#include <llvm/Support/Casting.h>        // IWYU pragma: keep
 #include <llvm/Support/LogicalResult.h>  // IWYU pragma: keep
 
 #include "mlir/IR/DialectImplementation.h"  // IWYU pragma: keep

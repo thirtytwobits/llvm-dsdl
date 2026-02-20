@@ -3,6 +3,12 @@
 `llvm-dsdl` is an out-of-tree LLVM/MLIR-based DSDL compiler for Cyphal data
 types.
 
+Canonical project docs:
+
+- `DEMO.md`: 5-minute demo flow (quick + scale-up paths).
+- `DESIGN.md`: architecture snapshot.
+- `RELEASE_CHECKLIST.md`: release readiness runbook.
+
 It currently provides:
 
 - A DSDL frontend (`.dsdl` discovery, parse, semantic analysis).
@@ -66,15 +72,46 @@ Tools
 
 ## Prerequisites
 
-- CMake `>= 3.24`
+- CMake `>= 3.24` (`>= 3.25` recommended for full preset support)
 - Ninja (recommended)
 - C++20 compiler
 - LLVM + MLIR with CMake package config files (`LLVMConfig.cmake`, `MLIRConfig.cmake`)
 
 Known-good local setup:
 
-- LLVM/MLIR `20.1.8`
+- LLVM/MLIR `21.1.8`
 - C11/C++20 toolchain
+
+## Semantic Mode
+
+`dsdlc` runs in one semantic mode: spec-conformant Cyphal DSDL analysis.
+
+- Non-conformant definitions are rejected with diagnostics.
+- There is no compatibility fallback mode.
+
+## Maintenance Utility Targets
+
+These are manual utility targets and are not part of normal generation workflows.
+
+```bash
+# Verify formatting.
+cmake --build build/dev-homebrew --target check-format -j1
+
+# Bulk rewrite formatting.
+cmake --build build/dev-homebrew --target format-source -j1
+
+# Static analysis helpers.
+cmake --build build/dev-homebrew --target check-clang-tidy -j1
+cmake --build build/dev-homebrew --target check-iwyu -j1
+```
+
+## Release Readiness
+
+Use:
+
+- `RELEASE_CHECKLIST.md`
+
+for the preflight + gate + artifact checklist used for release candidates.
 
 ## Quick Start
 
@@ -551,7 +588,7 @@ Notes:
 
 ```bash
 ./build/tools/dsdlc/dsdlc c \
-  --root-namespace-dir public_regulated_data_types/uavcan \ \
+  --root-namespace-dir public_regulated_data_types/uavcan \
   --out-dir build/uavcan-out
 ```
 
@@ -568,7 +605,7 @@ Generate both profiles:
 
 ```bash
 ./build/tools/dsdlc/dsdlc cpp \
-  --root-namespace-dir public_regulated_data_types/uavcan \ \
+  --root-namespace-dir public_regulated_data_types/uavcan \
   --cpp-profile both \
   --out-dir build/uavcan-cpp-out
 ```
@@ -577,14 +614,14 @@ Generate only one profile:
 
 ```bash
 ./build/tools/dsdlc/dsdlc cpp \
-  --root-namespace-dir public_regulated_data_types/uavcan \ \
+  --root-namespace-dir public_regulated_data_types/uavcan \
   --cpp-profile std \
   --out-dir build/uavcan-cpp-std-out
 ```
 
 ```bash
 ./build/tools/dsdlc/dsdlc cpp \
-  --root-namespace-dir public_regulated_data_types/uavcan \ \
+  --root-namespace-dir public_regulated_data_types/uavcan \
   --cpp-profile pmr \
   --out-dir build/uavcan-cpp-pmr-out
 ```
@@ -611,7 +648,7 @@ Naming style:
 
 ```bash
 ./build/tools/dsdlc/dsdlc rust \
-  --root-namespace-dir public_regulated_data_types/uavcan \ \
+  --root-namespace-dir public_regulated_data_types/uavcan \
   --out-dir build/uavcan-rust-out \
   --rust-crate-name uavcan_dsdl_generated \
   --rust-profile std
@@ -621,7 +658,7 @@ No-std+alloc profile:
 
 ```bash
 ./build/tools/dsdlc/dsdlc rust \
-  --root-namespace-dir public_regulated_data_types/uavcan \ \
+  --root-namespace-dir public_regulated_data_types/uavcan \
   --out-dir build/uavcan-rust-no-std-out \
   --rust-crate-name uavcan_dsdl_generated_no_std \
   --rust-profile no-std-alloc
@@ -631,7 +668,7 @@ Runtime-specialized std profile:
 
 ```bash
 ./build/tools/dsdlc/dsdlc rust \
-  --root-namespace-dir public_regulated_data_types/uavcan \ \
+  --root-namespace-dir public_regulated_data_types/uavcan \
   --out-dir build/uavcan-rust-fast-out \
   --rust-crate-name uavcan_dsdl_generated_fast \
   --rust-profile std \
@@ -659,7 +696,7 @@ Current behavior:
 
 ```bash
 ./build/tools/dsdlc/dsdlc ts \
-  --root-namespace-dir public_regulated_data_types/uavcan \ \
+  --root-namespace-dir public_regulated_data_types/uavcan \
   --out-dir build/uavcan-ts-out \
   --ts-module uavcan_dsdl_generated_ts
 ```
@@ -668,7 +705,7 @@ Runtime-specialized fast profile:
 
 ```bash
 ./build/tools/dsdlc/dsdlc ts \
-  --root-namespace-dir public_regulated_data_types/uavcan \ \
+  --root-namespace-dir public_regulated_data_types/uavcan \
   --out-dir build/uavcan-ts-fast-out \
   --ts-module uavcan_dsdl_generated_ts_fast \
   --ts-runtime-specialization fast
@@ -706,7 +743,7 @@ OUT="build/uavcan-out"
 mkdir -p "${OUT}"
 
 ./build/tools/dsdlc/dsdlc c \
-  --root-namespace-dir public_regulated_data_types/uavcan \ \
+  --root-namespace-dir public_regulated_data_types/uavcan \
   --out-dir "${OUT}"
 
 find public_regulated_data_types/uavcan -name '*.dsdl' | wc -l

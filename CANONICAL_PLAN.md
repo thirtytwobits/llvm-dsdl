@@ -178,6 +178,8 @@ Completion evidence (February 20, 2026):
 
 Objective: make the project easier to ship, demo, and consume.
 
+Status: Completed on February 20, 2026.
+
 Tasks:
 
 1. Keep one canonical demo flow current (`DEMO.md`) with short and scale-up paths.
@@ -191,6 +193,20 @@ Acceptance:
 1. A clean environment can execute documented setup, generate outputs, and run critical gates.
 2. Docs do not contain stale experimental caveats that conflict with tested status.
 3. Demo remains runnable in under five minutes for fixture corpus.
+
+Completion evidence (February 20, 2026):
+
+1. Canonical demo flow updated with quick and scale-up paths:
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/DEMO.md`
+2. Canonical architecture snapshot updated for current backend/runtime surface:
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/DESIGN.md`
+3. Canonical status/runbook updated with semantic-mode clarity and utility target guidance:
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/README.md`
+4. Release checklist added and linked:
+   - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/RELEASE_CHECKLIST.md`
+5. Validation commands:
+   - `cmake --build build/dev --target check-format -j1`
+   - `cmake --build build/dev --target check-iwyu -j1`
 
 ## 6. Milestones
 
@@ -230,7 +246,7 @@ Exit criteria:
 1. Shared layer ownership and extension points are clear and documented.
 2. New backend onboarding checklist is documented (inputs, invariants, gates).
 
-## 8. Canonical Verification Commands
+## 7. Canonical Verification Commands
 
 Primary:
 
@@ -244,11 +260,11 @@ Optional (performance/parity drift checks):
 1. optimization-enabled parity workflows (`--optimize-lowered-serdes`)
 2. differential parity workflows by label/preset
 
-## 6. Plan Maintenance Rules
+## 8. Plan Maintenance Rules
 
 1. This file is the only active planning source for remaining project work.
 2. Completed items are recorded here with date and evidence command(s).
-3. New TODOs found in code are appended to Section 5/Workstream E immediately.
+3. New TODOs found in code are appended to this canonical backlog immediately.
 4. Contract schema changes require synchronized updates to:
    - `/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/LOWERED_SERDES_CONTRACT.md`
    - tests

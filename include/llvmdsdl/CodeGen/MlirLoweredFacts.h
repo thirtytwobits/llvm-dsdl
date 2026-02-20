@@ -12,7 +12,8 @@
 #include <string>
 #include <unordered_map>
 
-namespace mlir {
+namespace mlir
+{
 class ModuleOp;
 }  // namespace mlir
 

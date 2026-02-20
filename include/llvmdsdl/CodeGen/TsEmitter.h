@@ -11,7 +11,8 @@
 
 #include "llvm/Support/Error.h"
 
-namespace mlir {
+namespace mlir
+{
 class ModuleOp;
 }  // namespace mlir
 

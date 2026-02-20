@@ -15,8 +15,9 @@ The project currently supports:
 
 - C (`dsdlc c`)
 - C++23 (`dsdlc cpp`, with `std` and `pmr` profiles)
-- Rust (`dsdlc rust`, with `std` and `no-std-alloc` profiles)
+- Rust (`dsdlc rust`, with `std` and `no-std-alloc` profiles, plus runtime specialization `portable|fast`)
 - Go (`dsdlc go`)
+- TypeScript (`dsdlc ts`, with runtime specialization `portable|fast`)
 
 for the `uavcan` namespace under regulated data types.
 
@@ -32,7 +33,7 @@ flowchart LR
   F --> G["MLIR module"]
   G --> H["C path: EmitC lowering + C output (per-definition impl TUs)"]
   E --> K["Shared lowered body plan + render IR"]
-  K --> I["C/C++/Rust/Go emitters"]
+  K --> I["C/C++/Rust/Go/TypeScript emitters"]
   I --> J["Generated language artifacts"]
 ```
 
@@ -86,6 +87,8 @@ Current generators are in `lib/CodeGen`:
   - Emits crate/module layout and Rust SerDes/runtime integration.
 - `GoEmitter.cpp`
   - Emits module/package layout and Go SerDes/runtime integration.
+- `TsEmitter.cpp`
+  - Emits TypeScript package/module layout and generated runtime-backed SerDes integration.
 
 Shared generator-side convergence modules include:
 
@@ -102,6 +105,7 @@ Runtime helpers encapsulate wire-level bit operations and numeric conversions:
 - `runtime/cpp/dsdl_runtime.hpp` (C++ wrapper)
 - `runtime/rust/dsdl_runtime.rs` (Rust runtime)
 - `runtime/go/dsdl_runtime.go` (Go runtime)
+- generated `dsdl_runtime.ts` (TypeScript runtime helper emitted by `dsdlc ts`)
 
 ### 1.4 Tooling and Validation
 
@@ -244,10 +248,10 @@ Current:
 - Lowered SerDes contract versioning/producer checks are enforced between
   `lower-dsdl-serialization` and `convert-dsdl-to-emitc`.
 - Shared lowered-fact collection drives backend wire-semantics decisions for
-  C++ (`std`/`pmr`), Rust (`std`), and Go.
+  C++ (`std`/`pmr`), Rust (`std`/`no-std-alloc`), Go, and TypeScript.
 - Shared language-agnostic render-IR (`LoweredRenderIR`) now drives core
   per-section body step traversal (`field`, `padding`, `union-dispatch`) in
-  C++, Rust, and Go emitters.
+  C++, Rust, Go, and TypeScript emitters.
 - `dsdlc` and `dsdl-opt` support optional optimization on lowered SerDes IR via:
   - CLI flag `--optimize-lowered-serdes`
   - MLIR pass pipeline `optimize-dsdl-lowered-serdes`

@@ -8,12 +8,12 @@
 #define LLVMDSDL_IR_DSDLOPS_H
 
 #include "llvmdsdl/IR/DSDLDialect.h"  // IWYU pragma: keep
-#include "llvmdsdl/IR/DSDLAttrs.h"  // IWYU pragma: keep
-#include "llvmdsdl/IR/DSDLTypes.h"  // IWYU pragma: keep
+#include "llvmdsdl/IR/DSDLAttrs.h"    // IWYU pragma: keep
+#include "llvmdsdl/IR/DSDLTypes.h"    // IWYU pragma: keep
 
-#include "mlir/Bytecode/BytecodeOpInterface.h"  // IWYU pragma: keep
-#include "mlir/IR/OpDefinition.h"  // IWYU pragma: keep
-#include "mlir/IR/SymbolTable.h"  // IWYU pragma: keep
+#include "mlir/Bytecode/BytecodeOpInterface.h"     // IWYU pragma: keep
+#include "mlir/IR/OpDefinition.h"                  // IWYU pragma: keep
+#include "mlir/IR/SymbolTable.h"                   // IWYU pragma: keep
 #include "mlir/Interfaces/SideEffectInterfaces.h"  // IWYU pragma: keep
 
 /// @file

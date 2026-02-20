@@ -1,24 +1,24 @@
-# LLVM/MLIR DSDL Codegen Demo (5 Minutes, CLI-Only)
+# LLVM/MLIR Multi-Language Codegen Demo (5 Minutes, CLI-First)
 
-This is a fast live demo for showing the technique:
+This demo is for the technique:
 
-- start from platform-agnostic IDL (`.dsdl`)
-- compile into MLIR
-- lower with MLIR passes
-- emit production-style code for multiple languages from one pipeline
+1. Start with a platform-agnostic IDL corpus.
+2. Parse/analyze once.
+3. Lower through MLIR once.
+4. Emit multiple target languages from one compiler pipeline.
 
-The live demo itself is CLI-first. The section below is a one-time CMake prep so the demo binaries exist.
+The quick path below is designed for a live room demo in under five minutes.
 
-## 0) One-Time Binary Prep (CMake)
+## 0) Demo Setup (One-Time Build Prep)
 
-If `dsdlc` and `dsdl-opt` are not built yet, run:
+Run once to prepare binaries used by the live demo:
 
 ```bash
-cd /Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl
+cd /path/to/llvm-dsdl
 
 git submodule update --init --recursive
 
-LLVM_PREFIX="$(brew --prefix llvm)"
+LLVM_PREFIX="$(brew --prefix llvm)"   # macOS/Homebrew example
 
 cmake -S . -B build/dev-homebrew -G Ninja \
   -DLLVM_DIR="${LLVM_PREFIX}/lib/cmake/llvm" \
@@ -30,25 +30,26 @@ build/dev-homebrew/tools/dsdlc/dsdlc --help >/dev/null
 build/dev-homebrew/tools/dsdl-opt/dsdl-opt --help >/dev/null
 ```
 
-## 1) Demo Setup (30 seconds)
+## 1) Quick Demo Path (Under 5 Minutes)
 
-Run from repo root:
+### 1.1 Session setup (30 seconds)
 
 ```bash
-cd /Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl
+cd /path/to/llvm-dsdl
 
 DSDLC="${DSDLC:-build/dev-homebrew/tools/dsdlc/dsdlc}"
 DSDLOPT="${DSDLOPT:-build/dev-homebrew/tools/dsdl-opt/dsdl-opt}"
-ROOT_NS="test/lit/fixtures/vendor"   # fast 6-type fixture for live demo
+ROOT_NS="test/lit/fixtures/vendor"
 OUT="build/dev-homebrew/demo-live"
 
-test -x "$DSDLC" && test -x "$DSDLOPT"
+test -x "$DSDLC"
+test -x "$DSDLOPT"
 find "$ROOT_NS" -name '*.dsdl' | wc -l
 ```
 
-Expected: `6`.
+Expected fixture count: `6`.
 
-## 2) One-Pass Live Generation (90 seconds)
+### 1.2 Single-pass compile/lower/emit (90 seconds)
 
 ```bash
 set -euo pipefail
@@ -65,250 +66,128 @@ mkdir -p "$OUT"
   "$OUT/module.mlir" > "$OUT/module.emitc.mlir"
 
 "$DSDLC" c \
-  --root-namespace-dir "$ROOT_NS" \ \
+  --root-namespace-dir "$ROOT_NS" \
   --out-dir "$OUT/c"
 
 "$DSDLC" cpp \
-  --root-namespace-dir "$ROOT_NS" \ \
+  --root-namespace-dir "$ROOT_NS" \
   --cpp-profile both \
   --out-dir "$OUT/cpp"
 
 "$DSDLC" rust \
-  --root-namespace-dir "$ROOT_NS" \ \
+  --root-namespace-dir "$ROOT_NS" \
   --rust-profile std \
   --rust-crate-name demo_vendor_generated \
   --out-dir "$OUT/rust"
 
 "$DSDLC" rust \
-  --root-namespace-dir "$ROOT_NS" \ \
+  --root-namespace-dir "$ROOT_NS" \
   --rust-profile std \
   --rust-runtime-specialization fast \
   --rust-crate-name demo_vendor_generated_fast \
   --out-dir "$OUT/rust-fast"
 
 "$DSDLC" go \
-  --root-namespace-dir "$ROOT_NS" \ \
+  --root-namespace-dir "$ROOT_NS" \
   --go-module demo/vendor/generated \
   --out-dir "$OUT/go"
 
 "$DSDLC" ts \
-  --root-namespace-dir "$ROOT_NS" \ \
+  --root-namespace-dir "$ROOT_NS" \
   --ts-module demo_vendor_generated_ts \
   --out-dir "$OUT/ts"
 ```
 
-## 3) Show “Proof” in 60 Seconds
+### 1.3 Show proof on screen (60 seconds)
 
-### 2.1 IR stages
+IR stage proof:
 
 ```bash
 wc -l "$OUT/module.mlir" "$OUT/module.lowered.mlir" "$OUT/module.emitc.mlir"
 rg -n "dsdl\\.serialization_plan" "$OUT/module.mlir" | head
 rg -n "llvmdsdl\\.lowered_contract_producer|lowered_capacity_check_helper" "$OUT/module.lowered.mlir" | head
-rg -n "emitc\\.verbatim|vendor_Type_1_0__serialize_ir_" "$OUT/module.emitc.mlir" | head
+rg -n "emitc\\.verbatim|_serialize_ir_" "$OUT/module.emitc.mlir" | head
 ```
 
-### 2.2 Multi-language output from same IDL
+Multi-language output proof:
 
 ```bash
-find "$OUT/c"   -maxdepth 3 -type f | sort
+find "$OUT/c" -maxdepth 3 -type f | sort
 find "$OUT/cpp" -maxdepth 4 -type f | sort
 find "$OUT/rust/src/vendor" -maxdepth 1 -type f | sort
 find "$OUT/go/vendor" -maxdepth 1 -type f | sort
 find "$OUT/ts/vendor" -maxdepth 1 -type f | sort
 ```
 
-Optional quick TypeScript compile proof (if `tsc` is installed):
+One-type, many-targets proof:
 
 ```bash
-cat > "$OUT/ts/tsconfig.json" <<'JSON'
-{
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ES2022",
-    "moduleResolution": "Node",
-    "strict": true,
-    "noEmit": true,
-    "skipLibCheck": true
-  },
-  "include": ["./**/*.ts"]
-}
-JSON
-
-tsc -p "$OUT/ts/tsconfig.json" --pretty false
+sed -n '1,60p' "$OUT/c/vendor/Type_1_0.h"
+sed -n '1,80p' "$OUT/cpp/std/vendor/Type_1_0.hpp"
+sed -n '1,80p' "$OUT/rust/src/vendor/type__1_0.rs"
+sed -n '1,80p' "$OUT/go/vendor/type__1_0.go"
+sed -n '1,80p' "$OUT/ts/vendor/type__1_0.ts"
 ```
 
-Optional quick TypeScript determinism proof:
+## 2) Five-Minute Talk Track
 
-```bash
-OUT_TS_DET="$OUT/ts-determinism"
-rm -rf "$OUT_TS_DET"
-mkdir -p "$OUT_TS_DET"
+1. `0:00-0:30`: "IDL in, single frontend + semantic pass."
+2. `0:30-1:30`: "MLIR module captures canonical representation."
+3. `1:30-2:15`: "Lowering + conversion passes create explicit, inspectable transformation steps."
+4. `2:15-3:45`: "Same semantic source emits C/C++/Rust/Go/TypeScript."
+5. `3:45-5:00`: "Value is architecture: shared analysis and lowering, target-specific rendering."
 
-"$DSDLC" ts --root-namespace-dir "$ROOT_NS" --ts-module demo_vendor_generated_ts --out-dir "$OUT_TS_DET/run-a"
-"$DSDLC" ts --root-namespace-dir "$ROOT_NS" --ts-module demo_vendor_generated_ts --out-dir "$OUT_TS_DET/run-b"
+## 3) Kitchen Tour (90 Seconds)
 
-diff -ru "$OUT_TS_DET/run-a" "$OUT_TS_DET/run-b"
-```
+Entry points:
 
-Optional quick TypeScript consumer-smoke proof (imports from generated `index.ts`):
-
-```bash
-cat > "$OUT/ts/consumer_smoke.ts" <<'TS'
-import { uavcan_node_heartbeat_1_0, uavcan_primitive_empty_1_0 } from "./index";
-const heartbeatName: string = uavcan_node_heartbeat_1_0.DSDL_FULL_NAME;
-const emptyName: string = uavcan_primitive_empty_1_0.DSDL_FULL_NAME;
-export const smokeSummary = `${heartbeatName}:${emptyName}`;
-TS
-
-tsc -p "$OUT/ts/tsconfig.json" --pretty false
-```
-
-Optional quick TypeScript `index.ts` alias-contract proof:
-
-```bash
-INDEX_ALIAS_COUNT="$(rg -n '^export \* as [A-Za-z_][A-Za-z0-9_]* from "\\./.+";$' "$OUT/ts/index.ts" | wc -l | tr -d ' ')"
-TYPE_FILE_COUNT="$(find "$OUT/ts" -name '*.ts' ! -name 'index.ts' | wc -l | tr -d ' ')"
-echo "index aliases=$INDEX_ALIAS_COUNT type files=$TYPE_FILE_COUNT"
-test "$INDEX_ALIAS_COUNT" = "$TYPE_FILE_COUNT"
-```
-
-Optional quick TypeScript runtime parity smoke proof (fixture-backed):
-
-```bash
-ctest --test-dir build/dev-homebrew \
-  -R llvmdsdl-fixtures-c-ts-runtime-parity \
-  --output-on-failure
-```
-
-Optional quick TypeScript variable-array C<->TS parity smoke proof:
-
-```bash
-ctest --test-dir build/dev-homebrew \
-  -R llvmdsdl-fixtures-c-ts-variable-array-parity \
-  --output-on-failure
-```
-
-Optional quick TypeScript fixed-array runtime smoke proof:
-
-```bash
-ctest --test-dir build/dev-homebrew \
-  -R llvmdsdl-ts-runtime-fixed-array-smoke \
-  --output-on-failure
-```
-
-Optional quick TypeScript variable-array runtime smoke proof:
-
-```bash
-ctest --test-dir build/dev-homebrew \
-  -R llvmdsdl-ts-runtime-variable-array-smoke \
-  --output-on-failure
-```
-
-Optional quick TypeScript bigint runtime smoke proof:
-
-```bash
-ctest --test-dir build/dev-homebrew \
-  -R llvmdsdl-ts-runtime-bigint-smoke \
-  --output-on-failure
-```
-
-Optional quick TypeScript bigint C<->TS parity smoke proof:
-
-```bash
-ctest --test-dir build/dev-homebrew \
-  -R llvmdsdl-fixtures-c-ts-bigint-parity \
-  --output-on-failure
-```
-
-Optional quick TypeScript union runtime smoke proof:
-
-```bash
-ctest --test-dir build/dev-homebrew \
-  -R llvmdsdl-ts-runtime-union-smoke \
-  --output-on-failure
-```
-
-Optional quick TypeScript union C<->TS parity smoke proof:
-
-```bash
-ctest --test-dir build/dev-homebrew \
-  -R llvmdsdl-fixtures-c-ts-union-parity \
-  --output-on-failure
-```
-
-Optional one-command TypeScript completion ring (generation + runtime + parity):
-
-```bash
-ctest --test-dir build/dev-homebrew -L ts --output-on-failure
-```
-
-### 2.3 One type, five languages
-
-```bash
-sed -n '1,60p'  "$OUT/c/vendor/Type_1_0.h"
-sed -n '1,80p'  "$OUT/cpp/std/vendor/Type_1_0.hpp"
-sed -n '1,80p'  "$OUT/rust/src/vendor/type__1_0.rs"
-sed -n '1,80p'  "$OUT/go/vendor/type__1_0.go"
-sed -n '1,80p'  "$OUT/ts/vendor/type__1_0.ts"
-```
-
-## 4) Five-Minute Talk Track
-
-Use this pacing:
-
-1. **0:00-0:30**: "We start with a platform-agnostic IDL corpus (`.dsdl`)."
-2. **0:30-1:30**: "Frontend + semantics produce structured IR (`ast`, `module.mlir`)."
-3. **1:30-2:15**: "MLIR passes lower serialization plans and can convert toward EmitC-compatible representation."
-4. **2:15-3:45**: "From the same semantic source, we emit C, C++ (`std`/`pmr`), Rust, Go, and TypeScript."
-5. **3:45-5:00**: "The value is compiler architecture: shared analysis, explicit contracts, target-specific emitters, and repeatable transformations."
-
-## 5) Kitchen Tour (90 seconds)
-
-The quick source walk:
-
-1. Entry points
 ```bash
 ls tools/dsdlc tools/dsdl-opt
 ```
 
-2. Frontend + semantics (parse, resolve, validate)
+Frontend and semantics:
+
 ```bash
 ls include/llvmdsdl/Frontend include/llvmdsdl/Semantics
 ls lib/Frontend lib/Semantics
 ```
 
-3. DSDL dialect + lowering + passes
+Dialect, lowering, transforms:
+
 ```bash
 ls include/llvmdsdl/IR include/llvmdsdl/Lowering include/llvmdsdl/Transforms
 ls lib/IR lib/Lowering lib/Transforms
 ```
 
-4. Language backends
+Backends and shared codegen planning:
+
 ```bash
 ls include/llvmdsdl/CodeGen
 ls lib/CodeGen
 ```
 
-5. Runtime layers
+Runtime layers:
+
 ```bash
 ls runtime runtime/cpp runtime/rust runtime/go
 ls "$OUT/ts/dsdl_runtime.ts"
 ```
 
-6. Validation corpus and tests
+Tests and corpus:
+
 ```bash
 find public_regulated_data_types/uavcan -name '*.dsdl' | wc -l
 ls test/lit test/integration test/unit
 ```
 
-## 6) Optional “Scale-Up” (Full `uavcan`)
+## 4) Optional Scale-Up Path (Full `uavcan`)
 
-If you want to show real corpus scale (not just the 6-type fixture):
+Use this when you want to show "same technique at corpus scale":
 
 ```bash
 ROOT_NS_FULL="public_regulated_data_types/uavcan"
 OUT_FULL="build/dev-homebrew/demo-uavcan"
+
 rm -rf "$OUT_FULL"
 mkdir -p "$OUT_FULL"
 
@@ -316,44 +195,55 @@ mkdir -p "$OUT_FULL"
 "$DSDLOPT" --pass-pipeline=builtin.module\(lower-dsdl-serialization,convert-dsdl-to-emitc\) \
   "$OUT_FULL/module.mlir" > "$OUT_FULL/module.emitc.mlir"
 
-"$DSDLC" c    --root-namespace-dir "$ROOT_NS_FULL" --out-dir "$OUT_FULL/c"
-"$DSDLC" cpp  --root-namespace-dir "$ROOT_NS_FULL" --cpp-profile both --out-dir "$OUT_FULL/cpp"
-"$DSDLC" rust --root-namespace-dir "$ROOT_NS_FULL" --rust-profile std --rust-crate-name uavcan_dsdl_generated --out-dir "$OUT_FULL/rust"
-"$DSDLC" go   --root-namespace-dir "$ROOT_NS_FULL" --go-module demo/uavcan/generated --out-dir "$OUT_FULL/go"
-"$DSDLC" ts   --root-namespace-dir "$ROOT_NS_FULL" --ts-module demo_uavcan_generated_ts --out-dir "$OUT_FULL/ts"
+"$DSDLC" c \
+  --root-namespace-dir "$ROOT_NS_FULL" \
+  --out-dir "$OUT_FULL/c"
+"$DSDLC" cpp \
+  --root-namespace-dir "$ROOT_NS_FULL" \
+  --cpp-profile both \
+  --out-dir "$OUT_FULL/cpp"
+"$DSDLC" rust \
+  --root-namespace-dir "$ROOT_NS_FULL" \
+  --rust-profile std \
+  --rust-crate-name uavcan_dsdl_generated \
+  --out-dir "$OUT_FULL/rust"
+"$DSDLC" go \
+  --root-namespace-dir "$ROOT_NS_FULL" \
+  --go-module demo/uavcan/generated \
+  --out-dir "$OUT_FULL/go"
+"$DSDLC" ts \
+  --root-namespace-dir "$ROOT_NS_FULL" \
+  --ts-module demo_uavcan_generated_ts \
+  --out-dir "$OUT_FULL/ts"
 ```
 
-Quick count checks:
+Scale counts:
 
 ```bash
 find "$ROOT_NS_FULL" -name '*.dsdl' | wc -l
 find "$OUT_FULL/c" -name '*.h' ! -name 'dsdl_runtime.h' | wc -l
 ```
 
-## 7) Message to Land with the Room
+## 5) Caveat: Remaining Work
 
-Use this close:
+As of **February 20, 2026**, the MLIR-max lowering program for the in-scope
+backend set is complete (C/C++/Rust/Go/TypeScript), including lowered-contract
+validation, runtime specialization lanes, and cross-language parity gates.
 
-"This is not just a code generator script. It is a compiler pipeline: typed frontend, analyzable MLIR dialect, explicit lowering contracts, and multi-target emission. That architecture is what makes new backends, static analysis, and optimization realistic instead of ad hoc."
+Work that remains is mostly product polish and expansion, not core viability:
 
-## 8) Caveat: Remaining Project Work
+1. Continue reducing backend-local rendering code so new targets can be added
+   with lower risk.
+2. Keep the release checklist and integration gates current as toolchains and
+   dependencies evolve.
+3. Add next-backend onboarding guidance and apply the same lowered-contract +
+   parity model to future targets.
 
-As of **February 19, 2026**, Phases 0-5 in `MLIR_MAX_LOWERING_PLAN.md` are complete for the current backend scope (C/C++/Rust/Go), and TypeScript includes generation/runtime/parity coverage, including optimization-enabled parity gates.
+What this project delivers now:
 
-Remaining work is now the **optional stretch**:
-
-1. Continue maturing the new language-agnostic render-IR layer (`LoweredRenderIR`) so more backend code paths become pure rendering adapters.
-2. Continue profile-knob expansion (embedded allocator/runtime specialization) without changing lowered wire semantics. (`--rust-profile no-std-alloc`, `--rust-runtime-specialization fast`, and `--ts-runtime-specialization fast` are implemented with generation/build-or-typecheck/parity and semantic-diff validation lanes.)
-3. Continue converging all backends (including TypeScript) on thinner shared render-IR consumption so backend code remains syntax/runtime binding.
-
-What we have now (already true):
-
-1. A versioned, backend-agnostic lowered SerDes contract as the semantic source of truth.
-2. C, C++ (`std`/`pmr`), Rust, Go, and TypeScript emitters converged on shared lowering products with strong parity/differential validation; TypeScript includes declaration generation, generated runtime helpers (`dsdl_runtime.ts`), compile/determinism/consumer/index-contract/runtime-execution gates, and C<->TS parity lanes (including signed-narrow and optimized variants).
-3. Optional optimization passes with parity-preserving validation under optimization-enabled workflows.
-
-What we should have when optional stretch work is done:
-
-1. Even thinner backends built on shared render IR with backend code focused on syntax/runtime binding.
-2. Profile flexibility (`std`/`pmr`/`no_std`/runtime-specialized embedded variants) without semantic drift.
-3. A non-C-like target path where TypeScript remains parity-validated with no fallback runtime stubs, lowering risk for additional language targets.
+1. A compiler-shaped pipeline (frontend -> semantics -> MLIR -> lowering ->
+   emitters), not isolated per-language generators.
+2. One platform-agnostic IDL source producing multiple target language outputs
+   through shared lowering contracts.
+3. A repeatable validation model (unit, integration, parity, determinism,
+   and optimization-enabled checks) that supports confidence at scale.

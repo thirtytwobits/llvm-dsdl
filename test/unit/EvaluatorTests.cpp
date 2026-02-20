@@ -15,7 +15,8 @@
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Support/Rational.h"
 
-namespace llvmdsdl {
+namespace llvmdsdl
+{
 struct SourceLocation;
 }  // namespace llvmdsdl
 
