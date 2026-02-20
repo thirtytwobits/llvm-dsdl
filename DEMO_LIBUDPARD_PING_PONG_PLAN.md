@@ -82,8 +82,8 @@ mkdir -p "$BUILD_DIR"
 
 # Build libudpard core as C object.
 cc -std=c11 -O2 -Wall -Wextra \
-  -Ilibudpard/libudpard \
-  -c libudpard/libudpard/udpard.c \
+  -Isubmodules/libudpard/libudpard \
+  -c submodules/libudpard/libudpard/udpard.c \
   -o "$BUILD_DIR/udpard.o"
 
 # Build portable UDP shim as C object.
@@ -98,7 +98,7 @@ clang++ -std=c++23 -O2 -Wall -Wextra \
   "$BUILD_DIR/udpard.o" \
   "$BUILD_DIR/udp_posix.o" \
   -Ibuild/pingpong/gen \
-  -Ilibudpard/libudpard \
+  -Isubmodules/libudpard/libudpard \
   -Iexamples/cyphal_ping_pong/src/net \
   -o "$BUILD_DIR/cyphal_ping_pong_node"
 ```

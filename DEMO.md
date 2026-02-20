@@ -176,7 +176,7 @@ ls "$OUT/ts/dsdl_runtime.ts"
 Tests and corpus:
 
 ```bash
-find public_regulated_data_types/uavcan -name '*.dsdl' | wc -l
+find submodules/public_regulated_data_types/uavcan -name '*.dsdl' | wc -l
 ls test/lit test/integration test/unit
 ```
 
@@ -185,7 +185,7 @@ ls test/lit test/integration test/unit
 Use this when you want to show "same technique at corpus scale":
 
 ```bash
-ROOT_NS_FULL="public_regulated_data_types/uavcan"
+ROOT_NS_FULL="submodules/public_regulated_data_types/uavcan"
 OUT_FULL="build/dev-homebrew/demo-uavcan"
 
 rm -rf "$OUT_FULL"

@@ -68,7 +68,7 @@ Tools
 - `runtime/dsdl_runtime.h`: generated C runtime support header.
 - `test/unit`: unit tests.
 - `test/lit`: lit/FileCheck tests (enabled when `llvm-lit`/`lit` is available).
-- `public_regulated_data_types`: DSDL corpus submodule.
+- `submodules/public_regulated_data_types`: DSDL corpus submodule.
 
 ## Prerequisites
 
@@ -518,7 +518,7 @@ cmake --workflow --preset dev-llvm-env
 ## CMake Generation Targets
 
 When the `uavcan` namespace root exists (auto-detected from either
-`public_regulated_dsdl/uavcan` or `public_regulated_data_types/uavcan`),
+`public_regulated_dsdl/uavcan` or `submodules/public_regulated_data_types/uavcan`),
 CMake provides first-class generation targets per language/profile:
 
 - `generate-uavcan-c`
@@ -574,21 +574,21 @@ Notes:
 
 ```bash
 ./build/tools/dsdlc/dsdlc ast \
-  --root-namespace-dir public_regulated_data_types/uavcan
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan
 ```
 
 ### MLIR output
 
 ```bash
 ./build/tools/dsdlc/dsdlc mlir \
-  --root-namespace-dir public_regulated_data_types/uavcan
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan
 ```
 
 ### C header generation
 
 ```bash
 ./build/tools/dsdlc/dsdlc c \
-  --root-namespace-dir public_regulated_data_types/uavcan \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
   --out-dir build/uavcan-out
 ```
 
@@ -605,7 +605,7 @@ Generate both profiles:
 
 ```bash
 ./build/tools/dsdlc/dsdlc cpp \
-  --root-namespace-dir public_regulated_data_types/uavcan \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
   --cpp-profile both \
   --out-dir build/uavcan-cpp-out
 ```
@@ -614,14 +614,14 @@ Generate only one profile:
 
 ```bash
 ./build/tools/dsdlc/dsdlc cpp \
-  --root-namespace-dir public_regulated_data_types/uavcan \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
   --cpp-profile std \
   --out-dir build/uavcan-cpp-std-out
 ```
 
 ```bash
 ./build/tools/dsdlc/dsdlc cpp \
-  --root-namespace-dir public_regulated_data_types/uavcan \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
   --cpp-profile pmr \
   --out-dir build/uavcan-cpp-pmr-out
 ```
@@ -648,7 +648,7 @@ Naming style:
 
 ```bash
 ./build/tools/dsdlc/dsdlc rust \
-  --root-namespace-dir public_regulated_data_types/uavcan \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
   --out-dir build/uavcan-rust-out \
   --rust-crate-name uavcan_dsdl_generated \
   --rust-profile std
@@ -658,7 +658,7 @@ No-std+alloc profile:
 
 ```bash
 ./build/tools/dsdlc/dsdlc rust \
-  --root-namespace-dir public_regulated_data_types/uavcan \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
   --out-dir build/uavcan-rust-no-std-out \
   --rust-crate-name uavcan_dsdl_generated_no_std \
   --rust-profile no-std-alloc
@@ -668,7 +668,7 @@ Runtime-specialized std profile:
 
 ```bash
 ./build/tools/dsdlc/dsdlc rust \
-  --root-namespace-dir public_regulated_data_types/uavcan \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
   --out-dir build/uavcan-rust-fast-out \
   --rust-crate-name uavcan_dsdl_generated_fast \
   --rust-profile std \
@@ -696,7 +696,7 @@ Current behavior:
 
 ```bash
 ./build/tools/dsdlc/dsdlc ts \
-  --root-namespace-dir public_regulated_data_types/uavcan \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
   --out-dir build/uavcan-ts-out \
   --ts-module uavcan_dsdl_generated_ts
 ```
@@ -705,7 +705,7 @@ Runtime-specialized fast profile:
 
 ```bash
 ./build/tools/dsdlc/dsdlc ts \
-  --root-namespace-dir public_regulated_data_types/uavcan \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
   --out-dir build/uavcan-ts-fast-out \
   --ts-module uavcan_dsdl_generated_ts_fast \
   --ts-runtime-specialization fast
@@ -743,10 +743,10 @@ OUT="build/uavcan-out"
 mkdir -p "${OUT}"
 
 ./build/tools/dsdlc/dsdlc c \
-  --root-namespace-dir public_regulated_data_types/uavcan \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
   --out-dir "${OUT}"
 
-find public_regulated_data_types/uavcan -name '*.dsdl' | wc -l
+find submodules/public_regulated_data_types/uavcan -name '*.dsdl' | wc -l
 find "${OUT}" -name '*.h' ! -name 'dsdl_runtime.h' | wc -l
 ```
 
@@ -756,7 +756,7 @@ The two counts should match.
 
 Current milestone supports generating all types under:
 
-- `public_regulated_data_types/uavcan`
+- `submodules/public_regulated_data_types/uavcan`
 
 with no `dsdl_runtime_stub_*` references in generated headers, C++23 generation
 (`std` + `pmr` profiles), Rust generation in `std`, `no-std-alloc`, and

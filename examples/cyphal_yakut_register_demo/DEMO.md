@@ -64,7 +64,7 @@ build/dev-homebrew/examples/cyphal_yakut_register_demo/rust-node/target/debug/cy
 In a second terminal:
 
 ```bash
-export CYPHAL_PATH="/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/public_regulated_data_types"
+export CYPHAL_PATH="/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/submodules/public_regulated_data_types"
 export UAVCAN__UDP__IFACE="127.0.0.1"
 export UAVCAN__NODE__ID="100"
 ```

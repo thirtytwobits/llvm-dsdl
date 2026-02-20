@@ -28,11 +28,11 @@ This guide covers:
 - Building `dsdlc` and `dsdl-opt`.
 - Running unit tests and lit tests (when available).
 - Running integration validation for `uavcan` generation.
-- Generating C11 output from `public_regulated_data_types/uavcan`.
+- Generating C11 output from `submodules/public_regulated_data_types/uavcan`.
 - Generating C++23 output (`std`/`pmr` profiles) from
-  `public_regulated_data_types/uavcan`.
+  `submodules/public_regulated_data_types/uavcan`.
 - Generating Rust crate output (currently `std` profile) from
-  `public_regulated_data_types/uavcan`.
+  `submodules/public_regulated_data_types/uavcan`.
 - Verifying generation completeness and compile sanity.
 
 ## 2. Prerequisites
@@ -69,7 +69,7 @@ cd llvm-dsdl
 git submodule update --init --recursive
 ```
 
-`public_regulated_data_types` is required for full-tree generation
+`submodules/public_regulated_data_types` is required for full-tree generation
 checks and integration validation.
 
 ## 4. Recommended: Preset-Driven Workflows
@@ -243,7 +243,7 @@ OUT="build/uavcan-out-verify"
 mkdir -p "${OUT}"
 
 ./build/tools/dsdlc/dsdlc c \
-  --root-namespace-dir public_regulated_data_types/uavcan \ \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \ \
   --out-dir "${OUT}"
 ```
 
@@ -263,7 +263,7 @@ OUT_CPP="build/uavcan-cpp-out-verify"
 mkdir -p "${OUT_CPP}"
 
 ./build/tools/dsdlc/dsdlc cpp \
-  --root-namespace-dir public_regulated_data_types/uavcan \ \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \ \
   --cpp-profile both \
   --out-dir "${OUT_CPP}"
 ```
@@ -283,14 +283,14 @@ Single-profile generation:
 
 ```bash
 ./build/tools/dsdlc/dsdlc cpp \
-  --root-namespace-dir public_regulated_data_types/uavcan \ \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \ \
   --cpp-profile std \
   --out-dir build/uavcan-cpp-std-out
 ```
 
 ```bash
 ./build/tools/dsdlc/dsdlc cpp \
-  --root-namespace-dir public_regulated_data_types/uavcan \ \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \ \
   --cpp-profile pmr \
   --out-dir build/uavcan-cpp-pmr-out
 ```
@@ -302,7 +302,7 @@ OUT_RUST="build/uavcan-rust-out-verify"
 mkdir -p "${OUT_RUST}"
 
 ./build/tools/dsdlc/dsdlc rust \
-  --root-namespace-dir public_regulated_data_types/uavcan \ \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \ \
   --out-dir "${OUT_RUST}" \
   --rust-crate-name uavcan_dsdl_generated \
   --rust-profile std
@@ -327,7 +327,7 @@ Reserved future profile:
 ### 11.1 Header count parity
 
 ```bash
-find public_regulated_data_types/uavcan -name '*.dsdl' | wc -l
+find submodules/public_regulated_data_types/uavcan -name '*.dsdl' | wc -l
 find build/uavcan-out-verify -name '*.h' ! -name 'dsdl_runtime.h' | wc -l
 ```
 
@@ -371,7 +371,7 @@ Expected:
 ### 11.4 C++ type-file parity check
 
 ```bash
-find public_regulated_data_types/uavcan -name '*.dsdl' | wc -l
+find submodules/public_regulated_data_types/uavcan -name '*.dsdl' | wc -l
 find build/uavcan-cpp-out-verify/std -name '*.hpp' ! -name 'dsdl_runtime.hpp' | wc -l
 find build/uavcan-cpp-out-verify/pmr -name '*.hpp' ! -name 'dsdl_runtime.hpp' | wc -l
 ```
@@ -410,7 +410,7 @@ Expected:
 ### 11.6 Rust type-file parity check
 
 ```bash
-find public_regulated_data_types/uavcan -name '*.dsdl' | wc -l
+find submodules/public_regulated_data_types/uavcan -name '*.dsdl' | wc -l
 find build/uavcan-rust-out-verify/src -name '*.rs' \
   ! -name 'lib.rs' ! -name 'mod.rs' ! -name 'dsdl_runtime.rs' | wc -l
 ```
@@ -474,7 +474,7 @@ Checklist:
 - Submodule initialized:
   - `git submodule update --init --recursive`
 - Command points at the root namespace:
-  - `--root-namespace-dir public_regulated_data_types/uavcan`
+  - `--root-namespace-dir submodules/public_regulated_data_types/uavcan`
 
 ### 13.4 Header compile-check failures
 

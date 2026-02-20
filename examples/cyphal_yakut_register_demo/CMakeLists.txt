@@ -2,9 +2,9 @@ set(LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT "")
 if(EXISTS "${CMAKE_SOURCE_DIR}/public_regulated_dsdl/uavcan")
   set(LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT
       "${CMAKE_SOURCE_DIR}/public_regulated_dsdl/uavcan")
-elseif(EXISTS "${CMAKE_SOURCE_DIR}/public_regulated_data_types/uavcan")
+elseif(EXISTS "${CMAKE_SOURCE_DIR}/submodules/public_regulated_data_types/uavcan")
   set(LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT
-      "${CMAKE_SOURCE_DIR}/public_regulated_data_types/uavcan")
+      "${CMAKE_SOURCE_DIR}/submodules/public_regulated_data_types/uavcan")
 endif()
 
 if(NOT LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT)
@@ -18,9 +18,9 @@ get_filename_component(LLVMDSDL_YAKUT_DEMO_CYPHAL_PATH
   DIRECTORY)
 
 set(LLVMDSDL_YAKUT_DEMO_UDPARD_C
-    "${CMAKE_SOURCE_DIR}/libudpard/libudpard/udpard.c")
+    "${CMAKE_SOURCE_DIR}/submodules/libudpard/libudpard/udpard.c")
 set(LLVMDSDL_YAKUT_DEMO_UDPARD_INCLUDE
-    "${CMAKE_SOURCE_DIR}/libudpard/libudpard")
+    "${CMAKE_SOURCE_DIR}/submodules/libudpard/libudpard")
 
 if(NOT EXISTS "${LLVMDSDL_YAKUT_DEMO_UDPARD_C}")
   message(WARNING
@@ -228,13 +228,13 @@ if(LLVMDSDL_YAKUT_DEMO_GO_EXECUTABLE)
       "${CMAKE_SOURCE_DIR}/examples/cyphal_ping_pong/src/net/udp_posix.c"
       "${LLVMDSDL_YAKUT_DEMO_GO_NODE_DIR}/udp_posix.c"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      "${CMAKE_SOURCE_DIR}/libudpard/libudpard/udpard.h"
+      "${CMAKE_SOURCE_DIR}/submodules/libudpard/libudpard/udpard.h"
       "${LLVMDSDL_YAKUT_DEMO_GO_NODE_DIR}/udpard.h"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      "${CMAKE_SOURCE_DIR}/libudpard/libudpard/udpard.c"
+      "${CMAKE_SOURCE_DIR}/submodules/libudpard/libudpard/udpard.c"
       "${LLVMDSDL_YAKUT_DEMO_GO_NODE_DIR}/udpard.c"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      "${CMAKE_SOURCE_DIR}/libudpard/libudpard/_udpard_cavl.h"
+      "${CMAKE_SOURCE_DIR}/submodules/libudpard/libudpard/_udpard_cavl.h"
       "${LLVMDSDL_YAKUT_DEMO_GO_NODE_DIR}/_udpard_cavl.h"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
       "${LLVMDSDL_YAKUT_DEMO_GO_NODE_GOMOD}"
@@ -263,9 +263,9 @@ if(LLVMDSDL_YAKUT_DEMO_GO_EXECUTABLE)
       "${CMAKE_CURRENT_SOURCE_DIR}/src/go_register_node/go.mod.in"
       "${CMAKE_SOURCE_DIR}/examples/cyphal_ping_pong/src/net/udp_posix.h"
       "${CMAKE_SOURCE_DIR}/examples/cyphal_ping_pong/src/net/udp_posix.c"
-      "${CMAKE_SOURCE_DIR}/libudpard/libudpard/udpard.h"
-      "${CMAKE_SOURCE_DIR}/libudpard/libudpard/udpard.c"
-      "${CMAKE_SOURCE_DIR}/libudpard/libudpard/_udpard_cavl.h"
+      "${CMAKE_SOURCE_DIR}/submodules/libudpard/libudpard/udpard.h"
+      "${CMAKE_SOURCE_DIR}/submodules/libudpard/libudpard/udpard.c"
+      "${CMAKE_SOURCE_DIR}/submodules/libudpard/libudpard/_udpard_cavl.h"
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     VERBATIM
     COMMENT "Building Go yakut register demo node")
@@ -316,13 +316,13 @@ if(LLVMDSDL_YAKUT_DEMO_CARGO_EXECUTABLE)
       "${CMAKE_SOURCE_DIR}/examples/cyphal_ping_pong/src/net/udp_posix.c"
       "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_DIR}/udp_posix.c"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      "${CMAKE_SOURCE_DIR}/libudpard/libudpard/udpard.h"
+      "${CMAKE_SOURCE_DIR}/submodules/libudpard/libudpard/udpard.h"
       "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_DIR}/udpard.h"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      "${CMAKE_SOURCE_DIR}/libudpard/libudpard/udpard.c"
+      "${CMAKE_SOURCE_DIR}/submodules/libudpard/libudpard/udpard.c"
       "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_DIR}/udpard.c"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      "${CMAKE_SOURCE_DIR}/libudpard/libudpard/_udpard_cavl.h"
+      "${CMAKE_SOURCE_DIR}/submodules/libudpard/libudpard/_udpard_cavl.h"
       "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_DIR}/_udpard_cavl.h"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
       "${LLVMDSDL_YAKUT_DEMO_RUST_NODE_CARGO_TOML}"
@@ -341,9 +341,9 @@ if(LLVMDSDL_YAKUT_DEMO_CARGO_EXECUTABLE)
       "${CMAKE_CURRENT_SOURCE_DIR}/src/go_register_node/transport_shim.c"
       "${CMAKE_SOURCE_DIR}/examples/cyphal_ping_pong/src/net/udp_posix.h"
       "${CMAKE_SOURCE_DIR}/examples/cyphal_ping_pong/src/net/udp_posix.c"
-      "${CMAKE_SOURCE_DIR}/libudpard/libudpard/udpard.h"
-      "${CMAKE_SOURCE_DIR}/libudpard/libudpard/udpard.c"
-      "${CMAKE_SOURCE_DIR}/libudpard/libudpard/_udpard_cavl.h"
+      "${CMAKE_SOURCE_DIR}/submodules/libudpard/libudpard/udpard.h"
+      "${CMAKE_SOURCE_DIR}/submodules/libudpard/libudpard/udpard.c"
+      "${CMAKE_SOURCE_DIR}/submodules/libudpard/libudpard/_udpard_cavl.h"
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     VERBATIM
     COMMENT "Building Rust yakut register demo node")

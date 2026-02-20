@@ -159,9 +159,9 @@ set(LLVMDSDL_UAVCAN_ROOT "")
 if(EXISTS "${LLVMDSDL_SOURCE_DIR}/public_regulated_dsdl/uavcan")
   set(LLVMDSDL_UAVCAN_ROOT
       "${LLVMDSDL_SOURCE_DIR}/public_regulated_dsdl/uavcan")
-elseif(EXISTS "${LLVMDSDL_SOURCE_DIR}/public_regulated_data_types/uavcan")
+elseif(EXISTS "${LLVMDSDL_SOURCE_DIR}/submodules/public_regulated_data_types/uavcan")
   set(LLVMDSDL_UAVCAN_ROOT
-      "${LLVMDSDL_SOURCE_DIR}/public_regulated_data_types/uavcan")
+      "${LLVMDSDL_SOURCE_DIR}/submodules/public_regulated_data_types/uavcan")
 endif()
 
 if(LLVMDSDL_UAVCAN_ROOT)
@@ -282,7 +282,7 @@ else()
   message(WARNING
     "uavcan DSDL root not found. Expected either "
     "${LLVMDSDL_SOURCE_DIR}/public_regulated_dsdl/uavcan or "
-    "${LLVMDSDL_SOURCE_DIR}/public_regulated_data_types/uavcan. "
+    "${LLVMDSDL_SOURCE_DIR}/submodules/public_regulated_data_types/uavcan. "
     "Skipping generation targets.")
 endif()
 

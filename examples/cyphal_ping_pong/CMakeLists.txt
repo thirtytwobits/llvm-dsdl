@@ -3,9 +3,9 @@ set(LLVMDSDL_PING_PONG_DSDL_ROOT
 set(LLVMDSDL_PING_PONG_GEN_DIR
     "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set(LLVMDSDL_PING_PONG_UDPARD_C
-    "${CMAKE_SOURCE_DIR}/libudpard/libudpard/udpard.c")
+    "${CMAKE_SOURCE_DIR}/submodules/libudpard/libudpard/udpard.c")
 set(LLVMDSDL_PING_PONG_UDPARD_INCLUDE
-    "${CMAKE_SOURCE_DIR}/libudpard/libudpard")
+    "${CMAKE_SOURCE_DIR}/submodules/libudpard/libudpard")
 set(LLVMDSDL_PING_PONG_DEMO_LOG_DIR
     "${CMAKE_CURRENT_BINARY_DIR}/run-logs")
 

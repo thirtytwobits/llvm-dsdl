@@ -1,5 +1,5 @@
 set(LLVMDSDL_UAVCAN_ROOT
-    "${LLVMDSDL_SOURCE_DIR}/public_regulated_data_types/uavcan")
+    "${LLVMDSDL_SOURCE_DIR}/submodules/public_regulated_data_types/uavcan")
 
 set(LLVMDSDL_FIXTURES_ROOT
     "${LLVMDSDL_SOURCE_DIR}/test/lit/fixtures")
