@@ -20,11 +20,10 @@ Current generated size is intentionally large (thousands of `.dsdl` files) to
 surface combinatorial behavior in discovery, parsing, semantic analysis, and
 downstream lowering/codegen passes.
 
-Benchmark runs should use `test/benchmark/complex` as the root namespace
-directory because it includes both:
+Benchmark runs should use:
 
-- `civildrone/` (generated stress corpus)
-- `uavcan/` (symlink to regulated data types)
+- `--root-namespace-dir test/benchmark/complex/civildrone`
+- `--lookup-dir test/benchmark/complex/uavcan`
 
 ## Regeneration
 
@@ -52,6 +51,6 @@ bash test/benchmark/complex/generate_complex_dsdl.sh
 ```bash
 cmake --build --preset build-dev-homebrew-debug --target dsdlc
 build/matrix/dev-homebrew/tools/dsdlc/Debug/dsdlc ast \
-  --root-namespace-dir test/benchmark/complex \
-  --lookup-dir submodules/public_regulated_data_types >/dev/null
+  --root-namespace-dir test/benchmark/complex/civildrone \
+  --lookup-dir test/benchmark/complex/uavcan >/dev/null
 ```

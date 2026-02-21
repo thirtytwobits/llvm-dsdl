@@ -752,42 +752,37 @@ llvm::Error emitC(const SemanticModule& semantic,
     std::filesystem::path outRoot(options.outDir);
     EmitterContext        ctx(semantic);
 
+    std::unordered_map<std::string, mlir::Operation*> schemaByHeaderPath;
+    for (mlir::Operation& op : module.getBodyRegion().front())
+    {
+        if (op.getName().getStringRef() != "dsdl.schema")
+        {
+            continue;
+        }
+        const auto headerPathAttr = op.getAttrOfType<mlir::StringAttr>("header_path");
+        if (!headerPathAttr)
+        {
+            continue;
+        }
+        schemaByHeaderPath.emplace(headerPathAttr.str(), &op);
+    }
+
     for (const auto& def : semantic.definitions)
     {
-        auto           clonedModule = mlir::OwningOpRef<mlir::ModuleOp>(mlir::cast<mlir::ModuleOp>(module->clone()));
-        mlir::ModuleOp perDefModule = *clonedModule;
+        auto perDefModuleRef = mlir::OwningOpRef<mlir::ModuleOp>(mlir::ModuleOp::create(module.getLoc()));
+        auto perDefModule    = *perDefModuleRef;
         perDefModule->setAttr("llvmdsdl.headers_available", mlir::UnitAttr::get(perDefModule.getContext()));
         perDefModule->setAttr("llvmdsdl.require_typed_lowering", mlir::UnitAttr::get(perDefModule.getContext()));
 
-        const std::string             targetHeaderPath = ctx.relativeHeaderPath(def);
-        std::vector<mlir::Operation*> eraseList;
-        bool                          foundTargetSchema = false;
-        for (mlir::Operation& op : perDefModule.getBodyRegion().front())
+        const std::string targetHeaderPath = ctx.relativeHeaderPath(def);
+        const auto        targetIt         = schemaByHeaderPath.find(targetHeaderPath);
+        if (targetIt == schemaByHeaderPath.end())
         {
-            if (op.getName().getStringRef() != "dsdl.schema")
-            {
-                continue;
-            }
-            const auto headerPathAttr = op.getAttrOfType<mlir::StringAttr>("header_path");
-            const bool isTarget       = headerPathAttr && headerPathAttr.getValue() == targetHeaderPath;
-            if (isTarget)
-            {
-                foundTargetSchema = true;
-            }
-            else
-            {
-                eraseList.push_back(&op);
-            }
-        }
-        for (mlir::Operation* op : eraseList)
-        {
-            op->erase();
-        }
-        if (!foundTargetSchema)
-        {
-            diagnostics.error({"<mlir>", 1, 1}, "failed to locate schema op for " + def.info.fullName);
+            diagnostics.error({"<mlir>", 1, 1},
+                              "failed to locate schema op for " + def.info.fullName + " (" + targetHeaderPath + ")");
             return llvm::createStringError(llvm::inconvertibleErrorCode(), "schema selection failed");
         }
+        perDefModule.getBodyRegion().front().push_back(targetIt->second->clone());
 
         mlir::PassManager pm(perDefModule.getContext());
         pm.addPass(createLowerDSDLSerializationPass());

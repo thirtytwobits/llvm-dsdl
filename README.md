@@ -525,7 +525,8 @@ benchmark harness coverage.
 
 For large-scale throughput regression testing, use the complex benchmark corpus:
 
-- `test/benchmark/complex/civildrone`
+- root namespace: `test/benchmark/complex/civildrone`
+- lookup namespace: `test/benchmark/complex/uavcan`
 
 Utility targets:
 

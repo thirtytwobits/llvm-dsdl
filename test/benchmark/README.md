@@ -72,17 +72,17 @@ Direct harness usage (example: Python only):
 ```bash
 python3 test/benchmark/benchmark_codegen.py record \
   --dsdlc build/matrix/dev-homebrew/tools/dsdlc/RelWithDebInfo/dsdlc \
-  --root-namespace-dir test/benchmark/complex \
-  --lookup-dir submodules/public_regulated_data_types \
+  --root-namespace-dir test/benchmark/complex/civildrone \
+  --lookup-dir test/benchmark/complex/uavcan \
   --out-base-dir build/matrix/dev-homebrew/test/benchmark/complex-codegen/generated \
   --report-json build/matrix/dev-homebrew/test/benchmark/complex-codegen/python-only-record.json \
   --languages python \
   --status-interval-sec 10
 ```
 
-Always point `--root-namespace-dir` at `test/benchmark/complex` (not
-`test/benchmark/complex/civildrone`) so both `civildrone` and `uavcan`
-namespaces are discoverable in one run.
+Use a namespace root for `--root-namespace-dir` (`.../civildrone`) and provide
+`uavcan` as a lookup root. Do not pass the wrapper directory
+`test/benchmark/complex` as a root namespace.
 
 CMake-driven single-language run:
 

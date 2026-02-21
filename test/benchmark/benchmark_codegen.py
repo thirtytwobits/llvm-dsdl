@@ -18,7 +18,7 @@ import shutil
 import statistics
 import subprocess
 import sys
-import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -68,6 +68,39 @@ def count_files(root: Path) -> int:
     return count
 
 
+def forward_stream_lines(stream: Any, sink: Any, prefix: str, collector: list[str]) -> None:
+    """Continuously forwards process output and collects it for post-run reporting."""
+    try:
+        for line in iter(stream.readline, ""):
+            collector.append(line)
+            sink.write(f"{prefix}{line}")
+            sink.flush()
+    finally:
+        stream.close()
+
+
+def describe_process_metrics(pid: int) -> str:
+    """Returns lightweight child-process telemetry for heartbeat output."""
+    try:
+        proc = subprocess.run(
+            ["ps", "-o", "%cpu=,rss=", "-p", str(pid)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            return f"pid={pid} cpu=n/a rss=n/a"
+        values = proc.stdout.strip().split()
+        if len(values) < 2:
+            return f"pid={pid} cpu=n/a rss=n/a"
+        cpu = values[0]
+        rss_kib = float(values[1])
+        rss_mib = rss_kib / 1024.0
+        return f"pid={pid} cpu={cpu}% rss={rss_mib:.1f}MiB"
+    except (OSError, ValueError):
+        return f"pid={pid} cpu=n/a rss=n/a"
+
+
 def run_language(
     dsdlc: Path,
     root_namespace_dir: Path,
@@ -108,54 +141,80 @@ def run_language(
             flush=True,
         )
         start = time.perf_counter()
-        with tempfile.TemporaryDirectory(prefix=f"llvmdsdl-bench-{spec.key}-") as log_dir:
-            stdout_path = Path(log_dir) / "stdout.log"
-            stderr_path = Path(log_dir) / "stderr.log"
-            with stdout_path.open("w", encoding="utf-8") as stdout_file, stderr_path.open(
-                "w", encoding="utf-8"
-            ) as stderr_file:
-                proc = subprocess.Popen(
-                    command,
-                    stdout=stdout_file,
-                    stderr=stderr_file,
-                    text=True,
-                )
-                next_status_at = float(status_interval_sec)
-                timed_out = False
-                while True:
-                    ret = proc.poll()
-                    elapsed = time.perf_counter() - start
-                    if ret is not None:
-                        break
-                    if timeout_seconds > 0 and elapsed >= float(timeout_seconds):
-                        timed_out = True
-                        proc.terminate()
-                        try:
-                            proc.wait(timeout=5.0)
-                        except subprocess.TimeoutExpired:
-                            proc.kill()
-                        break
-                    if status_interval_sec > 0 and elapsed >= next_status_at:
-                        try:
-                            file_count = count_files(run_out_dir)
-                        except OSError:
-                            file_count = -1
-                        if file_count >= 0:
-                            print(
-                                f"[benchmark] {spec.key} iter {idx + 1}/{iterations}: running "
-                                f"{elapsed:.1f}s (generated files so far: {file_count})",
-                                flush=True,
-                            )
-                        else:
-                            print(
-                                f"[benchmark] {spec.key} iter {idx + 1}/{iterations}: running {elapsed:.1f}s",
-                                flush=True,
-                            )
-                        next_status_at += float(status_interval_sec)
-                    time.sleep(0.25)
+        proc = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        if proc.stdout is None or proc.stderr is None:
+            raise RuntimeError(f"failed to capture process pipes for {spec.key}")
 
-            stdout = stdout_path.read_text(encoding="utf-8")
-            stderr = stderr_path.read_text(encoding="utf-8")
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
+        stdout_thread = threading.Thread(
+            target=forward_stream_lines,
+            args=(proc.stdout, sys.stdout, f"[{spec.key} stdout] ", stdout_lines),
+            daemon=True,
+        )
+        stderr_thread = threading.Thread(
+            target=forward_stream_lines,
+            args=(proc.stderr, sys.stderr, f"[{spec.key} stderr] ", stderr_lines),
+            daemon=True,
+        )
+        stdout_thread.start()
+        stderr_thread.start()
+
+        next_status_at = float(status_interval_sec)
+        timed_out = False
+        while True:
+            ret = proc.poll()
+            elapsed = time.perf_counter() - start
+            if ret is not None:
+                break
+            if timeout_seconds > 0 and elapsed >= float(timeout_seconds):
+                timed_out = True
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5.0)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                break
+            if status_interval_sec > 0 and elapsed >= next_status_at:
+                try:
+                    file_count = count_files(run_out_dir)
+                except OSError:
+                    file_count = -1
+                stdout_line_count = len(stdout_lines)
+                stderr_line_count = len(stderr_lines)
+                metrics = describe_process_metrics(proc.pid)
+                quiet_hint = ""
+                if file_count == 0 and stdout_line_count == 0 and stderr_line_count == 0:
+                    quiet_hint = " phase=frontend/lowering(no emitted files yet)"
+                if file_count >= 0:
+                    print(
+                        f"[benchmark] {spec.key} iter {idx + 1}/{iterations}: running "
+                        f"{elapsed:.1f}s (generated files so far: {file_count}, "
+                        f"streamed lines stdout={stdout_line_count} stderr={stderr_line_count}, "
+                        f"{metrics}){quiet_hint}",
+                        flush=True,
+                    )
+                else:
+                    print(
+                        f"[benchmark] {spec.key} iter {idx + 1}/{iterations}: running "
+                        f"{elapsed:.1f}s (streamed lines stdout={stdout_line_count} "
+                        f"stderr={stderr_line_count}, {metrics}){quiet_hint}",
+                        flush=True,
+                    )
+                next_status_at += float(status_interval_sec)
+            time.sleep(0.25)
+
+        proc.wait()
+        stdout_thread.join(timeout=2.0)
+        stderr_thread.join(timeout=2.0)
+        stdout = "".join(stdout_lines)
+        stderr = "".join(stderr_lines)
         elapsed = time.perf_counter() - start
         if timed_out:
             raise RuntimeError(
@@ -200,10 +259,17 @@ def run_suite(args: argparse.Namespace) -> dict[str, Any]:
         raise FileNotFoundError(f"dsdlc not found: {dsdlc}")
     if not root_namespace_dir.exists():
         raise FileNotFoundError(f"root namespace dir not found: {root_namespace_dir}")
+    wrapper_has_civildrone = (root_namespace_dir / "civildrone").is_dir()
+    wrapper_has_uavcan = (root_namespace_dir / "uavcan").exists()
+    if wrapper_has_civildrone and wrapper_has_uavcan:
+        raise ValueError(
+            "root namespace dir points at a wrapper directory containing multiple namespaces. "
+            "Use --root-namespace-dir <...>/civildrone and --lookup-dir <...>/uavcan."
+        )
     if root_namespace_dir.name == "civildrone" and not lookup_dirs:
         raise ValueError(
             "benchmark root points to civildrone without lookup roots; pass --lookup-dir "
-            "submodules/public_regulated_data_types or use --root-namespace-dir test/benchmark/complex"
+            "test/benchmark/complex/uavcan (or submodules/public_regulated_data_types/uavcan)."
         )
     for lookup_dir in lookup_dirs:
         if not lookup_dir.exists():

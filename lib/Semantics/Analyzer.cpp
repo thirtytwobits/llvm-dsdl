@@ -687,13 +687,31 @@ private:
             }
         };
 
-        updateOffsetEnv();
+        auto stmtNeedsOffset = [&](const StatementAST& statement) -> bool {
+            if (auto c = std::get_if<ConstantDeclAST>(&statement))
+            {
+                return exprContainsOffset(c->value);
+            }
+            if (auto f = std::get_if<FieldDeclAST>(&statement))
+            {
+                return exprContainsOffset(f->type.arrayCapacity);
+            }
+            if (auto d = std::get_if<DirectiveAST>(&statement))
+            {
+                return exprContainsOffset(d->expression);
+            }
+            return false;
+        };
 
         std::set<std::string> names;
 
         for (const auto& stmt : statements)
         {
-            updateOffsetEnv();
+            // Materialize _offset_ lazily only when the current statement can reference it.
+            if (stmtNeedsOffset(stmt))
+            {
+                updateOffsetEnv();
+            }
 
             if (std::holds_alternative<DirectiveAST>(stmt))
             {

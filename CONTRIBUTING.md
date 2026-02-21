@@ -639,7 +639,8 @@ Release sign-off requires all of the following:
 
 The repository includes a large benchmark corpus under:
 
-- `test/benchmark/complex/civildrone`
+- root namespace: `test/benchmark/complex/civildrone`
+- lookup namespace: `test/benchmark/complex/uavcan`
 
 and benchmark utility targets:
 
