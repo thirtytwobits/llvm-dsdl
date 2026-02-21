@@ -11,8 +11,8 @@
 /// Public entry points and options for Go backend emission.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_CODEGEN_GOEMITTER_H
-#define LLVMDSDL_CODEGEN_GOEMITTER_H
+#ifndef LLVMDSDL_CODEGEN_GO_EMITTER_H
+#define LLVMDSDL_CODEGEN_GO_EMITTER_H
 
 #include <string>
 
@@ -60,4 +60,4 @@ llvm::Error emitGo(const SemanticModule& semantic,
 
 }  // namespace llvmdsdl
 
-#endif  // LLVMDSDL_CODEGEN_GOEMITTER_H
+#endif  // LLVMDSDL_CODEGEN_GO_EMITTER_H

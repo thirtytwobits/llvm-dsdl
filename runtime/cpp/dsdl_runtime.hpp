@@ -19,7 +19,6 @@
 #define LLVMDSDL_CPP_RUNTIME_HPP
 
 #include <cstddef>
-#include <cstdint>
 #include <memory_resource>
 
 extern "C"

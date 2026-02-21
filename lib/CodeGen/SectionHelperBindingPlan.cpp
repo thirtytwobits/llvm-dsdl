@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Plans section helper bindings required by lowered serde bodies.
+/// Plans section helper bindings required by lowered serdes bodies.
 ///
 /// The planner determines which helper descriptors are needed and in what order they should be bound for rendering.
 ///

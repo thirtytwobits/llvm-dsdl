@@ -11,8 +11,8 @@
 /// TableGen type definitions for the DSDL MLIR dialect.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_IR_DSDLTYPES_TD
-#define LLVMDSDL_IR_DSDLTYPES_TD
+#ifndef LLVMDSDL_IR_DSDL_TYPES_TD
+#define LLVMDSDL_IR_DSDL_TYPES_TD
 
 include "mlir/IR/AttrTypeBase.td"
 include "llvmdsdl/IR/DSDLBase.td"
@@ -31,4 +31,4 @@ def DSDL_BitLengthSetType : TypeDef<DSDL_Dialect, "BitLengthSet"> {
   let assemblyFormat = "`<` $expr `>`";
 }
 
-#endif // LLVMDSDL_IR_DSDLTYPES_TD
+#endif // LLVMDSDL_IR_DSDL_TYPES_TD

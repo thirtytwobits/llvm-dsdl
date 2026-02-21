@@ -11,8 +11,8 @@
 /// Entry points for lowering the semantic model into DSDL MLIR.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_LOWERING_LOWERTOMLIR_H
-#define LLVMDSDL_LOWERING_LOWERTOMLIR_H
+#ifndef LLVMDSDL_LOWERING_LOWERTO_MLIR_H
+#define LLVMDSDL_LOWERING_LOWERTO_MLIR_H
 
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/OwningOpRef.h"
@@ -41,4 +41,4 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
 
 }  // namespace llvmdsdl
 
-#endif  // LLVMDSDL_LOWERING_LOWERTOMLIR_H
+#endif  // LLVMDSDL_LOWERING_LOWERTO_MLIR_H

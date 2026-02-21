@@ -19,8 +19,8 @@
 #include <llvm/Support/LogicalResult.h>
 
 #include "mlir/IR/Builders.h"  // IWYU pragma: keep
-#include "mlir/IR/BuiltinAttributes.h"
-#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/BuiltinAttributes.h" // IWYU pragma: keep
+#include "mlir/IR/Diagnostics.h" // IWYU pragma: keep
 #include "mlir/Support/LLVM.h"
 
 using namespace mlir;

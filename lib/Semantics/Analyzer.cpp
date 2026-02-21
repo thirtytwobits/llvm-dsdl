@@ -22,7 +22,6 @@
 #include <set>
 #include <sstream>
 #include <unordered_map>
-#include <compare>
 #include <cstddef>
 #include <cstdint>
 #include <memory>

@@ -26,7 +26,6 @@
 #include <sstream>
 #include <unordered_map>
 #include <vector>
-#include <compare>
 #include <cstddef>
 #include <cstdint>
 #include <system_error>

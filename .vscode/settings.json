@@ -3,6 +3,7 @@
         "--compile-commands-dir=build/dev-homebrew"
     ],
     "cSpell.words": [
+        "appendable",
         "BITLENGTHSET",
         "CEMITTER",
         "CODEGEN",
@@ -19,6 +20,7 @@
         "mlir",
         "nodiscard",
         "RUSTEMITTER",
-        "SERDES"
+        "SERDES",
+        "thirtytwobits"
     ]
 }

@@ -11,8 +11,8 @@
 /// TableGen operation definitions for the DSDL MLIR dialect.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_IR_DSDLOPS_TD
-#define LLVMDSDL_IR_DSDLOPS_TD
+#ifndef LLVMDSDL_IR_DSDL_OPS_TD
+#define LLVMDSDL_IR_DSDL_OPS_TD
 
 include "mlir/IR/OpBase.td"
 include "mlir/IR/SymbolInterfaces.td"
@@ -70,4 +70,4 @@ def DSDL_IOOp : DSDL_Op<"io", [NoMemoryEffect]> {
   let assemblyFormat = "attr-dict";
 }
 
-#endif // LLVMDSDL_IR_DSDLOPS_TD
+#endif // LLVMDSDL_IR_DSDL_OPS_TD

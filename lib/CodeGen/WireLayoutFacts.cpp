@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Computes wire-layout facts needed by generated serde code.
+/// Computes wire-layout facts needed by generated serdes code.
 ///
 /// The implementation resolves section-level details such as union-tag width and related layout constraints.
 ///
@@ -18,7 +18,6 @@
 
 #include <algorithm>
 #include <optional>
-#include <vector>
 
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/Semantics/Model.h"

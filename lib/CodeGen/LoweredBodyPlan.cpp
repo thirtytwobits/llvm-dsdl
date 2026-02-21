@@ -10,7 +10,7 @@
 /// @file
 /// Builds lowered body plans from semantic sections and lowering facts.
 ///
-/// The planner produces a compact structure that binders and emitters consume to drive section-level serde generation.
+/// The planner produces a compact structure that binders and emitters consume to drive section-level serdes generation.
 ///
 //===----------------------------------------------------------------------===//
 

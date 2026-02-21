@@ -10,7 +10,7 @@
 /// @file
 /// Implements Go backend code emission from lowered DSDL modules.
 ///
-/// This file materializes Go type declarations and serde helpers from backend-neutral lowering plans.
+/// This file materializes Go type declarations and serdes helpers from backend-neutral lowering plans.
 ///
 //===----------------------------------------------------------------------===//
 

@@ -21,7 +21,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <memory>
-#include <type_traits>
 #include <vector>
 
 #include "llvmdsdl/Support/Diagnostics.h"

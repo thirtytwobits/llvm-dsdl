@@ -11,8 +11,8 @@
 /// Generated-type include declarations for the DSDL MLIR dialect.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_IR_DSDLTYPES_H
-#define LLVMDSDL_IR_DSDLTYPES_H
+#ifndef LLVMDSDL_IR_DSDL_TYPES_H
+#define LLVMDSDL_IR_DSDL_TYPES_H
 
 #include "llvmdsdl/IR/DSDLDialect.h"  // IWYU pragma: keep
 
@@ -24,4 +24,4 @@
 #define GET_TYPEDEF_CLASSES
 #include "llvmdsdl/IR/DSDLTypes.h.inc"  // IWYU pragma: keep
 
-#endif  // LLVMDSDL_IR_DSDLTYPES_H
+#endif  // LLVMDSDL_IR_DSDL_TYPES_H

@@ -33,7 +33,6 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
-#include <vector>
 
 #include "llvmdsdl/Transforms/Passes.h"
 #include "llvmdsdl/Transforms/LoweredSerDesContract.h"

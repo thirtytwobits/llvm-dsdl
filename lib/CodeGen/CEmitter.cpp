@@ -39,12 +39,11 @@
 #include <cstdint>
 #include <optional>
 #include <system_error>
-#include <tuple>
 #include <variant>
 
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/Transforms/Passes.h"
-#include "mlir/Conversion/Passes.h"
+#include "mlir/Conversion/Passes.h"  // IWYU pragma: keep
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Target/Cpp/CppEmitter.h"
 #include "mlir/Transforms/Passes.h"

@@ -11,8 +11,8 @@
 /// TableGen attribute definitions for the DSDL MLIR dialect.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_IR_DSDLATTRS_TD
-#define LLVMDSDL_IR_DSDLATTRS_TD
+#ifndef LLVMDSDL_IR_DSDL_ATTRS_TD
+#define LLVMDSDL_IR_DSDL_ATTRS_TD
 
 include "mlir/IR/AttrTypeBase.td"
 include "llvmdsdl/IR/DSDLBase.td"
@@ -31,4 +31,4 @@ def DSDL_VersionAttr : AttrDef<DSDL_Dialect, "Version"> {
   let assemblyFormat = "`<` $major `,` $minor `>`";
 }
 
-#endif // LLVMDSDL_IR_DSDLATTRS_TD
+#endif // LLVMDSDL_IR_DSDL_ATTRS_TD

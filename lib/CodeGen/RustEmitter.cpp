@@ -10,7 +10,7 @@
 /// @file
 /// Implements Rust backend code emission from lowered DSDL modules.
 ///
-/// The file maps lowering facts to Rust data types and serde routines across supported runtime profiles.
+/// The file maps lowering facts to Rust data types and serdes routines across supported runtime profiles.
 ///
 //===----------------------------------------------------------------------===//
 

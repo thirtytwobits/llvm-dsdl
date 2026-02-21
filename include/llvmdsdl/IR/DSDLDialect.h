@@ -11,8 +11,8 @@
 /// Dialect declarations and generated include wiring for the DSDL MLIR dialect.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_IR_DSDLDIALECT_H
-#define LLVMDSDL_IR_DSDLDIALECT_H
+#ifndef LLVMDSDL_IR_DSDL_DIALECT_H
+#define LLVMDSDL_IR_DSDL_DIALECT_H
 
 #include "mlir/IR/Dialect.h"  // IWYU pragma: keep
 
@@ -21,4 +21,4 @@
 
 #include "llvmdsdl/IR/DSDLDialect.h.inc"  // IWYU pragma: keep
 
-#endif  // LLVMDSDL_IR_DSDLDIALECT_H
+#endif  // LLVMDSDL_IR_DSDL_DIALECT_H

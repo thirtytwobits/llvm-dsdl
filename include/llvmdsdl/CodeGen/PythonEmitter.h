@@ -11,8 +11,8 @@
 /// Public entry points and options for Python backend emission.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_CODEGEN_PYTHONEMITTER_H
-#define LLVMDSDL_CODEGEN_PYTHONEMITTER_H
+#ifndef LLVMDSDL_CODEGEN_PYTHON_EMITTER_H
+#define LLVMDSDL_CODEGEN_PYTHON_EMITTER_H
 
 #include <string>
 
@@ -57,4 +57,4 @@ llvm::Error emitPython(const SemanticModule&    semantic,
 
 }  // namespace llvmdsdl
 
-#endif  // LLVMDSDL_CODEGEN_PYTHONEMITTER_H
+#endif  // LLVMDSDL_CODEGEN_PYTHON_EMITTER_H

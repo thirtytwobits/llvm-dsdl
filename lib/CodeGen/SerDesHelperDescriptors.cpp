@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Builds shared helper descriptor bundles for serde generation.
+/// Builds shared helper descriptor bundles for serdes generation.
 ///
 /// These routines compute optional capacity and union-tag helper requirements from section structure and lowering data.
 ///

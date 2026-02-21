@@ -11,8 +11,8 @@
 /// Shared TableGen base definitions used by DSDL dialect ops, attrs, and types.
 ///
 //===----------------------------------------------------------------------===//
-#ifndef LLVMDSDL_IR_DSDLBASE_TD
-#define LLVMDSDL_IR_DSDLBASE_TD
+#ifndef LLVMDSDL_IR_DSDL_BASE_TD
+#define LLVMDSDL_IR_DSDL_BASE_TD
 
 include "mlir/IR/OpBase.td"
 
@@ -21,4 +21,4 @@ def DSDL_Dialect : Dialect {
   let cppNamespace = "::mlir::dsdl";
 }
 
-#endif // LLVMDSDL_IR_DSDLBASE_TD
+#endif // LLVMDSDL_IR_DSDL_BASE_TD
