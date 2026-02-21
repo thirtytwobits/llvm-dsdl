@@ -520,3 +520,28 @@ signed-narrow parity, optimized parity, variable-array/bigint/union/composite/
 service/delimited families), and Python generation with runtime smoke, backend
 selection (`auto|pure|accel`), full-tree generation/determinism, and runtime
 benchmark harness coverage.
+
+## Codegen Throughput Benchmarking
+
+For large-scale throughput regression testing, use the complex benchmark corpus:
+
+- `test/benchmark/complex/civildrone`
+
+Utility targets:
+
+- `benchmark-codegen-record`
+- `benchmark-codegen-init-thresholds`
+- `benchmark-codegen-check-dev-ab`
+- `benchmark-codegen-check-ci-oom`
+
+Typical flow:
+
+```bash
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target benchmark-codegen-record -j1
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target benchmark-codegen-init-thresholds -j1
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target benchmark-codegen-check-ci-oom -j1
+```
+
+The committed threshold file (`test/benchmark/complex_codegen_thresholds.json`)
+is a template until calibrated. Generate thresholds from a record run and update
+the file for your CI/hardware class.

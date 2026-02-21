@@ -21,3 +21,18 @@ CMakeUserPresets.json
 
 # coverage
 *.profraw
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+.python-version
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*

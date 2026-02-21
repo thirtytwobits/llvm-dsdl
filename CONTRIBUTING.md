@@ -634,3 +634,44 @@ Release sign-off requires all of the following:
    - `README.md`
    - `DEMO.md`
    - `DESIGN.md`
+
+### 15.7 Codegen throughput benchmark (complex corpus)
+
+The repository includes a large benchmark corpus under:
+
+- `test/benchmark/complex/civildrone`
+
+and benchmark utility targets:
+
+- `benchmark-codegen-record`
+- `benchmark-codegen-init-thresholds`
+- `benchmark-codegen-check-dev-ab`
+- `benchmark-codegen-check-ci-oom`
+
+Calibrate thresholds on reference hardware:
+
+```bash
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target benchmark-codegen-record -j1
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target benchmark-codegen-init-thresholds -j1
+```
+
+This writes:
+
+- `build/matrix/dev-homebrew/test/benchmark/complex-codegen/record-report.json`
+- `build/matrix/dev-homebrew/test/benchmark/complex-codegen/complex_codegen_thresholds.generated.json`
+
+To activate pass/fail checks, copy/update:
+
+- `test/benchmark/complex_codegen_thresholds.json`
+
+Then run:
+
+```bash
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target benchmark-codegen-check-dev-ab -j1
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target benchmark-codegen-check-ci-oom -j1
+```
+
+Notes:
+
+1. `dev_ab` is intended for strict A/B comparisons on same or similar hardware.
+2. `ci_oom` is a looser guard intended to catch order-of-magnitude regressions in CI.

@@ -1,0 +1,94 @@
+# Codegen Benchmark Suite
+
+This directory contains benchmark workloads and tooling intended to track
+multi-language code generation throughput.
+
+## Workload
+
+- `complex/` contains a large synthetic civilian autonomous drone DSDL corpus.
+
+## Harness
+
+- `benchmark_codegen.py` benchmarks `dsdlc` generation for:
+  - `c`
+  - `cpp` (`--cpp-profile both`)
+  - `rust` (`--rust-profile std`)
+  - `go`
+  - `ts`
+  - `python`
+
+## Thresholds
+
+- `complex_codegen_thresholds.json` stores baseline timings and threshold profiles:
+  - `dev_ab` for strict same-host A/B comparisons.
+  - `ci_oom` for broad CI order-of-magnitude regression detection.
+
+## Typical workflow
+
+1. Record benchmark timings.
+2. Generate/update threshold config with desired margins.
+3. Run checks against `dev_ab` and/or `ci_oom`.
+
+The committed threshold file starts as a template with zero baselines.
+You must calibrate it before `check` mode can run.
+
+CMake utility targets are available:
+
+- `benchmark-codegen-record`
+- `benchmark-codegen-init-thresholds`
+- `benchmark-codegen-check-dev-ab`
+- `benchmark-codegen-check-ci-oom`
+
+### Live status during long runs
+
+The harness prints heartbeat lines while each language command is running, e.g.:
+
+- elapsed time
+- generated-file count so far
+
+CMake knob:
+
+- `LLVMDSDL_CODEGEN_BENCHMARK_STATUS_INTERVAL_SEC` (default `15`, set `0` to disable)
+
+Example calibration flow:
+
+```bash
+cmake --build <build-dir> --config RelWithDebInfo --target benchmark-codegen-record
+cmake --build <build-dir> --config RelWithDebInfo --target benchmark-codegen-init-thresholds
+```
+
+Then copy the generated thresholds file from:
+
+`<build-dir>/test/benchmark/complex-codegen/complex_codegen_thresholds.generated.json`
+
+to:
+
+`test/benchmark/complex_codegen_thresholds.json`
+
+### Run benchmark for a single language
+
+Direct harness usage (example: Python only):
+
+```bash
+python3 test/benchmark/benchmark_codegen.py record \
+  --dsdlc build/matrix/dev-homebrew/tools/dsdlc/RelWithDebInfo/dsdlc \
+  --root-namespace-dir test/benchmark/complex \
+  --lookup-dir submodules/public_regulated_data_types \
+  --out-base-dir build/matrix/dev-homebrew/test/benchmark/complex-codegen/generated \
+  --report-json build/matrix/dev-homebrew/test/benchmark/complex-codegen/python-only-record.json \
+  --languages python \
+  --status-interval-sec 10
+```
+
+Always point `--root-namespace-dir` at `test/benchmark/complex` (not
+`test/benchmark/complex/civildrone`) so both `civildrone` and `uavcan`
+namespaces are discoverable in one run.
+
+CMake-driven single-language run:
+
+```bash
+cmake -S . -B build/matrix/dev-homebrew \
+  -DLLVMDSDL_CODEGEN_BENCHMARK_LANGUAGES=python \
+  -DLLVMDSDL_CODEGEN_BENCHMARK_STATUS_INTERVAL_SEC=10
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target benchmark-codegen-record -j1
+```

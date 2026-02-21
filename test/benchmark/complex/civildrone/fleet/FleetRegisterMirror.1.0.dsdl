@@ -1,0 +1,3 @@
+civildrone.core.NodeIdentity.1.0 node
+uavcan.register.Value.1.0[<=128] values
+@sealed

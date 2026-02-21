@@ -1,0 +1,3 @@
+civildrone.vision.optics.OpticsFrameMeta.1.0 meta
+civildrone.vision.optics.OpticsFeature.1.0[<=512] features
+@sealed

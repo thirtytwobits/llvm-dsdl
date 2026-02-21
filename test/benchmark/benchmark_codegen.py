@@ -1,0 +1,503 @@
+#!/usr/bin/env python3
+#===----------------------------------------------------------------------===#
+#
+# Part of the OpenCyphal project, under the MIT licence
+# SPDX-License-Identifier: MIT
+#
+#===----------------------------------------------------------------------===#
+
+"""Benchmark harness for multi-language dsdlc generation throughput."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import platform
+import shutil
+import statistics
+import subprocess
+import sys
+import tempfile
+import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+@dataclass(frozen=True)
+class LanguageSpec:
+    """One benchmarked language command variant."""
+
+    key: str
+    args: list[str]
+
+
+LANGUAGE_SPECS: list[LanguageSpec] = [
+    LanguageSpec("c", ["c"]),
+    LanguageSpec("cpp", ["cpp", "--cpp-profile", "both"]),
+    LanguageSpec("rust", ["rust", "--rust-profile", "std", "--rust-crate-name", "civildrone_bench"]),
+    LanguageSpec("go", ["go", "--go-module", "civildrone/bench"]),
+    LanguageSpec("ts", ["ts", "--ts-module", "civildrone_bench_ts"]),
+    LanguageSpec("python", ["python", "--py-package", "civildrone_bench_py"]),
+]
+
+
+def parse_selected_specs(language_arg: str) -> list[LanguageSpec]:
+    if not language_arg or language_arg.strip().lower() == "all":
+        return list(LANGUAGE_SPECS)
+    requested = [x.strip() for x in language_arg.split(",") if x.strip()]
+    by_key = {spec.key: spec for spec in LANGUAGE_SPECS}
+    selected: list[LanguageSpec] = []
+    for key in requested:
+        if key not in by_key:
+            raise KeyError(f"unknown language key '{key}', expected one of: {', '.join(sorted(by_key))}")
+        selected.append(by_key[key])
+    return selected
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def count_files(root: Path) -> int:
+    count = 0
+    for _dirpath, _dirnames, filenames in os.walk(root):
+        count += len(filenames)
+    return count
+
+
+def run_language(
+    dsdlc: Path,
+    root_namespace_dir: Path,
+    lookup_dirs: list[Path],
+    out_base_dir: Path,
+    spec: LanguageSpec,
+    iterations: int,
+    optimize_lowered_serdes: bool,
+    timeout_seconds: int,
+    status_interval_sec: int,
+) -> dict[str, Any]:
+    samples: list[float] = []
+    output_dir = out_base_dir / spec.key
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for idx in range(iterations):
+        run_out_dir = output_dir / f"iter-{idx + 1}"
+        if run_out_dir.exists():
+            shutil.rmtree(run_out_dir)
+        run_out_dir.mkdir(parents=True, exist_ok=True)
+
+        command = [str(dsdlc)]
+        if optimize_lowered_serdes:
+            command.append("--optimize-lowered-serdes")
+        command.extend(spec.args)
+        command.extend(
+            [
+                "--root-namespace-dir",
+                str(root_namespace_dir),
+            ]
+        )
+        for lookup_dir in lookup_dirs:
+            command.extend(["--lookup-dir", str(lookup_dir)])
+        command.extend(["--out-dir", str(run_out_dir)])
+
+        print(
+            f"[benchmark] {spec.key} iter {idx + 1}/{iterations}: start",
+            flush=True,
+        )
+        start = time.perf_counter()
+        with tempfile.TemporaryDirectory(prefix=f"llvmdsdl-bench-{spec.key}-") as log_dir:
+            stdout_path = Path(log_dir) / "stdout.log"
+            stderr_path = Path(log_dir) / "stderr.log"
+            with stdout_path.open("w", encoding="utf-8") as stdout_file, stderr_path.open(
+                "w", encoding="utf-8"
+            ) as stderr_file:
+                proc = subprocess.Popen(
+                    command,
+                    stdout=stdout_file,
+                    stderr=stderr_file,
+                    text=True,
+                )
+                next_status_at = float(status_interval_sec)
+                timed_out = False
+                while True:
+                    ret = proc.poll()
+                    elapsed = time.perf_counter() - start
+                    if ret is not None:
+                        break
+                    if timeout_seconds > 0 and elapsed >= float(timeout_seconds):
+                        timed_out = True
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=5.0)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                        break
+                    if status_interval_sec > 0 and elapsed >= next_status_at:
+                        try:
+                            file_count = count_files(run_out_dir)
+                        except OSError:
+                            file_count = -1
+                        if file_count >= 0:
+                            print(
+                                f"[benchmark] {spec.key} iter {idx + 1}/{iterations}: running "
+                                f"{elapsed:.1f}s (generated files so far: {file_count})",
+                                flush=True,
+                            )
+                        else:
+                            print(
+                                f"[benchmark] {spec.key} iter {idx + 1}/{iterations}: running {elapsed:.1f}s",
+                                flush=True,
+                            )
+                        next_status_at += float(status_interval_sec)
+                    time.sleep(0.25)
+
+            stdout = stdout_path.read_text(encoding="utf-8")
+            stderr = stderr_path.read_text(encoding="utf-8")
+        elapsed = time.perf_counter() - start
+        if timed_out:
+            raise RuntimeError(
+                f"benchmark generation timed out for {spec.key} after {elapsed:.1f}s "
+                f"(timeout={timeout_seconds}s)"
+            )
+        if proc.returncode != 0:
+            sys.stderr.write(f"[{spec.key}] command failed ({proc.returncode}): {' '.join(command)}\n")
+            if stdout:
+                sys.stderr.write(f"[{spec.key}] stdout:\n{stdout}\n")
+            if stderr:
+                sys.stderr.write(f"[{spec.key}] stderr:\n{stderr}\n")
+            raise RuntimeError(f"benchmark generation failed for {spec.key}")
+        samples.append(elapsed)
+        print(
+            f"[benchmark] {spec.key} iter {idx + 1}/{iterations}: {elapsed:.3f}s",
+            flush=True,
+        )
+
+    median_s = statistics.median(samples)
+    result = {
+        "command_args": spec.args,
+        "iterations": iterations,
+        "samples_sec": samples,
+        "median_sec": median_s,
+        "min_sec": min(samples),
+        "max_sec": max(samples),
+        "generated_file_count": count_files(output_dir),
+        "output_dir": str(output_dir),
+    }
+    return result
+
+
+def run_suite(args: argparse.Namespace) -> dict[str, Any]:
+    dsdlc = Path(args.dsdlc).resolve()
+    root_namespace_dir = Path(args.root_namespace_dir).resolve()
+    lookup_dirs = [Path(value).resolve() for value in args.lookup_dir]
+    out_base_dir = Path(args.out_base_dir).resolve()
+    out_base_dir.mkdir(parents=True, exist_ok=True)
+
+    if not dsdlc.exists():
+        raise FileNotFoundError(f"dsdlc not found: {dsdlc}")
+    if not root_namespace_dir.exists():
+        raise FileNotFoundError(f"root namespace dir not found: {root_namespace_dir}")
+    for lookup_dir in lookup_dirs:
+        if not lookup_dir.exists():
+            raise FileNotFoundError(f"lookup dir not found: {lookup_dir}")
+
+    selected_specs = parse_selected_specs(args.languages)
+    language_results: dict[str, dict[str, Any]] = {}
+    suite_start = time.perf_counter()
+    for spec in selected_specs:
+        language_results[spec.key] = run_language(
+            dsdlc=dsdlc,
+            root_namespace_dir=root_namespace_dir,
+            lookup_dirs=lookup_dirs,
+            out_base_dir=out_base_dir,
+            spec=spec,
+            iterations=args.iterations,
+            optimize_lowered_serdes=args.optimize_lowered_serdes,
+            timeout_seconds=args.per_language_timeout_sec,
+            status_interval_sec=args.status_interval_sec,
+        )
+    total_elapsed = time.perf_counter() - suite_start
+
+    report = {
+        "schema_version": 1,
+        "suite_name": "llvmdsdl-codegen-complex",
+        "created_utc": utc_now(),
+        "host": {
+            "platform": platform.platform(),
+            "python": sys.version,
+            "cpu_count": os.cpu_count(),
+        },
+        "config": {
+            "dsdlc": str(dsdlc),
+            "root_namespace_dir": str(root_namespace_dir),
+            "lookup_dirs": [str(path) for path in lookup_dirs],
+            "out_base_dir": str(out_base_dir),
+            "iterations": args.iterations,
+            "optimize_lowered_serdes": args.optimize_lowered_serdes,
+            "per_language_timeout_sec": args.per_language_timeout_sec,
+            "languages": [spec.key for spec in selected_specs],
+        },
+        "languages": language_results,
+        "total_elapsed_sec": total_elapsed,
+    }
+    return report
+
+
+def print_report_summary(report: dict[str, Any], title: str) -> None:
+    print(title)
+    print(f"created: {report.get('created_utc', 'n/a')}")
+    print(f"dataset: {report['config']['root_namespace_dir']}")
+    print(f"iterations: {report['config']['iterations']}")
+    print("")
+    print(f"{'language':<10} {'median(s)':>10} {'min(s)':>10} {'max(s)':>10} {'files':>10}")
+    print("-" * 56)
+    report_keys = set(report["languages"].keys())
+    ordered_keys = [spec.key for spec in LANGUAGE_SPECS if spec.key in report_keys]
+    for key in ordered_keys:
+        lang = report["languages"][key]
+        print(
+            f"{key:<10} {lang['median_sec']:>10.3f} {lang['min_sec']:>10.3f} "
+            f"{lang['max_sec']:>10.3f} {lang['generated_file_count']:>10}"
+        )
+    print("-" * 56)
+    print(f"{'total':<10} {report['total_elapsed_sec']:>10.3f}")
+
+
+def write_json(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def read_json(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def init_thresholds_from_report(args: argparse.Namespace) -> dict[str, Any]:
+    report = read_json(Path(args.report_json).resolve())
+    baselines: dict[str, float] = {}
+    for key, data in report["languages"].items():
+        baselines[key] = float(data["median_sec"])
+
+    threshold_data = {
+        "schema_version": 1,
+        "suite_name": "llvmdsdl-codegen-complex-thresholds",
+        "created_utc": utc_now(),
+        "source_report": str(Path(args.report_json).resolve()),
+        "baselines_sec": baselines,
+        "profiles": {
+            "dev_ab": {
+                "description": "Developer A/B guard for same hardware or similar workstation loads.",
+                "relative_multiplier": args.dev_relative_multiplier,
+                "absolute_margin_sec": args.dev_absolute_margin_sec,
+            },
+            "ci_oom": {
+                "description": "CI guard to catch order-of-magnitude regressions across variable hosts.",
+                "relative_multiplier": args.ci_relative_multiplier,
+                "absolute_margin_sec": args.ci_absolute_margin_sec,
+            },
+        },
+        "profile_overrides": {},
+    }
+    return threshold_data
+
+
+def check_against_thresholds(
+    report: dict[str, Any], thresholds: dict[str, Any], profile_name: str
+) -> tuple[list[str], list[str], dict[str, Any]]:
+    baselines = thresholds.get("baselines_sec", {})
+    profiles = thresholds.get("profiles", {})
+    overrides = thresholds.get("profile_overrides", {})
+    if profile_name not in profiles:
+        raise KeyError(f"profile '{profile_name}' not found in thresholds")
+
+    profile = profiles[profile_name]
+    default_mult = float(profile["relative_multiplier"])
+    default_margin = float(profile["absolute_margin_sec"])
+    profile_override = overrides.get(profile_name, {})
+
+    failures: list[str] = []
+    passes: list[str] = []
+    details: dict[str, Any] = {}
+    for key in report["languages"].keys():
+        if key not in baselines:
+            failures.append(f"{key}: missing baseline")
+            continue
+        baseline = float(baselines[key])
+        measured = float(report["languages"][key]["median_sec"])
+        override = profile_override.get(key, {})
+        mult = float(override.get("relative_multiplier", default_mult))
+        margin = float(override.get("absolute_margin_sec", default_margin))
+        max_allowed = (baseline * mult) + margin
+        ok = measured <= max_allowed
+        summary = (
+            f"{key}: measured={measured:.3f}s baseline={baseline:.3f}s "
+            f"limit={max_allowed:.3f}s (x{mult:.3f} + {margin:.3f}s)"
+        )
+        details[key] = {
+            "baseline_sec": baseline,
+            "measured_sec": measured,
+            "relative_multiplier": mult,
+            "absolute_margin_sec": margin,
+            "max_allowed_sec": max_allowed,
+            "pass": ok,
+        }
+        if ok:
+            passes.append(summary)
+        else:
+            failures.append(summary)
+
+    return passes, failures, details
+
+
+def validate_thresholds_ready(thresholds: dict[str, Any], selected_languages: list[str]) -> None:
+    baselines = thresholds.get("baselines_sec", {})
+    missing = [key for key in selected_languages if key not in baselines]
+    if missing:
+        raise KeyError(f"threshold baselines missing keys: {', '.join(missing)}")
+
+    non_positive = [key for key in selected_languages if float(baselines[key]) <= 0.0]
+    if non_positive:
+        raise ValueError(
+            "threshold baselines are uninitialized/non-positive for: " + ", ".join(non_positive)
+        )
+
+    src = str(thresholds.get("source_report", ""))
+    if src == "uninitialized":
+        raise ValueError(
+            "threshold file is a template (source_report=uninitialized). "
+            "Run record + init-thresholds to calibrate first."
+        )
+
+
+def cmd_record(args: argparse.Namespace) -> int:
+    report = run_suite(args)
+    write_json(Path(args.report_json).resolve(), report)
+    print_report_summary(report, "llvmdsdl codegen benchmark (record)")
+    print(f"report-json: {Path(args.report_json).resolve()}")
+    return 0
+
+
+def cmd_init_thresholds(args: argparse.Namespace) -> int:
+    threshold_data = init_thresholds_from_report(args)
+    out_path = Path(args.thresholds_json).resolve()
+    write_json(out_path, threshold_data)
+    print(f"thresholds-json: {out_path}")
+    return 0
+
+
+def cmd_check(args: argparse.Namespace) -> int:
+    thresholds = read_json(Path(args.thresholds_json).resolve())
+    selected_specs = parse_selected_specs(args.languages)
+    selected_keys = [spec.key for spec in selected_specs]
+    validate_thresholds_ready(thresholds, selected_keys)
+
+    report = run_suite(args)
+    passes, failures, details = check_against_thresholds(report, thresholds, args.profile)
+
+    check_report = {
+        "schema_version": 1,
+        "created_utc": utc_now(),
+        "profile": args.profile,
+        "passes": passes,
+        "failures": failures,
+        "details": details,
+        "benchmark_report": report,
+    }
+    write_json(Path(args.report_json).resolve(), check_report)
+
+    print_report_summary(report, f"llvmdsdl codegen benchmark (check:{args.profile})")
+    print("")
+    for line in passes:
+        print(f"PASS: {line}")
+    for line in failures:
+        print(f"FAIL: {line}")
+    print(f"check-report-json: {Path(args.report_json).resolve()}")
+
+    if failures:
+        return 1
+    return 0
+
+
+def add_common_runtime_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--dsdlc", required=True, help="Path to dsdlc executable.")
+    parser.add_argument("--root-namespace-dir", required=True, help="DSDL root namespace directory.")
+    parser.add_argument(
+        "--lookup-dir",
+        action="append",
+        default=[],
+        help="Optional additional lookup root. Repeat to add more dependency roots.",
+    )
+    parser.add_argument("--out-base-dir", required=True, help="Output directory root for generated files.")
+    parser.add_argument("--report-json", required=True, help="Output report JSON path.")
+    parser.add_argument("--iterations", type=int, default=1, help="Iterations per language.")
+    parser.add_argument(
+        "--languages",
+        default="all",
+        help="Comma-separated language keys to benchmark (default: all). Keys: c,cpp,rust,go,ts,python.",
+    )
+    parser.add_argument(
+        "--optimize-lowered-serdes",
+        action="store_true",
+        help="Pass --optimize-lowered-serdes to dsdlc for each benchmark command.",
+    )
+    parser.add_argument(
+        "--per-language-timeout-sec",
+        type=int,
+        default=0,
+        help="Per-language timeout in seconds (0 disables timeout).",
+    )
+    parser.add_argument(
+        "--status-interval-sec",
+        type=int,
+        default=15,
+        help="Heartbeat status print interval while a language command is running (0 disables).",
+    )
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Benchmark llvmdsdl generation throughput on a large corpus.")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_record = sub.add_parser("record", help="Run benchmark and write timing report JSON.")
+    add_common_runtime_args(p_record)
+    p_record.set_defaults(func=cmd_record)
+
+    p_check = sub.add_parser("check", help="Run benchmark and check against threshold profile.")
+    add_common_runtime_args(p_check)
+    p_check.add_argument("--thresholds-json", required=True, help="Threshold configuration JSON.")
+    p_check.add_argument("--profile", default="ci_oom", help="Threshold profile name.")
+    p_check.set_defaults(func=cmd_check)
+
+    p_init = sub.add_parser(
+        "init-thresholds",
+        help="Create a threshold JSON from a benchmark report with default profile margins.",
+    )
+    p_init.add_argument("--report-json", required=True, help="Input benchmark report JSON (from record mode).")
+    p_init.add_argument("--thresholds-json", required=True, help="Output threshold JSON.")
+    p_init.add_argument("--dev-relative-multiplier", type=float, default=1.35)
+    p_init.add_argument("--dev-absolute-margin-sec", type=float, default=2.0)
+    p_init.add_argument("--ci-relative-multiplier", type=float, default=10.0)
+    p_init.add_argument("--ci-absolute-margin-sec", type=float, default=30.0)
+    p_init.set_defaults(func=cmd_init_thresholds)
+
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+    try:
+        return int(args.func(args))
+    except subprocess.TimeoutExpired as ex:
+        sys.stderr.write(f"benchmark command timeout: {ex}\n")
+        return 2
+    except Exception as ex:  # pylint: disable=broad-except
+        sys.stderr.write(f"benchmark harness error: {ex}\n")
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

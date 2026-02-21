@@ -1,0 +1,4 @@
+float64 latitude_rad
+float64 longitude_rad
+float32 altitude_m
+@sealed

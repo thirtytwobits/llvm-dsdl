@@ -1,0 +1,3 @@
+civildrone.vision.stereo.StereoFrameMeta.1.0 meta
+civildrone.vision.stereo.StereoDetection.1.0[<=256] detections
+@sealed

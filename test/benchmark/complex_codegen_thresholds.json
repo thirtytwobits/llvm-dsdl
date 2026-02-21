@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "suite_name": "llvmdsdl-codegen-complex-thresholds",
+  "created_utc": "1970-01-01T00:00:00+00:00",
+  "source_report": "uninitialized",
+  "baselines_sec": {
+    "c": 0.0,
+    "cpp": 0.0,
+    "go": 0.0,
+    "python": 0.0,
+    "rust": 0.0,
+    "ts": 0.0
+  },
+  "profiles": {
+    "ci_oom": {
+      "absolute_margin_sec": 30.0,
+      "description": "CI guard to catch order-of-magnitude regressions across variable hosts.",
+      "relative_multiplier": 10.0
+    },
+    "dev_ab": {
+      "absolute_margin_sec": 2.0,
+      "description": "Developer A/B guard for same hardware or similar workstation loads.",
+      "relative_multiplier": 1.35
+    }
+  },
+  "profile_overrides": {}
+}

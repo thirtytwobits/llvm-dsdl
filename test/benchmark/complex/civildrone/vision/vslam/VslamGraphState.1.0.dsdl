@@ -1,0 +1,4 @@
+civildrone.vision.vslam.VslamGraphNode.1.0[<=1024] nodes
+civildrone.vision.vslam.VslamGraphEdge.1.0[<=2048] edges
+civildrone.vision.depth.DepthGraphNode.1.0[<=64] upstream_nodes
+@sealed

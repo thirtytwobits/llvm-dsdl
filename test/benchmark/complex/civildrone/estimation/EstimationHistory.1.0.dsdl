@@ -1,0 +1,4 @@
+civildrone.estimation.EstimationReport.1.0[<=4] reports
+civildrone.estimation.EstimationEvent.1.0[<=24] timeline
+uavcan.time.SynchronizedTimestamp.1.0 last_update
+@sealed

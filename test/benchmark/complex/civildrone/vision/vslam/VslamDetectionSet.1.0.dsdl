@@ -1,0 +1,3 @@
+civildrone.vision.vslam.VslamFrameMeta.1.0 meta
+civildrone.vision.vslam.VslamDetection.1.0[<=256] detections
+@sealed
