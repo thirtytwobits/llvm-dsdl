@@ -34,6 +34,8 @@ This guide covers:
   `submodules/public_regulated_data_types/uavcan`.
 - Generating Rust crate output (currently `std` profile) from
   `submodules/public_regulated_data_types/uavcan`.
+- Generating Python package output from
+  `submodules/public_regulated_data_types/uavcan`.
 - Verifying generation completeness and compile sanity.
 
 ## 2. Prerequisites
@@ -54,6 +56,7 @@ For workflow presets (`cmake --workflow`), use:
 Optional but recommended:
 
 - Python 3 with `lit` module, or `llvm-lit` in `PATH` (for lit tests)
+- Python 3.10+ for Python backend integration/runtime checks
 
 Known-good local toolchain:
 
@@ -287,6 +290,27 @@ Expected result:
 Additional profile:
 
 - `--rust-profile no-std-alloc` is supported for `no_std + alloc` targets.
+
+### 10.1 Reproduce `uavcan` Python Generation
+
+```bash
+OUT_PY="build/uavcan-python-out-verify"
+mkdir -p "${OUT_PY}"
+
+"${DSDLC}" python \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
+  --out-dir "${OUT_PY}" \
+  --py-package uavcan_dsdl_generated_py
+```
+
+Expected result:
+
+- Exit code `0`
+- Generated package root:
+  - `${OUT_PY}/uavcan_dsdl_generated_py/__init__.py`
+  - `${OUT_PY}/uavcan_dsdl_generated_py/_dsdl_runtime.py`
+  - `${OUT_PY}/uavcan_dsdl_generated_py/_runtime_loader.py`
+- One generated Python type file per input `.dsdl` definition.
 
 ## 11. Validate Generated Output
 
@@ -583,6 +607,7 @@ Verify the canonical demo flow is runnable:
 ```bash
 cmake --build --preset build-dev-homebrew-relwithdebinfo --target dsdlc dsdl-opt -j
 bash -lc 'source /dev/null; DSDLC=build/matrix/dev-homebrew/tools/dsdlc/RelWithDebInfo/dsdlc DSDLOPT=build/matrix/dev-homebrew/tools/dsdl-opt/RelWithDebInfo/dsdl-opt ROOT_NS=test/lit/fixtures/vendor OUT=build/matrix/dev-homebrew/demo-smoke; rm -rf "$OUT"; mkdir -p "$OUT"; "$DSDLC" mlir --root-namespace-dir "$ROOT_NS" > "$OUT/module.mlir"; "$DSDLOPT" --pass-pipeline=builtin.module\\(lower-dsdl-serialization,convert-dsdl-to-emitc\\) "$OUT/module.mlir" > "$OUT/module.emitc.mlir"; "$DSDLC" c --root-namespace-dir "$ROOT_NS" --out-dir "$OUT/c"; "$DSDLC" cpp --root-namespace-dir "$ROOT_NS" --cpp-profile both --out-dir "$OUT/cpp"; "$DSDLC" rust --root-namespace-dir "$ROOT_NS" --rust-profile std --rust-crate-name demo_vendor_generated --out-dir "$OUT/rust"; "$DSDLC" go --root-namespace-dir "$ROOT_NS" --go-module demo/vendor/generated --out-dir "$OUT/go"; "$DSDLC" ts --root-namespace-dir "$ROOT_NS" --ts-module demo_vendor_generated_ts --out-dir "$OUT/ts"'
+bash -lc 'source /dev/null; DSDLC=build/matrix/dev-homebrew/tools/dsdlc/RelWithDebInfo/dsdlc DSDLOPT=build/matrix/dev-homebrew/tools/dsdl-opt/RelWithDebInfo/dsdl-opt ROOT_NS=test/lit/fixtures/vendor OUT=build/matrix/dev-homebrew/demo-smoke; rm -rf "$OUT"; mkdir -p "$OUT"; "$DSDLC" mlir --root-namespace-dir "$ROOT_NS" > "$OUT/module.mlir"; "$DSDLOPT" --pass-pipeline=builtin.module\\(lower-dsdl-serialization,convert-dsdl-to-emitc\\) "$OUT/module.mlir" > "$OUT/module.emitc.mlir"; "$DSDLC" c --root-namespace-dir "$ROOT_NS" --out-dir "$OUT/c"; "$DSDLC" cpp --root-namespace-dir "$ROOT_NS" --cpp-profile both --out-dir "$OUT/cpp"; "$DSDLC" rust --root-namespace-dir "$ROOT_NS" --rust-profile std --rust-crate-name demo_vendor_generated --out-dir "$OUT/rust"; "$DSDLC" go --root-namespace-dir "$ROOT_NS" --go-module demo/vendor/generated --out-dir "$OUT/go"; "$DSDLC" ts --root-namespace-dir "$ROOT_NS" --ts-module demo_vendor_generated_ts --out-dir "$OUT/ts"; "$DSDLC" python --root-namespace-dir "$ROOT_NS" --py-package demo_vendor_generated_py --out-dir "$OUT/python"'
 ```
 
 ### 15.5 Release artifact expectations

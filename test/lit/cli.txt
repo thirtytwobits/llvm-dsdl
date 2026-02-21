@@ -1,16 +1,19 @@
 # RUN: %dsdlc --help 2>&1 | FileCheck %s --check-prefix=HELP
 # RUN: %dsdlc cpp --help 2>&1 | FileCheck %s --check-prefix=HELP_CPP
+# RUN: %dsdlc python --help 2>&1 | FileCheck %s --check-prefix=HELP_PYTHON
 # RUN: not %dsdlc unknown-command 2>&1 | FileCheck %s --check-prefix=UNKNOWN_COMMAND
 # RUN: not %dsdlc ast 2>&1 | FileCheck %s --check-prefix=MISSING_ROOT
 # RUN: not %dsdlc cpp --root-namespace-dir %S/fixtures 2>&1 | FileCheck %s --check-prefix=MISSING_OUT_DIR
 # RUN: not %dsdlc cpp --cpp-profile not-a-profile --root-namespace-dir %S/fixtures --out-dir %t 2>&1 | FileCheck %s --check-prefix=BAD_CPP_PROFILE
 # RUN: not %dsdlc rust --rust-profile not-a-profile --root-namespace-dir %S/fixtures --out-dir %t 2>&1 | FileCheck %s --check-prefix=BAD_RUST_PROFILE
 # RUN: not %dsdlc ts --ts-runtime-specialization not-a-specialization --root-namespace-dir %S/fixtures --out-dir %t 2>&1 | FileCheck %s --check-prefix=BAD_TS_SPECIALIZATION
-# RUN: not %dsdlc cpp --cpp-profile 2>&1 | FileCheck %s --check-prefix=MISSING_VALUE
+# RUN: not %dsdlc cpp --cpp-profile 2>&1 | FileCheck %s --check-prefix=MISSING_VALUE_CPP
+# RUN: not %dsdlc python --py-package 2>&1 | FileCheck %s --check-prefix=MISSING_VALUE_PYTHON
 # RUN: %dsdlc ast --root-namespace-dir %S/fixtures 2>&1 | FileCheck %s --check-prefix=SUMMARY
 
 # HELP: NAME
 # HELP: dsdlc - DSDL frontend, MLIR lowerer, and multi-language code generator
+# HELP: python Generate Python 3.10 package layout and dataclass SerDes/runtime integration.
 # HELP: RUN SUMMARY
 # HELP: files generated
 # HELP: elapsed wall time
@@ -18,24 +21,30 @@
 # HELP_CPP: COMMAND FOCUS (cpp)
 # HELP_CPP: Requires --out-dir. Honors --cpp-profile (std|pmr|both).
 
+# HELP_PYTHON: COMMAND FOCUS (python)
+# HELP_PYTHON: Requires --out-dir. Honors --py-package.
+
 # UNKNOWN_COMMAND: Unknown command: unknown-command
-# UNKNOWN_COMMAND: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts>
+# UNKNOWN_COMMAND: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
 
 # MISSING_ROOT: At least one --root-namespace-dir is required
 
 # MISSING_OUT_DIR: --out-dir is required for 'cpp' command
 
 # BAD_CPP_PROFILE: Invalid --cpp-profile value: not-a-profile
-# BAD_CPP_PROFILE: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts>
+# BAD_CPP_PROFILE: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
 
 # BAD_RUST_PROFILE: Invalid --rust-profile value: not-a-profile
-# BAD_RUST_PROFILE: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts>
+# BAD_RUST_PROFILE: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
 
 # BAD_TS_SPECIALIZATION: Invalid --ts-runtime-specialization value: not-a-specialization
-# BAD_TS_SPECIALIZATION: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts>
+# BAD_TS_SPECIALIZATION: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
 
-# MISSING_VALUE: Missing value for --cpp-profile
-# MISSING_VALUE: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts>
+# MISSING_VALUE_CPP: Missing value for --cpp-profile
+# MISSING_VALUE_CPP: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
+
+# MISSING_VALUE_PYTHON: Missing value for --py-package
+# MISSING_VALUE_PYTHON: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
 
 # SUMMARY: Run summary:
 # SUMMARY: command: ast

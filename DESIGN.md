@@ -18,8 +18,10 @@ The project currently supports:
 - Rust (`dsdlc rust`, with `std` and `no-std-alloc` profiles, plus runtime specialization `portable|fast`)
 - Go (`dsdlc go`)
 - TypeScript (`dsdlc ts`, with runtime specialization `portable|fast`)
+- Python (`dsdlc python`, with runtime backend selection `auto|pure|accel`)
 
-for the `uavcan` namespace under regulated data types.
+for arbitrary DSDL root namespaces. Full-tree integration validation is currently
+centered on the `uavcan` regulated data types.
 
 ### 1.2 High-Level Architecture
 
@@ -32,8 +34,9 @@ flowchart LR
   E --> F["MLIR DSDL lowering"]
   F --> G["MLIR module"]
   G --> H["C path: EmitC lowering + C output (per-definition impl TUs)"]
-  E --> K["Shared lowered body plan + render IR"]
-  K --> I["C/C++/Rust/Go/TypeScript emitters"]
+  E --> K["Shared lowering facts + body plan + render IR"]
+  G --> K
+  K --> I["C/C++/Rust/Go/TypeScript/Python emitters"]
   I --> J["Generated language artifacts"]
 ```
 
@@ -77,6 +80,10 @@ Primary modules:
 
 Current generators are in `lib/CodeGen`:
 
+All non-C backends consume both the semantic model and MLIR-derived lowering
+facts/plans (for wire-semantics ordering/contracts) before rendering
+language-specific artifacts.
+
 - `CEmitter.cpp`
   - Emits per-type C headers and runtime header.
   - Emits per-definition C implementation translation units through EmitC lowering.
@@ -89,6 +96,8 @@ Current generators are in `lib/CodeGen`:
   - Emits module/package layout and Go SerDes/runtime integration.
 - `TsEmitter.cpp`
   - Emits TypeScript package/module layout and generated runtime-backed SerDes integration.
+- `PythonEmitter.cpp`
+  - Emits Python package/module layout, generated dataclasses, and runtime-backed SerDes integration.
 
 Shared generator-side convergence modules include:
 
@@ -106,6 +115,7 @@ Runtime helpers encapsulate wire-level bit operations and numeric conversions:
 - `runtime/rust/dsdl_runtime.rs` (Rust runtime)
 - `runtime/go/dsdl_runtime.go` (Go runtime)
 - generated `dsdl_runtime.ts` (TypeScript runtime helper emitted by `dsdlc ts`)
+- generated `_dsdl_runtime.py` + `_runtime_loader.py` (Python runtime helpers emitted by `dsdlc python`)
 
 ### 1.4 Tooling and Validation
 
@@ -270,13 +280,17 @@ Current:
   track with lowered-schema validation, shared lowered render-order planning,
   generated runtime support (`dsdl_runtime.ts`), and runtime-backed per-type
   SerDes entrypoints across core semantic families.
+- Python generation (`dsdlc python`) is now a first-class non-C-like target
+  track with lowered-schema validation, shared lowered runtime planning,
+  generated dataclass-based SerDes entrypoints, and runtime backend selection
+  (`auto|pure|accel`) through generated loader/runtime modules.
 - TypeScript runtime specialization is now configurable
   (`--ts-runtime-specialization` `portable|fast`), with dedicated
   `ts-runtime-specialization` integration labels/workflows, C<->TS parity
   gates, and semantic-diff gates ensuring generated type semantics remain
   unchanged while runtime helper implementation strategy varies.
 - TypeScript integration coverage includes full-`uavcan` generation/determinism/
-  typecheck/consumer-smoke/index-contract/runtime-execution gates
+typecheck/consumer-smoke/index-contract/runtime-execution gates
   (`llvmdsdl-uavcan-ts-generation`,
   `llvmdsdl-uavcan-ts-determinism`,
   `llvmdsdl-uavcan-ts-typecheck`,
@@ -286,6 +300,10 @@ Current:
   (`llvmdsdl-fixtures-ts-generation-hardening`), invariant-based C<->TS parity
   (`llvmdsdl-c-ts-parity`, `llvmdsdl-signed-narrow-c-ts-parity`, optimized
   variants), and broad runtime/parity fixture lanes.
+- Python integration coverage includes fixture-generation hardening, runtime
+  smoke (portable + optimized lowering), backend selection behavior
+  (`auto|pure|accel`), full-`uavcan` generation/determinism gates, and a
+  Python runtime benchmark harness.
 Target trajectory:
 
 - Continue using MLIR-first lowering plus render-IR convergence so backend logic

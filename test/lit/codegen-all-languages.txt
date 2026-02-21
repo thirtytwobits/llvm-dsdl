@@ -31,6 +31,12 @@
 # RUN: cat %t/ts-fast/package.json | FileCheck %s --check-prefix=TS_FAST_PACKAGE
 # RUN: cat %t/ts-fast/dsdl_runtime.ts | FileCheck %s --check-prefix=TS_FAST_RUNTIME
 
+# RUN: %dsdlc python --root-namespace-dir %S/fixtures --py-package demo_py_smoke --out-dir %t/python 2>&1 | FileCheck %s --check-prefix=PY_SUMMARY
+# RUN: test -f %t/python/demo_py_smoke/_dsdl_runtime.py
+# RUN: test -f %t/python/demo_py_smoke/_runtime_loader.py
+# RUN: test -f %t/python/demo_py_smoke/fixtures/vendor/helpers_1_0.py
+# RUN: cat %t/python/demo_py_smoke/fixtures/vendor/helpers_1_0.py | FileCheck %s --check-prefix=PY_HELPERS
+
 # CPP_SUMMARY: Run summary:
 # CPP_SUMMARY: command: cpp
 # CPP_SUMMARY: output root:
@@ -69,3 +75,10 @@
 # TS_FAST_PACKAGE: "tsRuntimeSpecialization": "fast"
 # TS_FAST_RUNTIME: dst.set(src.subarray
 # TS_FAST_RUNTIME: return src.slice(
+
+# PY_SUMMARY: Run summary:
+# PY_SUMMARY: command: python
+# PY_SUMMARY: files generated:
+# PY_HELPERS: @dataclass(slots=True)
+# PY_HELPERS: def serialize(self) -> bytes:
+# PY_HELPERS: def deserialize(cls, data: bytes | bytearray | memoryview)

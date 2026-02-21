@@ -17,6 +17,7 @@ add_library(llvmdsdlCodeGen
   LoweredBodyPlan.cpp
   LoweredRenderIR.cpp
   MlirLoweredFacts.cpp
+  PythonEmitter.cpp
   RustEmitter.cpp
   SectionHelperBindingPlan.cpp
   SerDesStatementPlan.cpp

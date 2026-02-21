@@ -69,6 +69,10 @@ option(LLVMDSDL_ENABLE_LLVM_COVERAGE
        "Enable LLVM source-based coverage instrumentation and reporting targets"
        OFF)
 
+option(LLVMDSDL_ENABLE_PYTHON_ACCELERATOR
+       "Build optional CPython runtime accelerator module for generated Python code"
+       OFF)
+
 set(LLVMDSDL_COVERAGE_CTEST_ARGS
     "--output-on-failure"
     CACHE STRING
@@ -184,6 +188,36 @@ add_subdirectory(lib)
 add_subdirectory(tools)
 add_subdirectory(examples/cyphal_ping_pong)
 add_subdirectory(examples/cyphal_yakut_register_demo)
+
+if(LLVMDSDL_ENABLE_PYTHON_ACCELERATOR)
+  find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter Development.Module)
+
+  add_library(llvmdsdl-python-runtime-accelerator MODULE
+    runtime/python_accel/dsdl_runtime_accel.c
+  )
+  target_include_directories(llvmdsdl-python-runtime-accelerator
+    PRIVATE
+      ${LLVMDSDL_SOURCE_DIR}/runtime
+  )
+  target_link_libraries(llvmdsdl-python-runtime-accelerator
+    PRIVATE
+      Python3::Module
+  )
+  set_target_properties(llvmdsdl-python-runtime-accelerator
+    PROPERTIES
+      PREFIX ""
+      OUTPUT_NAME "_dsdl_runtime_accel"
+      LIBRARY_OUTPUT_DIRECTORY "${LLVMDSDL_BINARY_DIR}/python-accel"
+      LIBRARY_OUTPUT_DIRECTORY_DEBUG "${LLVMDSDL_BINARY_DIR}/python-accel/Debug"
+      LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO "${LLVMDSDL_BINARY_DIR}/python-accel/RelWithDebInfo"
+      LIBRARY_OUTPUT_DIRECTORY_RELEASE "${LLVMDSDL_BINARY_DIR}/python-accel/Release"
+      LIBRARY_OUTPUT_DIRECTORY_MINSIZEREL "${LLVMDSDL_BINARY_DIR}/python-accel/MinSizeRel"
+  )
+
+  add_custom_target(build-python-runtime-accelerator
+    DEPENDS llvmdsdl-python-runtime-accelerator
+  )
+endif()
 
 set(LLVMDSDL_SELF_CONTAINED_TOOL_BUNDLE_DEFAULT OFF)
 if(APPLE OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -303,6 +337,9 @@ if(LLVMDSDL_UAVCAN_ROOT)
   llvmdsdl_add_uavcan_codegen_target(generate-uavcan-ts-runtime-fast
                                      ts-runtime-fast
                                      ts --ts-module uavcan_dsdl_generated_ts_fast --ts-runtime-specialization fast)
+  llvmdsdl_add_uavcan_codegen_target(generate-uavcan-python
+                                     python
+                                     python --py-package uavcan_dsdl_generated_py)
 
   add_custom_target(generate-uavcan-all)
   add_dependencies(generate-uavcan-all
@@ -316,7 +353,8 @@ if(LLVMDSDL_UAVCAN_ROOT)
                    generate-uavcan-rust-no-std-runtime-fast
                    generate-uavcan-go
                    generate-uavcan-ts
-                   generate-uavcan-ts-runtime-fast)
+                   generate-uavcan-ts-runtime-fast
+                   generate-uavcan-python)
 
   add_custom_target(generate-demo-2026-02-16
     COMMAND

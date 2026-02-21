@@ -44,6 +44,12 @@ It currently provides:
   - A generated TypeScript runtime helper module (`dsdl_runtime.ts`) for bit-level read/write primitives.
   - Runtime specialization (`portable|fast`) for generated runtime helper implementation strategy.
   - MLIR schema/plan metadata validation before emission.
+- Python 3.10 code generation (`dsdlc python`) with:
+  - A generated package/module layout (package root + namespace `*.py` files).
+  - Per-type Python dataclasses, DSDL metadata constants, and generated runtime-backed SerDes methods.
+  - A generated pure-Python runtime helper (`_dsdl_runtime.py`) and runtime loader (`_runtime_loader.py`).
+  - Optional C accelerator loading (`_dsdl_runtime_accel`) with automatic fallback to pure runtime.
+  - MLIR schema/plan metadata validation before emission.
 - Spec-conformant frontend semantics (single mode; no compatibility fallback mode).
 
 ## Ambitions
@@ -55,6 +61,7 @@ Support code generation from a common MLIR for
 - Rust std
 - Rust no-std
 - typescript
+- Python
 - wasm
 
 Tools
@@ -67,7 +74,7 @@ Tools
 
 - `include/llvmdsdl`: public C++ headers.
 - `lib`: frontend, semantics, IR, lowering, transforms, codegen.
-- `tools/dsdlc`: CLI driver (`ast`, `mlir`, `c`, `cpp`, `rust`, `go`, `ts`).
+- `tools/dsdlc`: CLI driver (`ast`, `mlir`, `c`, `cpp`, `rust`, `go`, `ts`, `python`).
 - `tools/dsdl-opt`: MLIR pass driver for the DSDL dialect.
 - `runtime/dsdl_runtime.h`: generated C runtime support header.
 - `test/unit`: unit tests.
@@ -240,7 +247,9 @@ CMake provides first-class generation targets per language/profile:
 - `generate-uavcan-rust-no-std-alloc`
 - `generate-uavcan-rust-runtime-fast`
 - `generate-uavcan-rust-no-std-runtime-fast`
+- `generate-uavcan-go`
 - `generate-uavcan-ts`
+- `generate-uavcan-python`
 - `generate-uavcan-all` (aggregate)
 - `generate-demo-2026-02-16` (demo bundle with logs + `DEMO.md`)
 
@@ -254,7 +263,9 @@ cmake --build --preset build-dev-homebrew-relwithdebinfo --target generate-uavca
 cmake --build --preset build-dev-homebrew-relwithdebinfo --target generate-uavcan-rust-no-std-alloc
 cmake --build --preset build-dev-homebrew-relwithdebinfo --target generate-uavcan-rust-runtime-fast
 cmake --build --preset build-dev-homebrew-relwithdebinfo --target generate-uavcan-rust-no-std-runtime-fast
+cmake --build --preset build-dev-homebrew-relwithdebinfo --target generate-uavcan-go
 cmake --build --preset build-dev-homebrew-relwithdebinfo --target generate-uavcan-ts
+cmake --build --preset build-dev-homebrew-relwithdebinfo --target generate-uavcan-python
 cmake --build --preset build-dev-homebrew-relwithdebinfo --target generate-uavcan-all
 cmake --build --preset build-dev-homebrew-relwithdebinfo --target generate-demo-2026-02-16
 ```
@@ -269,7 +280,9 @@ Generated output paths are under `<build-dir>/generated/uavcan`:
 - `<build-dir>/generated/uavcan/rust-no-std-alloc`
 - `<build-dir>/generated/uavcan/rust-runtime-fast`
 - `<build-dir>/generated/uavcan/rust-no-std-runtime-fast`
+- `<build-dir>/generated/uavcan/go`
 - `<build-dir>/generated/uavcan/ts`
+- `<build-dir>/generated/uavcan/python`
 - `<build-dir>/demo-2026-02-16` (demo artifact bundle)
 
 Notes:
@@ -453,6 +466,28 @@ Current behavior:
   - runtime smoke lanes across scalar/array/union/composite/delimited/service/padding/truncated-decode families
   - C<->TS parity lanes including invariant-based random+direct checks, signed-narrow cast-mode checks, and optimized-lowering variants
 
+### Python module generation (`python3.10` + optional accelerator)
+
+```bash
+"${DSDLC}" python \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
+  --out-dir build/uavcan-python-out \
+  --py-package uavcan_dsdl_generated_py
+```
+
+Current behavior:
+
+- Emits one namespace-mirrored `*.py` file per DSDL definition plus package `__init__.py` files.
+- Generates per-type dataclasses with:
+  - `serialize(self) -> bytes`
+  - `deserialize(cls, data: bytes | bytearray | memoryview) -> Type`
+- Emits generated runtime modules in the package root:
+  - `_dsdl_runtime.py` (pure Python runtime)
+  - `_runtime_loader.py` (selects `auto|pure|accel` via `LLVMDSDL_PY_RUNTIME_MODE`)
+- Uses lowered-contract validation (`collectLoweredFactsFromMlir`) and shared lowered runtime planning for SerDes emission.
+- Optional C accelerator module support (`_dsdl_runtime_accel`) is available via CMake option
+  `LLVMDSDL_ENABLE_PYTHON_ACCELERATOR=ON`.
+
 ## Reproducible Full `uavcan` Generation Check
 
 ```bash
@@ -482,4 +517,6 @@ runtime-specialized (`fast`) modes, plus TypeScript generation with compile
 execution, runtime-specialized (`portable|fast`) generation/typecheck/parity/
 semantic-diff gates, and fixture/runtime parity validation lanes (including
 signed-narrow parity, optimized parity, variable-array/bigint/union/composite/
-service/delimited families).
+service/delimited families), and Python generation with runtime smoke, backend
+selection (`auto|pure|accel`), full-tree generation/determinism, and runtime
+benchmark harness coverage.

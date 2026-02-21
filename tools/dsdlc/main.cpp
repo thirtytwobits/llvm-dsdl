@@ -35,6 +35,7 @@
 #include "llvmdsdl/CodeGen/CEmitter.h"
 #include "llvmdsdl/CodeGen/CppEmitter.h"
 #include "llvmdsdl/CodeGen/GoEmitter.h"
+#include "llvmdsdl/CodeGen/PythonEmitter.h"
 #include "llvmdsdl/CodeGen/RustEmitter.h"
 #include "llvmdsdl/CodeGen/TsEmitter.h"
 #include "llvmdsdl/Frontend/ASTPrinter.h"
@@ -60,7 +61,7 @@ namespace
 bool isKnownCommand(llvm::StringRef command)
 {
     return command == "ast" || command == "mlir" || command == "c" || command == "cpp" || command == "rust" ||
-           command == "go" || command == "ts";
+           command == "go" || command == "ts" || command == "python";
 }
 
 /// @brief Checks whether a token is a help switch.
@@ -75,7 +76,7 @@ bool isHelpToken(llvm::StringRef arg)
 /// @brief Prints compact usage guidance for invalid CLI invocations.
 void printUsage()
 {
-    llvm::errs() << "Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts> --root-namespace-dir <dir> [options]\n"
+    llvm::errs() << "Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python> --root-namespace-dir <dir> [options]\n"
                  << "Try: dsdlc --help\n";
 }
 
@@ -93,7 +94,8 @@ void printHelp(const std::string& selectedCommand = "")
         << "  dsdlc <command> --help\n\n"
         << "DESCRIPTION\n"
         << "  dsdlc discovers and parses .dsdl definitions, performs semantic analysis, lowers into\n"
-        << "  a DSDL MLIR dialect, and can emit output for C, C++, Rust, Go, and TypeScript. Root namespaces are\n"
+        << "  a DSDL MLIR dialect, and can emit output for C, C++, Rust, Go, TypeScript, and Python. Root namespaces "
+           "are\n"
         << "  repeatable for multi-root projects. Lookup directories are optional dependency roots.\n\n"
         << "COMMANDS\n"
         << "  ast   Print parsed AST for all discovered definitions.\n"
@@ -103,6 +105,7 @@ void printHelp(const std::string& selectedCommand = "")
         << "  rust  Generate Rust crate layout and SerDes/runtime integration.\n"
         << "  go    Generate Go module/package layout and SerDes/runtime integration.\n"
         << "  ts    Generate TypeScript module layout and type declarations.\n\n"
+        << "  python Generate Python 3.10 package layout and dataclass SerDes/runtime integration.\n\n"
         << "COMMON OPTIONS\n"
         << "  --root-namespace-dir <dir>\n"
         << "      Primary input root. Repeat to add more top-level namespace roots.\n"
@@ -114,7 +117,7 @@ void printHelp(const std::string& selectedCommand = "")
         << "      before backend code generation.\n"
         << "  --help, -h\n"
         << "      Print this help text. With a command, prints command-focused guidance.\n\n"
-        << "CODEGEN OPTIONS (c/cpp/rust/go/ts)\n"
+        << "CODEGEN OPTIONS (c/cpp/rust/go/ts/python)\n"
         << "  --out-dir <dir>\n"
         << "      Output directory root for generated files.\n\n"
         << "C++ OPTIONS (cpp)\n"
@@ -141,6 +144,10 @@ void printHelp(const std::string& selectedCommand = "")
         << "      portable -> emit conservative bit-loop runtime helpers (default).\n"
         << "      fast     -> emit byte-aligned fast paths in the generated runtime helpers.\n"
         << "                  Wire semantics remain unchanged relative to portable.\n\n"
+        << "PYTHON OPTIONS (python)\n"
+        << "  --py-package <name>\n"
+        << "      Python package name (dotted path allowed) used as the generated root package\n"
+        << "      (default: dsdl_gen).\n\n"
         << "RUN SUMMARY\n"
         << "  On successful command execution, dsdlc prints a summary to stderr with:\n"
         << "    - files generated\n"
@@ -150,19 +157,29 @@ void printHelp(const std::string& selectedCommand = "")
         << "  dsdlc ast --root-namespace-dir submodules/public_regulated_data_types/uavcan\n"
         << "  dsdlc mlir --root-namespace-dir submodules/public_regulated_data_types/uavcan\n"
         << "  dsdlc c --root-namespace-dir submodules/public_regulated_data_types/uavcan --out-dir build/uavcan-c\n"
-        << "  dsdlc cpp --root-namespace-dir submodules/public_regulated_data_types/uavcan --cpp-profile both --out-dir "
+        << "  dsdlc cpp --root-namespace-dir submodules/public_regulated_data_types/uavcan --cpp-profile both "
+           "--out-dir "
            "build/uavcan-cpp\n"
-        << "  dsdlc rust --root-namespace-dir submodules/public_regulated_data_types/uavcan --rust-profile std --rust-crate-name "
+        << "  dsdlc rust --root-namespace-dir submodules/public_regulated_data_types/uavcan --rust-profile std "
+           "--rust-crate-name "
            "uavcan_dsdl_generated --out-dir build/uavcan-rust\n"
-        << "  dsdlc rust --root-namespace-dir submodules/public_regulated_data_types/uavcan --rust-runtime-specialization fast "
+        << "  dsdlc rust --root-namespace-dir submodules/public_regulated_data_types/uavcan "
+           "--rust-runtime-specialization fast "
            "--rust-profile std --rust-crate-name uavcan_dsdl_fast --out-dir build/uavcan-rust-fast\n"
-        << "  dsdlc rust --root-namespace-dir submodules/public_regulated_data_types/uavcan --rust-profile no-std-alloc "
+        << "  dsdlc rust --root-namespace-dir submodules/public_regulated_data_types/uavcan --rust-profile "
+           "no-std-alloc "
            "--rust-crate-name uavcan_dsdl_embedded --out-dir build/uavcan-rust-no-std\n"
-        << "  dsdlc go --root-namespace-dir submodules/public_regulated_data_types/uavcan --go-module demo/uavcan/generated "
+        << "  dsdlc go --root-namespace-dir submodules/public_regulated_data_types/uavcan --go-module "
+           "demo/uavcan/generated "
            "--out-dir build/uavcan-go\n"
-        << "  dsdlc ts --root-namespace-dir submodules/public_regulated_data_types/uavcan --ts-module demo_uavcan_generated "
+        << "  dsdlc ts --root-namespace-dir submodules/public_regulated_data_types/uavcan --ts-module "
+           "demo_uavcan_generated "
            "--out-dir build/uavcan-ts\n"
-        << "  dsdlc ts --root-namespace-dir submodules/public_regulated_data_types/uavcan --ts-module demo_uavcan_generated_fast "
+        << "  dsdlc python --root-namespace-dir submodules/public_regulated_data_types/uavcan --py-package "
+           "demo_uavcan_generated "
+           "--out-dir build/uavcan-python\n"
+        << "  dsdlc ts --root-namespace-dir submodules/public_regulated_data_types/uavcan --ts-module "
+           "demo_uavcan_generated_fast "
            "--ts-runtime-specialization fast --out-dir build/uavcan-ts-fast\n\n"
         << "EXIT STATUS\n"
         << "  0 on success, non-zero on parse/semantic/lowering/codegen failure or invalid CLI usage.\n";
@@ -198,6 +215,10 @@ void printHelp(const std::string& selectedCommand = "")
         else if (selectedCommand == "ts")
         {
             llvm::errs() << "  Requires --out-dir. Honors --ts-module and --ts-runtime-specialization.\n";
+        }
+        else if (selectedCommand == "python")
+        {
+            llvm::errs() << "  Requires --out-dir. Honors --py-package.\n";
         }
     }
 }
@@ -360,6 +381,7 @@ int main(int argc, char** argv)
     std::string                         goModuleName              = "llvmdsdl_generated";
     std::string                         tsModuleName              = "llvmdsdl_generated";
     llvmdsdl::TsRuntimeSpecialization   tsRuntimeSpecialization   = llvmdsdl::TsRuntimeSpecialization::Portable;
+    std::string                         pyPackageName             = "dsdl_gen";
 
     for (int i = 2; i < argc; ++i)
     {
@@ -481,6 +503,10 @@ int main(int argc, char** argv)
                 printUsage();
                 return 1;
             }
+        }
+        else if (arg == "--py-package")
+        {
+            pyPackageName = requireValue(arg);
         }
         else
         {
@@ -662,6 +688,28 @@ int main(int argc, char** argv)
         options.optimizeLoweredSerDes = optimizeLoweredSerDes;
 
         if (llvm::Error err = llvmdsdl::emitTs(*semantic, *mlirModule, options, diagnostics))
+        {
+            llvm::errs() << llvm::toString(std::move(err)) << "\n";
+            printDiagnostics(diagnostics);
+            return 1;
+        }
+
+        return finish(resolveOutputRoot(outDir), countRegularFiles(outDir));
+    }
+
+    if (command == "python")
+    {
+        if (outDir.empty())
+        {
+            llvm::errs() << "--out-dir is required for 'python' command\n";
+            return 1;
+        }
+        llvmdsdl::PythonEmitOptions options;
+        options.outDir                = outDir;
+        options.packageName           = pyPackageName;
+        options.optimizeLoweredSerDes = optimizeLoweredSerDes;
+
+        if (llvm::Error err = llvmdsdl::emitPython(*semantic, *mlirModule, options, diagnostics))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             printDiagnostics(diagnostics);

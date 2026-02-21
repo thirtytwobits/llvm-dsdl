@@ -96,6 +96,11 @@ mkdir -p "$OUT"
   --root-namespace-dir "$ROOT_NS" \
   --ts-module demo_vendor_generated_ts \
   --out-dir "$OUT/ts"
+
+"$DSDLC" python \
+  --root-namespace-dir "$ROOT_NS" \
+  --py-package demo_vendor_generated_py \
+  --out-dir "$OUT/python"
 ```
 
 ### 1.3 Show proof on screen (60 seconds)
@@ -117,6 +122,7 @@ find "$OUT/cpp" -maxdepth 4 -type f | sort
 find "$OUT/rust/src/vendor" -maxdepth 1 -type f | sort
 find "$OUT/go/vendor" -maxdepth 1 -type f | sort
 find "$OUT/ts/vendor" -maxdepth 1 -type f | sort
+find "$OUT/python/demo_vendor_generated_py/vendor" -maxdepth 1 -type f | sort
 ```
 
 One-type, many-targets proof:
@@ -134,7 +140,7 @@ sed -n '1,80p' "$OUT/ts/vendor/type__1_0.ts"
 1. `0:00-0:30`: "IDL in, single frontend + semantic pass."
 2. `0:30-1:30`: "MLIR module captures canonical representation."
 3. `1:30-2:15`: "Lowering + conversion passes create explicit, inspectable transformation steps."
-4. `2:15-3:45`: "Same semantic source emits C/C++/Rust/Go/TypeScript."
+4. `2:15-3:45`: "Same semantic source emits C/C++/Rust/Go/TypeScript/Python."
 5. `3:45-5:00`: "Value is architecture: shared analysis and lowering, target-specific rendering."
 
 ## 3) Kitchen Tour (90 Seconds)
@@ -215,6 +221,10 @@ mkdir -p "$OUT_FULL"
   --root-namespace-dir "$ROOT_NS_FULL" \
   --ts-module demo_uavcan_generated_ts \
   --out-dir "$OUT_FULL/ts"
+"$DSDLC" python \
+  --root-namespace-dir "$ROOT_NS_FULL" \
+  --py-package demo_uavcan_generated_py \
+  --out-dir "$OUT_FULL/python"
 ```
 
 Scale counts:
@@ -227,7 +237,7 @@ find "$OUT_FULL/c" -name '*.h' ! -name 'dsdl_runtime.h' | wc -l
 ## 5) Caveat: Remaining Work
 
 As of **February 20, 2026**, the MLIR-max lowering program for the in-scope
-backend set is complete (C/C++/Rust/Go/TypeScript), including lowered-contract
+backend set is complete (C/C++/Rust/Go/TypeScript/Python), including lowered-contract
 validation, runtime specialization lanes, and cross-language parity gates.
 
 Work that remains is mostly product polish and expansion, not core viability:
