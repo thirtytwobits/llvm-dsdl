@@ -200,6 +200,11 @@ def run_suite(args: argparse.Namespace) -> dict[str, Any]:
         raise FileNotFoundError(f"dsdlc not found: {dsdlc}")
     if not root_namespace_dir.exists():
         raise FileNotFoundError(f"root namespace dir not found: {root_namespace_dir}")
+    if root_namespace_dir.name == "civildrone" and not lookup_dirs:
+        raise ValueError(
+            "benchmark root points to civildrone without lookup roots; pass --lookup-dir "
+            "submodules/public_regulated_data_types or use --root-namespace-dir test/benchmark/complex"
+        )
     for lookup_dir in lookup_dirs:
         if not lookup_dir.exists():
             raise FileNotFoundError(f"lookup dir not found: {lookup_dir}")
