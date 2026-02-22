@@ -17,6 +17,13 @@ if(NOT EXISTS "${PYTHON_EXECUTABLE}")
 endif()
 
 set(PY_PACKAGE "llvmdsdl_py_smoke")
+if(NOT DEFINED PY_RUNTIME_SPECIALIZATION OR "${PY_RUNTIME_SPECIALIZATION}" STREQUAL "")
+  set(PY_RUNTIME_SPECIALIZATION "portable")
+endif()
+if(NOT "${PY_RUNTIME_SPECIALIZATION}" STREQUAL "portable" AND
+   NOT "${PY_RUNTIME_SPECIALIZATION}" STREQUAL "fast")
+  message(FATAL_ERROR "Invalid PY_RUNTIME_SPECIALIZATION value: ${PY_RUNTIME_SPECIALIZATION}")
+endif()
 set(py_package_path "${PY_PACKAGE}")
 string(REPLACE "." "/" py_package_path "${py_package_path}")
 
@@ -28,6 +35,7 @@ set(dsdlc_args
   --root-namespace-dir "${FIXTURES_ROOT}"
   --out-dir "${OUT_DIR}"
   --py-package "${PY_PACKAGE}"
+  --py-runtime-specialization "${PY_RUNTIME_SPECIALIZATION}"
 )
 if(DEFINED DSDLC_EXTRA_ARGS AND NOT "${DSDLC_EXTRA_ARGS}" STREQUAL "")
   separate_arguments(extra_args NATIVE_COMMAND "${DSDLC_EXTRA_ARGS}")

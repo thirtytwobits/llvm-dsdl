@@ -31,11 +31,28 @@
 # RUN: cat %t/ts-fast/package.json | FileCheck %s --check-prefix=TS_FAST_PACKAGE
 # RUN: cat %t/ts-fast/dsdl_runtime.ts | FileCheck %s --check-prefix=TS_FAST_RUNTIME
 
-# RUN: %dsdlc python --root-namespace-dir %S/fixtures --py-package demo_py_smoke --out-dir %t/python 2>&1 | FileCheck %s --check-prefix=PY_SUMMARY
-# RUN: test -f %t/python/demo_py_smoke/_dsdl_runtime.py
-# RUN: test -f %t/python/demo_py_smoke/_runtime_loader.py
-# RUN: test -f %t/python/demo_py_smoke/fixtures/vendor/helpers_1_0.py
-# RUN: cat %t/python/demo_py_smoke/fixtures/vendor/helpers_1_0.py | FileCheck %s --check-prefix=PY_HELPERS
+# RUN: %dsdlc python --root-namespace-dir %S/fixtures --py-package demo_py_smoke --py-runtime-specialization portable --out-dir %t/python-portable 2>&1 | FileCheck %s --check-prefix=PY_PORTABLE_SUMMARY
+# RUN: test -f %t/python-portable/pyproject.toml
+# RUN: test -f %t/python-portable/demo_py_smoke/_dsdl_runtime.py
+# RUN: test -f %t/python-portable/demo_py_smoke/_runtime_loader.py
+# RUN: test -f %t/python-portable/demo_py_smoke/py.typed
+# RUN: test -f %t/python-portable/demo_py_smoke/llvmdsdl_codegen.json
+# RUN: test -f %t/python-portable/demo_py_smoke/fixtures/vendor/helpers_1_0.py
+# RUN: cat %t/python-portable/pyproject.toml | FileCheck %s --check-prefix=PY_PYPROJECT
+# RUN: cat %t/python-portable/demo_py_smoke/llvmdsdl_codegen.json | FileCheck %s --check-prefix=PY_PORTABLE_PACKAGE
+# RUN: cat %t/python-portable/demo_py_smoke/_dsdl_runtime.py | FileCheck %s --check-prefix=PY_PORTABLE_RUNTIME
+# RUN: cat %t/python-portable/demo_py_smoke/fixtures/vendor/helpers_1_0.py | FileCheck %s --check-prefix=PY_HELPERS
+
+# RUN: %dsdlc python --root-namespace-dir %S/fixtures --py-package demo_py_smoke --py-runtime-specialization fast --out-dir %t/python-fast 2>&1 | FileCheck %s --check-prefix=PY_FAST_SUMMARY
+# RUN: test -f %t/python-fast/pyproject.toml
+# RUN: test -f %t/python-fast/demo_py_smoke/_dsdl_runtime.py
+# RUN: test -f %t/python-fast/demo_py_smoke/_runtime_loader.py
+# RUN: test -f %t/python-fast/demo_py_smoke/py.typed
+# RUN: test -f %t/python-fast/demo_py_smoke/llvmdsdl_codegen.json
+# RUN: test -f %t/python-fast/demo_py_smoke/fixtures/vendor/helpers_1_0.py
+# RUN: cat %t/python-fast/demo_py_smoke/llvmdsdl_codegen.json | FileCheck %s --check-prefix=PY_FAST_PACKAGE
+# RUN: cat %t/python-fast/demo_py_smoke/_dsdl_runtime.py | FileCheck %s --check-prefix=PY_FAST_RUNTIME
+# RUN: cmp -s %t/python-portable/demo_py_smoke/fixtures/vendor/helpers_1_0.py %t/python-fast/demo_py_smoke/fixtures/vendor/helpers_1_0.py
 
 # CPP_SUMMARY: Run summary:
 # CPP_SUMMARY: command: cpp
@@ -76,9 +93,23 @@
 # TS_FAST_RUNTIME: dst.set(src.subarray
 # TS_FAST_RUNTIME: return src.slice(
 
-# PY_SUMMARY: Run summary:
-# PY_SUMMARY: command: python
-# PY_SUMMARY: files generated:
+# PY_PORTABLE_SUMMARY: Run summary:
+# PY_PORTABLE_SUMMARY: command: python
+# PY_PORTABLE_SUMMARY: files generated:
+# PY_PORTABLE_PACKAGE: "pythonRuntimeSpecialization": "portable"
+# PY_PORTABLE_RUNTIME-NOT: dst_start = dst_off_bits // 8
+
+# PY_FAST_SUMMARY: Run summary:
+# PY_FAST_SUMMARY: command: python
+# PY_FAST_SUMMARY: files generated:
+# PY_FAST_PACKAGE: "pythonRuntimeSpecialization": "fast"
+# PY_FAST_RUNTIME: dst_start = dst_off_bits // 8
+# PY_PYPROJECT: [build-system]
+# PY_PYPROJECT: build-backend = "setuptools.build_meta"
+# PY_PYPROJECT: [project]
+# PY_PYPROJECT: requires-python = ">=3.10"
+# PY_PYPROJECT: [tool.setuptools.package-data]
+# PY_PYPROJECT: _dsdl_runtime_accel*.so
 # PY_HELPERS: @dataclass(slots=True)
 # PY_HELPERS: def serialize(self) -> bytes:
 # PY_HELPERS: def deserialize(cls, data: bytes | bytearray | memoryview)

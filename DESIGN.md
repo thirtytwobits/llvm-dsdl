@@ -18,7 +18,7 @@ The project currently supports:
 - Rust (`dsdlc rust`, with `std` and `no-std-alloc` profiles, plus runtime specialization `portable|fast`)
 - Go (`dsdlc go`)
 - TypeScript (`dsdlc ts`, with runtime specialization `portable|fast`)
-- Python (`dsdlc python`, with runtime backend selection `auto|pure|accel`)
+- Python (`dsdlc python`, with runtime specialization `portable|fast` and backend selection `auto|pure|accel`)
 
 for arbitrary DSDL root namespaces. Full-tree integration validation is currently
 centered on the `uavcan` regulated data types.
@@ -97,7 +97,7 @@ language-specific artifacts.
 - `TsEmitter.cpp`
   - Emits TypeScript package/module layout and generated runtime-backed SerDes integration.
 - `PythonEmitter.cpp`
-  - Emits Python package/module layout, generated dataclasses, and runtime-backed SerDes integration.
+  - Emits Python package/module layout, generated dataclasses, packaging metadata (`pyproject.toml`, `py.typed`), and runtime-backed SerDes integration.
 
 Shared generator-side convergence modules include:
 
@@ -116,6 +116,7 @@ Runtime helpers encapsulate wire-level bit operations and numeric conversions:
 - `runtime/go/dsdl_runtime.go` (Go runtime)
 - generated `dsdl_runtime.ts` (TypeScript runtime helper emitted by `dsdlc ts`)
 - generated `_dsdl_runtime.py` + `_runtime_loader.py` (Python runtime helpers emitted by `dsdlc python`)
+- generated `pyproject.toml` + `py.typed` (Python packaging metadata emitted by `dsdlc python`)
 
 ### 1.4 Tooling and Validation
 
@@ -301,9 +302,48 @@ typecheck/consumer-smoke/index-contract/runtime-execution gates
   (`llvmdsdl-c-ts-parity`, `llvmdsdl-signed-narrow-c-ts-parity`, optimized
   variants), and broad runtime/parity fixture lanes.
 - Python integration coverage includes fixture-generation hardening, runtime
-  smoke (portable + optimized lowering), backend selection behavior
+  smoke (portable/fast + optimized lowering), backend selection behavior
   (`auto|pure|accel`), full-`uavcan` generation/determinism gates, and a
-  Python runtime benchmark harness.
+  Python runtime benchmark harness. CMake generation flow also includes
+  accelerator staging targets and optional wheel staging targets for generated
+  Python packages.
+
+Python validation taxonomy (parity with mature targets):
+
+- Generation and determinism:
+  - fixture hardening lane and full-tree `uavcan` generation/determinism lanes.
+- Runtime execution:
+  - fixture smoke lanes plus full-tree runtime execution lanes
+    (`portable`, `fast`, and optimized-lowering variants).
+- Differential parity:
+  - C<->Python parity families across runtime/service/array/bigint/float/utf8/
+    delimited/union/composite/truncated/padding-alignment classes.
+  - signed-narrow parity lanes (`portable`, optimized, and `fast` specialization).
+- Backend and specialization contracts:
+  - backend selector behavior (`auto|pure|accel`) and pure-vs-accel parity.
+  - CI-required accelerator gate lanes (`python-accel-required` label) that hard-fail
+    if the accelerator module is unavailable or parity/selection behavior regresses.
+  - explicit malformed-input contract test lane:
+    - portable pure runtime: tolerant zero-extend reads.
+    - fast pure runtime: byte-aligned out-of-range extract/copy rejects with `ValueError`.
+    - accel runtime: follows accelerator helper behavior (tolerant extract, strict copy range checks).
+  - seeded malformed-decode fuzz/property parity lane validating contract-constrained
+    subset behavior across `portable`, `fast`, and `accel`.
+  - specialization semantic-diff lane validating `portable` vs `fast` runtime
+    helper divergence without generated-type semantic drift.
+- Performance policy:
+  - benchmark lane emits per-family/per-mode reports by default and supports
+    optional threshold gating.
+
+Python runtime troubleshooting matrix:
+
+| Condition | Why it happens | Design-intended behavior |
+| --- | --- | --- |
+| `accel` mode import failure | accelerator module absent | fail fast in explicit `accel` mode; `auto` falls back to pure |
+| `auto` chooses `pure` | accelerator unavailable or not staged | preserve correctness first; performance path is opportunistic |
+| specialization mismatch (`portable` vs `fast`) | helper implementation drift | semantic-diff lane catches unintended API/wire drift |
+| benchmark threshold failures | host variance or stale thresholds | artifact-first policy allows baseline capture before enforcing gates |
+
 Target trajectory:
 
 - Continue using MLIR-first lowering plus render-IR convergence so backend logic

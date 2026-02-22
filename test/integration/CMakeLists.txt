@@ -4,6 +4,36 @@ set(LLVMDSDL_UAVCAN_ROOT
 set(LLVMDSDL_FIXTURES_ROOT
     "${LLVMDSDL_SOURCE_DIR}/test/lit/fixtures")
 find_program(PYTHON_EXECUTABLE python3 QUIET)
+
+set(LLVMDSDL_PY_RUNTIME_BENCH_SPECIALIZATIONS
+    "portable;fast"
+    CACHE STRING
+    "Python runtime benchmark specializations to generate (semicolon-separated).")
+set(LLVMDSDL_PY_RUNTIME_BENCH_ITERATIONS_SMALL
+    "2000"
+    CACHE STRING
+    "Python runtime benchmark iterations for the small payload family.")
+set(LLVMDSDL_PY_RUNTIME_BENCH_ITERATIONS_MEDIUM
+    "750"
+    CACHE STRING
+    "Python runtime benchmark iterations for the medium payload family.")
+set(LLVMDSDL_PY_RUNTIME_BENCH_ITERATIONS_LARGE
+    "250"
+    CACHE STRING
+    "Python runtime benchmark iterations for the large payload family.")
+set(LLVMDSDL_PY_RUNTIME_BENCH_ENABLE_THRESHOLDS
+    OFF
+    CACHE BOOL
+    "Enable pass/fail threshold checks for the Python runtime benchmark integration test.")
+set(LLVMDSDL_PY_RUNTIME_BENCH_THRESHOLDS_JSON
+    "${LLVMDSDL_SOURCE_DIR}/test/integration/python_runtime_bench_thresholds.json"
+    CACHE FILEPATH
+    "Threshold config used when LLVMDSDL_PY_RUNTIME_BENCH_ENABLE_THRESHOLDS is ON.")
+string(REPLACE ";"
+               "\\;"
+               LLVMDSDL_PY_RUNTIME_BENCH_SPECIALIZATIONS_ARG
+               "${LLVMDSDL_PY_RUNTIME_BENCH_SPECIALIZATIONS}")
+
 if(EXISTS "${LLVMDSDL_FIXTURES_ROOT}")
   add_test(
     NAME llvmdsdl-dsdl-opt-sanity
@@ -91,6 +121,24 @@ if(EXISTS "${LLVMDSDL_FIXTURES_ROOT}")
     )
 
     add_test(
+      NAME llvmdsdl-fixtures-python-runtime-smoke-fast
+      COMMAND
+        ${CMAKE_COMMAND}
+          -DDSDLC=$<TARGET_FILE:dsdlc>
+          -DFIXTURES_ROOT=${LLVMDSDL_FIXTURES_ROOT}
+          -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-python-runtime-smoke-fast-out
+          -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+          -DPY_RUNTIME_SPECIALIZATION=fast
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/RunPythonRuntimeSmoke.cmake
+    )
+
+    set_tests_properties(
+      llvmdsdl-fixtures-python-runtime-smoke-fast
+      PROPERTIES
+        LABELS "integration;fixtures;python;runtime;python-runtime-specialization"
+    )
+
+    add_test(
       NAME llvmdsdl-fixtures-python-runtime-backend-selection
       COMMAND
         ${CMAKE_COMMAND}
@@ -107,6 +155,84 @@ if(EXISTS "${LLVMDSDL_FIXTURES_ROOT}")
       PROPERTIES
         LABELS "integration;fixtures;python;runtime"
     )
+
+    if(LLVMDSDL_ENABLE_PYTHON_ACCELERATOR)
+      add_test(
+        NAME llvmdsdl-fixtures-python-runtime-backend-selection-accel-required
+        COMMAND
+          ${CMAKE_COMMAND}
+            -DDSDLC=$<TARGET_FILE:dsdlc>
+            -DFIXTURES_ROOT=${LLVMDSDL_FIXTURES_ROOT}
+            -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-python-runtime-backend-selection-accel-required-out
+            -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+            -DACCEL_MODULE=$<$<TARGET_EXISTS:llvmdsdl-python-runtime-accelerator>:$<TARGET_FILE:llvmdsdl-python-runtime-accelerator>>
+            -DREQUIRE_ACCEL=ON
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/RunPythonRuntimeBackendSelection.cmake
+      )
+
+      set_tests_properties(
+        llvmdsdl-fixtures-python-runtime-backend-selection-accel-required
+        PROPERTIES
+          LABELS "integration;fixtures;python;runtime;python-accel-required"
+      )
+    endif()
+
+    add_test(
+      NAME llvmdsdl-fixtures-python-malformed-input-contract
+      COMMAND
+        ${CMAKE_COMMAND}
+          -DDSDLC=$<TARGET_FILE:dsdlc>
+          -DFIXTURES_ROOT=${LLVMDSDL_FIXTURES_ROOT}
+          -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-python-malformed-input-contract-out
+          -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+          -DACCEL_MODULE=$<$<TARGET_EXISTS:llvmdsdl-python-runtime-accelerator>:$<TARGET_FILE:llvmdsdl-python-runtime-accelerator>>
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/RunPythonMalformedInputContract.cmake
+    )
+
+    set_tests_properties(
+      llvmdsdl-fixtures-python-malformed-input-contract
+      PROPERTIES
+        LABELS "integration;fixtures;python;runtime;contract"
+    )
+
+    add_test(
+      NAME llvmdsdl-fixtures-python-malformed-decode-fuzz-parity
+      COMMAND
+        ${CMAKE_COMMAND}
+          -DDSDLC=$<TARGET_FILE:dsdlc>
+          -DFIXTURES_ROOT=${LLVMDSDL_FIXTURES_ROOT}
+          -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-python-malformed-decode-fuzz-parity-out
+          -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+          -DACCEL_MODULE=$<$<TARGET_EXISTS:llvmdsdl-python-runtime-accelerator>:$<TARGET_FILE:llvmdsdl-python-runtime-accelerator>>
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/RunPythonMalformedDecodeFuzzParity.cmake
+    )
+
+    set_tests_properties(
+      llvmdsdl-fixtures-python-malformed-decode-fuzz-parity
+      PROPERTIES
+        LABELS "integration;fixtures;python;runtime;contract;differential;fuzz"
+    )
+
+    if(LLVMDSDL_ENABLE_PYTHON_ACCELERATOR)
+      add_test(
+        NAME llvmdsdl-fixtures-python-malformed-decode-fuzz-parity-accel-required
+        COMMAND
+          ${CMAKE_COMMAND}
+            -DDSDLC=$<TARGET_FILE:dsdlc>
+            -DFIXTURES_ROOT=${LLVMDSDL_FIXTURES_ROOT}
+            -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-python-malformed-decode-fuzz-parity-accel-required-out
+            -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+            -DACCEL_MODULE=$<$<TARGET_EXISTS:llvmdsdl-python-runtime-accelerator>:$<TARGET_FILE:llvmdsdl-python-runtime-accelerator>>
+            -DREQUIRE_ACCEL=ON
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/RunPythonMalformedDecodeFuzzParity.cmake
+      )
+
+      set_tests_properties(
+        llvmdsdl-fixtures-python-malformed-decode-fuzz-parity-accel-required
+        PROPERTIES
+          LABELS "integration;fixtures;python;runtime;contract;differential;fuzz;python-accel-required"
+      )
+    endif()
 
     add_test(
       NAME llvmdsdl-fixtures-python-runtime-parity
@@ -125,6 +251,27 @@ if(EXISTS "${LLVMDSDL_FIXTURES_ROOT}")
       PROPERTIES
         LABELS "integration;fixtures;python;runtime;differential"
     )
+
+    if(LLVMDSDL_ENABLE_PYTHON_ACCELERATOR)
+      add_test(
+        NAME llvmdsdl-fixtures-python-runtime-parity-accel-required
+        COMMAND
+          ${CMAKE_COMMAND}
+            -DDSDLC=$<TARGET_FILE:dsdlc>
+            -DFIXTURES_ROOT=${LLVMDSDL_FIXTURES_ROOT}
+            -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-python-runtime-parity-accel-required-out
+            -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+            -DACCEL_MODULE=$<$<TARGET_EXISTS:llvmdsdl-python-runtime-accelerator>:$<TARGET_FILE:llvmdsdl-python-runtime-accelerator>>
+            -DREQUIRE_ACCEL=ON
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/RunPythonRuntimeParity.cmake
+      )
+
+      set_tests_properties(
+        llvmdsdl-fixtures-python-runtime-parity-accel-required
+        PROPERTIES
+          LABELS "integration;fixtures;python;runtime;differential;python-accel-required"
+      )
+    endif()
   else()
     message(STATUS "Skipping Python fixture integration tests: python3 unavailable")
   endif()
@@ -641,6 +788,146 @@ if(CMAKE_C_COMPILER AND TSC_EXECUTABLE AND NODE_EXECUTABLE)
   )
 else()
   message(STATUS "Skipping fixtures C/TypeScript runtime parity test: C compiler, tsc, or node unavailable")
+endif()
+
+if(CMAKE_C_COMPILER AND PYTHON_EXECUTABLE)
+  set(c_python_parity_families
+    runtime
+    service
+    variable_array
+    fixed_array
+    bigint
+    float
+    utf8
+    delimited
+    union
+    composite
+    truncated_decode
+    padding_alignment
+  )
+
+  foreach(c_python_family IN LISTS c_python_parity_families)
+    string(REPLACE "_" "-" c_python_family_slug "${c_python_family}")
+
+    add_test(
+      NAME llvmdsdl-fixtures-c-python-${c_python_family_slug}-parity
+      COMMAND
+        ${CMAKE_COMMAND}
+          -DDSDLC=$<TARGET_FILE:dsdlc>
+          -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-c-python-${c_python_family_slug}-parity-out
+          -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+          -DC_COMPILER=${CMAKE_C_COMPILER}
+          -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+          -DFAMILY=${c_python_family}
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/RunCPythonFixtureParity.cmake
+    )
+
+    set_tests_properties(
+      llvmdsdl-fixtures-c-python-${c_python_family_slug}-parity
+      PROPERTIES
+        LABELS "integration;fixtures;python;differential"
+    )
+
+    add_test(
+      NAME llvmdsdl-fixtures-c-python-${c_python_family_slug}-parity-optimized
+      COMMAND
+        ${CMAKE_COMMAND}
+          -DDSDLC=$<TARGET_FILE:dsdlc>
+          -DDSDLC_EXTRA_ARGS=--optimize-lowered-serdes
+          -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-c-python-${c_python_family_slug}-parity-optimized-out
+          -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+          -DC_COMPILER=${CMAKE_C_COMPILER}
+          -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+          -DFAMILY=${c_python_family}
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/RunCPythonFixtureParity.cmake
+    )
+
+    set_tests_properties(
+      llvmdsdl-fixtures-c-python-${c_python_family_slug}-parity-optimized
+      PROPERTIES
+        LABELS "integration;fixtures;python;differential;optimized"
+    )
+
+    if(c_python_family STREQUAL "runtime")
+      add_test(
+        NAME llvmdsdl-fixtures-c-python-${c_python_family_slug}-parity-runtime-fast
+        COMMAND
+          ${CMAKE_COMMAND}
+            -DDSDLC=$<TARGET_FILE:dsdlc>
+            -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-c-python-${c_python_family_slug}-parity-runtime-fast-out
+            -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+            -DC_COMPILER=${CMAKE_C_COMPILER}
+            -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+            -DPY_RUNTIME_SPECIALIZATION=fast
+            -DFAMILY=${c_python_family}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/RunCPythonFixtureParity.cmake
+      )
+
+      set_tests_properties(
+        llvmdsdl-fixtures-c-python-${c_python_family_slug}-parity-runtime-fast
+        PROPERTIES
+          LABELS "integration;fixtures;python;differential;python-runtime-specialization"
+      )
+    endif()
+  endforeach()
+
+  add_test(
+    NAME llvmdsdl-signed-narrow-c-python-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/signed-narrow-c-python-parity-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunSignedNarrowCPythonParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-signed-narrow-c-python-parity
+    PROPERTIES
+      LABELS "integration;fixtures;python;differential"
+  )
+
+  add_test(
+    NAME llvmdsdl-signed-narrow-c-python-parity-optimized
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DDSDLC_EXTRA_ARGS=--optimize-lowered-serdes
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/signed-narrow-c-python-parity-optimized-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunSignedNarrowCPythonParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-signed-narrow-c-python-parity-optimized
+    PROPERTIES
+      LABELS "integration;fixtures;python;differential;optimized"
+  )
+
+  add_test(
+    NAME llvmdsdl-signed-narrow-c-python-parity-runtime-fast
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/signed-narrow-c-python-parity-runtime-fast-out
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DPY_RUNTIME_SPECIALIZATION=fast
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunSignedNarrowCPythonParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-signed-narrow-c-python-parity-runtime-fast
+    PROPERTIES
+      LABELS "integration;fixtures;python;differential;python-runtime-specialization"
+  )
+else()
+  message(STATUS "Skipping fixtures C/Python parity tests: C compiler or python unavailable")
 endif()
 
 if(TSC_EXECUTABLE AND NODE_EXECUTABLE)
@@ -1328,6 +1615,39 @@ if(PYTHON_EXECUTABLE)
   )
 
   add_test(
+    NAME llvmdsdl-uavcan-python-generation-runtime-fast
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-python-runtime-fast-out
+        -DPY_RUNTIME_SPECIALIZATION=fast
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanPythonGeneration.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-uavcan-python-generation-runtime-fast
+    PROPERTIES
+      LABELS "integration;uavcan;python;slow;python-runtime-specialization"
+  )
+
+  add_test(
+    NAME llvmdsdl-uavcan-python-runtime-specialization-diff
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-python-runtime-specialization-diff-out
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunPythonRuntimeSpecializationDiff.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-uavcan-python-runtime-specialization-diff
+    PROPERTIES
+      LABELS "integration;uavcan;python;slow;python-runtime-specialization"
+  )
+
+  add_test(
     NAME llvmdsdl-uavcan-python-determinism
     COMMAND
       ${CMAKE_COMMAND}
@@ -1348,9 +1668,16 @@ if(PYTHON_EXECUTABLE)
     COMMAND
       ${CMAKE_COMMAND}
         -DDSDLC=$<TARGET_FILE:dsdlc>
-        -DFIXTURES_ROOT=${LLVMDSDL_FIXTURES_ROOT}
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
         -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-python-runtime-bench-out
         -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DBENCH_SPECIALIZATIONS=${LLVMDSDL_PY_RUNTIME_BENCH_SPECIALIZATIONS_ARG}
+        -DBENCH_ITERATIONS_SMALL=${LLVMDSDL_PY_RUNTIME_BENCH_ITERATIONS_SMALL}
+        -DBENCH_ITERATIONS_MEDIUM=${LLVMDSDL_PY_RUNTIME_BENCH_ITERATIONS_MEDIUM}
+        -DBENCH_ITERATIONS_LARGE=${LLVMDSDL_PY_RUNTIME_BENCH_ITERATIONS_LARGE}
+        -DBENCH_ENABLE_THRESHOLDS=${LLVMDSDL_PY_RUNTIME_BENCH_ENABLE_THRESHOLDS}
+        -DBENCH_THRESHOLDS_JSON=${LLVMDSDL_PY_RUNTIME_BENCH_THRESHOLDS_JSON}
+        -DBENCH_REPORT_JSON=${CMAKE_CURRENT_BINARY_DIR}/uavcan-python-runtime-bench-out/python-runtime-bench.json
         -DACCEL_MODULE=$<$<TARGET_EXISTS:llvmdsdl-python-runtime-accelerator>:$<TARGET_FILE:llvmdsdl-python-runtime-accelerator>>
         -P ${CMAKE_CURRENT_SOURCE_DIR}/RunPythonRuntimeBench.cmake
   )
@@ -1359,6 +1686,59 @@ if(PYTHON_EXECUTABLE)
     llvmdsdl-uavcan-python-runtime-bench
     PROPERTIES
       LABELS "integration;uavcan;python;bench;slow"
+  )
+
+  add_test(
+    NAME llvmdsdl-uavcan-python-runtime-execution
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-python-runtime-execution-out
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanPythonRuntimeExecution.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-uavcan-python-runtime-execution
+    PROPERTIES
+      LABELS "integration;uavcan;python;runtime;slow"
+  )
+
+  add_test(
+    NAME llvmdsdl-uavcan-python-runtime-execution-runtime-fast
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-python-runtime-execution-runtime-fast-out
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DPY_RUNTIME_SPECIALIZATION=fast
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanPythonRuntimeExecution.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-uavcan-python-runtime-execution-runtime-fast
+    PROPERTIES
+      LABELS "integration;uavcan;python;runtime;slow;python-runtime-specialization"
+  )
+
+  add_test(
+    NAME llvmdsdl-uavcan-python-runtime-execution-optimized
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DDSDLC_EXTRA_ARGS=--optimize-lowered-serdes
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-python-runtime-execution-optimized-out
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanPythonRuntimeExecution.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-uavcan-python-runtime-execution-optimized
+    PROPERTIES
+      LABELS "integration;uavcan;python;runtime;slow;optimized"
   )
 else()
   message(STATUS "Skipping uavcan Python integration tests: python3 unavailable")

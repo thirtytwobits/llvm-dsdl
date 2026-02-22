@@ -98,6 +98,10 @@ find_program(LLVMDSDL_IWYU_EXE
         include-what-you-use-16 include-what-you-use-15
 )
 
+find_program(LLVMDSDL_PYTHON3_EXE
+  NAMES python3 python
+)
+
 option(LLVMDSDL_ENABLE_LLVM_COVERAGE
        "Enable LLVM source-based coverage instrumentation and reporting targets"
        OFF)
@@ -159,6 +163,12 @@ endif()
 if(NOT LLVMDSDL_IWYU_EXE)
   message(WARNING
     "include-what-you-use not found; check-iwyu target will fail "
+    "until it is installed.")
+endif()
+
+if(NOT LLVMDSDL_PYTHON3_EXE)
+  message(WARNING
+    "python3 not found; Python wheel staging targets will fail "
     "until it is installed.")
 endif()
 
@@ -292,6 +302,11 @@ endif()
 if(LLVMDSDL_UAVCAN_ROOT)
   set(LLVMDSDL_GENERATED_UAVCAN_DIR
       "${LLVMDSDL_BINARY_DIR}/generated/uavcan")
+  set(LLVMDSDL_UAVCAN_PY_PACKAGE "uavcan_dsdl_generated_py")
+  set(LLVMDSDL_UAVCAN_PY_OUT_DIR
+      "${LLVMDSDL_GENERATED_UAVCAN_DIR}/python")
+  set(LLVMDSDL_UAVCAN_PY_WHEEL_OUT_DIR
+      "${LLVMDSDL_GENERATED_UAVCAN_DIR}/python-wheel/$<CONFIG>")
 
   function(llvmdsdl_add_uavcan_codegen_target target_name out_subdir)
     set(out_dir "${LLVMDSDL_GENERATED_UAVCAN_DIR}/${out_subdir}")
@@ -372,7 +387,90 @@ if(LLVMDSDL_UAVCAN_ROOT)
                                      ts --ts-module uavcan_dsdl_generated_ts_fast --ts-runtime-specialization fast)
   llvmdsdl_add_uavcan_codegen_target(generate-uavcan-python
                                      python
-                                     python --py-package uavcan_dsdl_generated_py)
+                                     python --py-package ${LLVMDSDL_UAVCAN_PY_PACKAGE})
+
+  add_custom_target(stage-uavcan-python-runtime-accelerator
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DGENERATED_OUT_DIR=${LLVMDSDL_UAVCAN_PY_OUT_DIR}
+        -DPY_PACKAGE=${LLVMDSDL_UAVCAN_PY_PACKAGE}
+        -DREQUIRE_ACCELERATOR=OFF
+        -DACCEL_MODULE=$<$<TARGET_EXISTS:llvmdsdl-python-runtime-accelerator>:$<TARGET_FILE:llvmdsdl-python-runtime-accelerator>>
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/StagePythonRuntimeAccelerator.cmake
+    DEPENDS generate-uavcan-python
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "Staging optional Python accelerator beside generated uavcan Python package"
+  )
+
+  add_custom_target(stage-uavcan-python-runtime-accelerator-required
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DGENERATED_OUT_DIR=${LLVMDSDL_UAVCAN_PY_OUT_DIR}
+        -DPY_PACKAGE=${LLVMDSDL_UAVCAN_PY_PACKAGE}
+        -DREQUIRE_ACCELERATOR=ON
+        -DACCEL_MODULE=$<$<TARGET_EXISTS:llvmdsdl-python-runtime-accelerator>:$<TARGET_FILE:llvmdsdl-python-runtime-accelerator>>
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/StagePythonRuntimeAccelerator.cmake
+    DEPENDS generate-uavcan-python
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "Staging Python accelerator (required mode)"
+  )
+
+  add_custom_target(stage-uavcan-python-wheel
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DGENERATED_OUT_DIR=${LLVMDSDL_UAVCAN_PY_OUT_DIR}
+        -DPY_PACKAGE=${LLVMDSDL_UAVCAN_PY_PACKAGE}
+        -DREQUIRE_ACCELERATOR=OFF
+        -DACCEL_MODULE=$<$<TARGET_EXISTS:llvmdsdl-python-runtime-accelerator>:$<TARGET_FILE:llvmdsdl-python-runtime-accelerator>>
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/StagePythonRuntimeAccelerator.cmake
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DGENERATED_OUT_DIR=${LLVMDSDL_UAVCAN_PY_OUT_DIR}
+        -DWHEEL_OUT_DIR=${LLVMDSDL_UAVCAN_PY_WHEEL_OUT_DIR}
+        -DPYTHON_EXECUTABLE=${LLVMDSDL_PYTHON3_EXE}
+        -DPY_PACKAGE=${LLVMDSDL_UAVCAN_PY_PACKAGE}
+        -DREQUIRE_ACCELERATOR=OFF
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/BuildPythonWheel.cmake
+    DEPENDS generate-uavcan-python
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "Building/staging optional wheel for generated uavcan Python package"
+  )
+
+  add_custom_target(stage-uavcan-python-wheel-accel-required
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DGENERATED_OUT_DIR=${LLVMDSDL_UAVCAN_PY_OUT_DIR}
+        -DPY_PACKAGE=${LLVMDSDL_UAVCAN_PY_PACKAGE}
+        -DREQUIRE_ACCELERATOR=ON
+        -DACCEL_MODULE=$<$<TARGET_EXISTS:llvmdsdl-python-runtime-accelerator>:$<TARGET_FILE:llvmdsdl-python-runtime-accelerator>>
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/StagePythonRuntimeAccelerator.cmake
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DGENERATED_OUT_DIR=${LLVMDSDL_UAVCAN_PY_OUT_DIR}
+        -DWHEEL_OUT_DIR=${LLVMDSDL_UAVCAN_PY_WHEEL_OUT_DIR}
+        -DPYTHON_EXECUTABLE=${LLVMDSDL_PYTHON3_EXE}
+        -DPY_PACKAGE=${LLVMDSDL_UAVCAN_PY_PACKAGE}
+        -DREQUIRE_ACCELERATOR=ON
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/BuildPythonWheel.cmake
+    DEPENDS generate-uavcan-python
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "Building/staging accelerator-required wheel for generated uavcan Python package"
+  )
+
+  if(TARGET build-python-runtime-accelerator)
+    add_dependencies(stage-uavcan-python-runtime-accelerator
+                     build-python-runtime-accelerator)
+    add_dependencies(stage-uavcan-python-runtime-accelerator-required
+                     build-python-runtime-accelerator)
+    add_dependencies(stage-uavcan-python-wheel
+                     build-python-runtime-accelerator)
+    add_dependencies(stage-uavcan-python-wheel-accel-required
+                     build-python-runtime-accelerator)
+  endif()
 
   add_custom_target(generate-uavcan-all)
   add_dependencies(generate-uavcan-all

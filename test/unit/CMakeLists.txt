@@ -39,3 +39,25 @@ target_include_directories(llvmdsdl-unit-tests
 )
 
 add_test(NAME llvmdsdl-unit-tests COMMAND llvmdsdl-unit-tests)
+
+find_program(PYTHON_EXECUTABLE python3 QUIET)
+if(PYTHON_EXECUTABLE)
+  add_test(
+    NAME llvmdsdl-python-unit-tests
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DFIXTURES_ROOT=${LLVMDSDL_SOURCE_DIR}/test/lit/fixtures
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/python-unit-tests-out
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunPythonUnitTests.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-python-unit-tests
+    PROPERTIES
+      LABELS "unit;python"
+  )
+else()
+  message(STATUS "Skipping Python unit tests: python3 unavailable")
+endif()

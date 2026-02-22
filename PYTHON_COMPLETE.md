@@ -188,13 +188,13 @@ This order maximizes confidence first, then polish.
 
 ## 8. Definition of Done Checklist
 
-- [ ] C<->Python parity families added and stable.
-- [ ] Signed-narrow parity (normal + optimized) passing.
-- [ ] Full `uavcan` runtime-execution lane added and passing.
-- [ ] Python specialization flag and semantic-diff/parity lanes implemented.
-- [ ] Packaging/install docs and accelerator staging flow complete.
-- [ ] Benchmark artifacts integrated and reviewed.
-- [ ] Demo and docs updated to parity depth.
+- [x] C<->Python parity families added and stable.
+- [x] Signed-narrow parity (normal + optimized) passing.
+- [x] Full `uavcan` runtime-execution lane added and passing.
+- [x] Python specialization flag and semantic-diff/parity lanes implemented.
+- [x] Packaging/install docs and accelerator staging flow complete.
+- [x] Benchmark artifacts integrated and reviewed.
+- [x] Demo and docs updated to parity depth.
 
 ## 9. Risk Notes and Mitigations
 
@@ -206,4 +206,3 @@ This order maximizes confidence first, then polish.
   - Mitigation: keep pure runtime always functional; accel lanes optional but explicit.
 - Risk: integration runtime on CI can be flaky.
   - Mitigation: deterministic fixtures, strict seed control, and tight failure diagnostics.
-

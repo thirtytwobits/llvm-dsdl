@@ -7,6 +7,7 @@
 # RUN: not %dsdlc cpp --cpp-profile not-a-profile --root-namespace-dir %S/fixtures --out-dir %t 2>&1 | FileCheck %s --check-prefix=BAD_CPP_PROFILE
 # RUN: not %dsdlc rust --rust-profile not-a-profile --root-namespace-dir %S/fixtures --out-dir %t 2>&1 | FileCheck %s --check-prefix=BAD_RUST_PROFILE
 # RUN: not %dsdlc ts --ts-runtime-specialization not-a-specialization --root-namespace-dir %S/fixtures --out-dir %t 2>&1 | FileCheck %s --check-prefix=BAD_TS_SPECIALIZATION
+# RUN: not %dsdlc python --py-runtime-specialization not-a-specialization --root-namespace-dir %S/fixtures --out-dir %t 2>&1 | FileCheck %s --check-prefix=BAD_PY_SPECIALIZATION
 # RUN: not %dsdlc cpp --cpp-profile 2>&1 | FileCheck %s --check-prefix=MISSING_VALUE_CPP
 # RUN: not %dsdlc python --py-package 2>&1 | FileCheck %s --check-prefix=MISSING_VALUE_PYTHON
 # RUN: %dsdlc ast --root-namespace-dir %S/fixtures 2>&1 | FileCheck %s --check-prefix=SUMMARY
@@ -22,7 +23,7 @@
 # HELP_CPP: Requires --out-dir. Honors --cpp-profile (std|pmr|both).
 
 # HELP_PYTHON: COMMAND FOCUS (python)
-# HELP_PYTHON: Requires --out-dir. Honors --py-package.
+# HELP_PYTHON: Requires --out-dir. Honors --py-package and --py-runtime-specialization.
 
 # UNKNOWN_COMMAND: Unknown command: unknown-command
 # UNKNOWN_COMMAND: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
@@ -39,6 +40,9 @@
 
 # BAD_TS_SPECIALIZATION: Invalid --ts-runtime-specialization value: not-a-specialization
 # BAD_TS_SPECIALIZATION: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
+
+# BAD_PY_SPECIALIZATION: Invalid --py-runtime-specialization value: not-a-specialization
+# BAD_PY_SPECIALIZATION: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
 
 # MISSING_VALUE_CPP: Missing value for --cpp-profile
 # MISSING_VALUE_CPP: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>

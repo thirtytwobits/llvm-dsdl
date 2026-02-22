@@ -133,6 +133,40 @@ sed -n '1,80p' "$OUT/cpp/std/vendor/Type_1_0.hpp"
 sed -n '1,80p' "$OUT/rust/src/vendor/type__1_0.rs"
 sed -n '1,80p' "$OUT/go/vendor/type__1_0.go"
 sed -n '1,80p' "$OUT/ts/vendor/type__1_0.ts"
+sed -n '1,80p' "$OUT/python/demo_vendor_generated_py/vendor/type_1_0.py"
+```
+
+### 1.4 Python runtime/backend mini-demo (60 seconds)
+
+Show runtime specialization and backend-selection model live:
+
+```bash
+"$DSDLC" python \
+  --root-namespace-dir "$ROOT_NS" \
+  --py-package demo_vendor_generated_py_fast \
+  --py-runtime-specialization fast \
+  --out-dir "$OUT/python-fast"
+
+python3 -m venv "$OUT/python/.venv"
+"$OUT/python/.venv/bin/pip" install -e "$OUT/python"
+
+LLVMDSDL_PY_RUNTIME_MODE=pure \
+  "$OUT/python/.venv/bin/python" - <<'PY'
+from demo_vendor_generated_py import _runtime_loader as rl
+from demo_vendor_generated_py.vendor.type_1_0 import Type_1_0
+payload = Type_1_0(foo=1, bar=2).serialize()
+roundtrip = Type_1_0.deserialize(payload)
+print("backend=", rl.BACKEND, "payload_len=", len(payload), "bar=", roundtrip.bar)
+PY
+
+LLVMDSDL_PY_RUNTIME_MODE=auto \
+  "$OUT/python/.venv/bin/python" - <<'PY'
+from demo_vendor_generated_py import _runtime_loader as rl
+print("auto backend=", rl.BACKEND)
+PY
+
+test -f "$OUT/python/pyproject.toml"
+test -f "$OUT/python/demo_vendor_generated_py/py.typed"
 ```
 
 ## 2) Five-Minute Talk Track
@@ -177,6 +211,8 @@ Runtime layers:
 ```bash
 ls runtime runtime/cpp runtime/rust runtime/go
 ls "$OUT/ts/dsdl_runtime.ts"
+ls "$OUT/python/demo_vendor_generated_py/_dsdl_runtime.py"
+ls "$OUT/python/demo_vendor_generated_py/_runtime_loader.py"
 ```
 
 Tests and corpus:
@@ -257,3 +293,13 @@ What this project delivers now:
    through shared lowering contracts.
 3. A repeatable validation model (unit, integration, parity, determinism,
    and optimization-enabled checks) that supports confidence at scale.
+
+## 6) Python Troubleshooting Matrix (Demo-Day Quick Reference)
+
+| Symptom | Quick diagnosis | Fix |
+| --- | --- | --- |
+| `LLVMDSDL_PY_RUNTIME_MODE=accel` import error | accelerator module is missing beside generated package | build with `-DLLVMDSDL_ENABLE_PYTHON_ACCELERATOR=ON` and stage with `stage-uavcan-python-runtime-accelerator-required` |
+| `auto backend=pure` when accel expected | fallback is active because accel was unavailable | verify staged `_dsdl_runtime_accel.*` and rerun |
+| `pip install -e` fails in generated output | missing or stale `pyproject.toml` | regenerate with `dsdlc python` and reinstall from fresh output dir |
+| specialization parity concern (`portable` vs `fast`) | helper implementation changed unexpectedly | run `llvmdsdl-uavcan-python-runtime-specialization-diff` and parity lanes before demo |
+| benchmark gate failures | threshold config not calibrated for this host | run artifact-only benchmark first, calibrate thresholds, then enable gating |

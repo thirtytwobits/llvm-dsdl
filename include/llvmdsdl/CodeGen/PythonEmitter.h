@@ -31,6 +31,13 @@ struct SemanticModule;
 /// @file
 /// @brief Python backend emission entry points.
 
+/// @brief Runtime specialization profile for generated Python runtime helpers.
+enum class PythonRuntimeSpecialization
+{
+    Portable,  ///< Conservative bit-level runtime helper implementation.
+    Fast       ///< Enables byte-aligned runtime helper fast paths.
+};
+
 /// @brief Configuration options for Python code generation.
 struct PythonEmitOptions final
 {
@@ -39,6 +46,9 @@ struct PythonEmitOptions final
 
     /// @brief Generated Python package name.
     std::string packageName{"dsdl_gen"};
+
+    /// @brief Runtime helper specialization profile.
+    PythonRuntimeSpecialization runtimeSpecialization{PythonRuntimeSpecialization::Portable};
 
     /// @brief Enables optional lowered-serdes optimization before emission.
     bool optimizeLoweredSerDes{false};

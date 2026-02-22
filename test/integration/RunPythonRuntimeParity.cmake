@@ -17,6 +17,13 @@ if(NOT EXISTS "${PYTHON_EXECUTABLE}")
 endif()
 
 set(PY_PACKAGE "llvmdsdl_py_parity")
+if(NOT DEFINED PY_RUNTIME_SPECIALIZATION OR "${PY_RUNTIME_SPECIALIZATION}" STREQUAL "")
+  set(PY_RUNTIME_SPECIALIZATION "portable")
+endif()
+if(NOT "${PY_RUNTIME_SPECIALIZATION}" STREQUAL "portable" AND
+   NOT "${PY_RUNTIME_SPECIALIZATION}" STREQUAL "fast")
+  message(FATAL_ERROR "Invalid PY_RUNTIME_SPECIALIZATION value: ${PY_RUNTIME_SPECIALIZATION}")
+endif()
 set(py_package_path "${PY_PACKAGE}")
 string(REPLACE "." "/" py_package_path "${py_package_path}")
 set(package_root "${OUT_DIR}/${py_package_path}")
@@ -29,6 +36,7 @@ execute_process(
     --root-namespace-dir "${FIXTURES_ROOT}"
     --out-dir "${OUT_DIR}"
     --py-package "${PY_PACKAGE}"
+    --py-runtime-specialization "${PY_RUNTIME_SPECIALIZATION}"
   RESULT_VARIABLE gen_result
   OUTPUT_VARIABLE gen_stdout
   ERROR_VARIABLE gen_stderr
@@ -43,6 +51,18 @@ set(has_accel FALSE)
 if(DEFINED ACCEL_MODULE AND NOT "${ACCEL_MODULE}" STREQUAL "" AND EXISTS "${ACCEL_MODULE}")
   set(has_accel TRUE)
   file(COPY "${ACCEL_MODULE}" DESTINATION "${package_root}")
+endif()
+
+set(require_accel FALSE)
+if(DEFINED REQUIRE_ACCEL)
+  if(REQUIRE_ACCEL)
+    set(require_accel TRUE)
+  endif()
+endif()
+
+if(require_accel AND NOT has_accel)
+  message(FATAL_ERROR
+    "Python runtime parity test requires accelerator module, but ACCEL_MODULE is missing.")
 endif()
 
 set(parity_script "${OUT_DIR}/python_runtime_parity.py")

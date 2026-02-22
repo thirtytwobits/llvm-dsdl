@@ -49,13 +49,32 @@ endif()
 
 set(package_root "${OUT_DIR}/${py_package_path}")
 foreach(required
+    "${OUT_DIR}/pyproject.toml"
     "${package_root}/__init__.py"
     "${package_root}/_dsdl_runtime.py"
-    "${package_root}/_runtime_loader.py")
+    "${package_root}/_runtime_loader.py"
+    "${package_root}/py.typed")
   if(NOT EXISTS "${required}")
     message(FATAL_ERROR "Missing required generated Python runtime file: ${required}")
   endif()
 endforeach()
+
+file(READ "${OUT_DIR}/pyproject.toml" pyproject_toml)
+if(NOT pyproject_toml MATCHES "\\[project\\]")
+  message(FATAL_ERROR "Generated pyproject.toml is missing [project]")
+endif()
+if(NOT pyproject_toml MATCHES "\\[tool\\.setuptools\\.package-data\\]")
+  message(FATAL_ERROR "Generated pyproject.toml is missing [tool.setuptools.package-data]")
+endif()
+if(NOT pyproject_toml MATCHES "_dsdl_runtime_accel\\*\\.so")
+  message(FATAL_ERROR "Generated pyproject.toml is missing accelerator .so package-data pattern")
+endif()
+if(NOT pyproject_toml MATCHES "_dsdl_runtime_accel\\*\\.dylib")
+  message(FATAL_ERROR "Generated pyproject.toml is missing accelerator .dylib package-data pattern")
+endif()
+if(NOT pyproject_toml MATCHES "_dsdl_runtime_accel\\*\\.pyd")
+  message(FATAL_ERROR "Generated pyproject.toml is missing accelerator .pyd package-data pattern")
+endif()
 
 file(GLOB_RECURSE dsdl_files "${FIXTURES_ROOT}/*.dsdl")
 list(LENGTH dsdl_files dsdl_count)

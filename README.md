@@ -186,7 +186,8 @@ Each matrix workflow runs:
 1. configure once for the selected environment
 2. `Debug` build + smoke tests (exclude `integration`)
 3. `RelWithDebInfo` build + full test suite
-4. `Release` build + smoke tests
+4. (`matrix-ci` only) required Python accelerator gate tests (`python-accel-required`)
+5. `Release` build + smoke tests
 
 `Release` matrix builds also produce a self-contained tool bundle by invoking
 `bundle-tools-self-contained`.
@@ -199,6 +200,9 @@ ctest --preset test-dev-homebrew-full-relwithdebinfo
 
 cmake --build --preset build-dev-homebrew-release
 ctest --preset test-dev-homebrew-smoke-release
+
+# CI accelerator-required gate lane (RelWithDebInfo).
+ctest --preset test-ci-python-accel-required-relwithdebinfo
 ```
 
 ### Preset Migration Table
@@ -254,6 +258,10 @@ CMake provides first-class generation targets per language/profile:
 - `generate-uavcan-go`
 - `generate-uavcan-ts`
 - `generate-uavcan-python`
+- `stage-uavcan-python-runtime-accelerator` (optional staging; skips if accel unavailable)
+- `stage-uavcan-python-runtime-accelerator-required` (fails if accel unavailable)
+- `stage-uavcan-python-wheel` (optional wheel build/staging; includes accel if staged/available)
+- `stage-uavcan-python-wheel-accel-required` (fails if accel is unavailable)
 - `generate-uavcan-all` (aggregate)
 - `generate-demo-2026-02-16` (demo bundle with logs + `DEMO.md`)
 
@@ -270,6 +278,8 @@ cmake --build --preset build-dev-homebrew-relwithdebinfo --target generate-uavca
 cmake --build --preset build-dev-homebrew-relwithdebinfo --target generate-uavcan-go
 cmake --build --preset build-dev-homebrew-relwithdebinfo --target generate-uavcan-ts
 cmake --build --preset build-dev-homebrew-relwithdebinfo --target generate-uavcan-python
+cmake --build --preset build-dev-homebrew-relwithdebinfo --target stage-uavcan-python-runtime-accelerator
+cmake --build --preset build-dev-homebrew-relwithdebinfo --target stage-uavcan-python-wheel
 cmake --build --preset build-dev-homebrew-relwithdebinfo --target generate-uavcan-all
 cmake --build --preset build-dev-homebrew-relwithdebinfo --target generate-demo-2026-02-16
 ```
@@ -287,6 +297,7 @@ Generated output paths are under `<build-dir>/generated/uavcan`:
 - `<build-dir>/generated/uavcan/go`
 - `<build-dir>/generated/uavcan/ts`
 - `<build-dir>/generated/uavcan/python`
+- `<build-dir>/generated/uavcan/python-wheel/<config>` (wheel staging output + `MANIFEST.txt`)
 - `<build-dir>/demo-2026-02-16` (demo artifact bundle)
 
 Notes:
@@ -488,9 +499,129 @@ Current behavior:
 - Emits generated runtime modules in the package root:
   - `_dsdl_runtime.py` (pure Python runtime)
   - `_runtime_loader.py` (selects `auto|pure|accel` via `LLVMDSDL_PY_RUNTIME_MODE`)
+- Emits packaging metadata:
+  - `pyproject.toml` (minimal local installability)
+  - `py.typed` (typing marker)
 - Uses lowered-contract validation (`collectLoweredFactsFromMlir`) and shared lowered runtime planning for SerDes emission.
 - Optional C accelerator module support (`_dsdl_runtime_accel`) is available via CMake option
   `LLVMDSDL_ENABLE_PYTHON_ACCELERATOR=ON`.
+- Explicit malformed-input contract:
+  - `portable` pure runtime: tolerant out-of-range reads (missing bits are zero-extended).
+  - `fast` pure runtime: byte-aligned out-of-range `extract_bits`/`copy_bits` raises `ValueError`.
+  - `accel` runtime: follows accelerator helper behavior (currently tolerant `extract_bits`,
+    strict range checks in `copy_bits`).
+
+Pure-only install/run workflow:
+
+```bash
+OUT_PY="build/uavcan-python-out"
+"${DSDLC}" python \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
+  --out-dir "${OUT_PY}" \
+  --py-package uavcan_dsdl_generated_py
+
+python3 -m venv "${OUT_PY}/.venv"
+"${OUT_PY}/.venv/bin/pip" install -e "${OUT_PY}"
+
+LLVMDSDL_PY_RUNTIME_MODE=pure \
+  "${OUT_PY}/.venv/bin/python" -c \
+  "from uavcan_dsdl_generated_py.uavcan.node.heartbeat_1_0 import Heartbeat_1_0; print(Heartbeat_1_0)"
+```
+
+Accel-enabled install/run workflow:
+
+```bash
+# Configure once with accelerator enabled.
+cmake -S . -B build/matrix/dev-homebrew -G "Ninja Multi-Config" \
+  -DLLVMDSDL_ENABLE_PYTHON_ACCELERATOR=ON
+
+# Generate package and stage accelerator beside the generated package.
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target generate-uavcan-python
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target stage-uavcan-python-runtime-accelerator-required
+
+OUT_PY="build/matrix/dev-homebrew/generated/uavcan/python"
+python3 -m venv "${OUT_PY}/.venv"
+"${OUT_PY}/.venv/bin/pip" install -e "${OUT_PY}"
+
+LLVMDSDL_PY_RUNTIME_MODE=accel \
+  "${OUT_PY}/.venv/bin/python" -c \
+  "from uavcan_dsdl_generated_py import _runtime_loader as rl; print(rl.BACKEND)"
+```
+
+Optional wheel build/staging workflow:
+
+```bash
+# Build pure-or-accel wheel opportunistically.
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target stage-uavcan-python-wheel
+
+# Require accelerator presence and stage a wheel with accelerator payload.
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target stage-uavcan-python-wheel-accel-required
+
+# Artifacts:
+# - build/matrix/dev-homebrew/generated/uavcan/python-wheel/RelWithDebInfo/*.whl
+# - build/matrix/dev-homebrew/generated/uavcan/python-wheel/RelWithDebInfo/MANIFEST.txt
+```
+
+Python runtime benchmark (artifact-first, optional threshold gating):
+
+```bash
+# Run benchmark integration lane (always emits JSON/text artifacts).
+ctest --test-dir build/matrix/dev-homebrew -C RelWithDebInfo \
+  -R llvmdsdl-uavcan-python-runtime-bench --output-on-failure
+
+# Artifacts:
+# - build/matrix/dev-homebrew/test/integration/uavcan-python-runtime-bench-out/python-runtime-bench.json
+# - build/matrix/dev-homebrew/test/integration/uavcan-python-runtime-bench-out/python-runtime-bench.txt
+
+# Optional threshold gates (off by default).
+cmake --preset dev-homebrew \
+  -DLLVMDSDL_PY_RUNTIME_BENCH_ENABLE_THRESHOLDS=ON \
+  -DLLVMDSDL_PY_RUNTIME_BENCH_THRESHOLDS_JSON=$PWD/test/integration/python_runtime_bench_thresholds.json
+ctest --test-dir build/matrix/dev-homebrew -C RelWithDebInfo \
+  -R llvmdsdl-uavcan-python-runtime-bench --output-on-failure
+```
+
+Python parity and validation taxonomy:
+
+- Fixture generation hardening:
+  - `llvmdsdl-fixtures-python-generation-hardening`
+- Runtime smoke:
+  - `llvmdsdl-fixtures-python-runtime-smoke`
+  - `llvmdsdl-fixtures-python-runtime-smoke-optimized`
+  - `llvmdsdl-fixtures-python-runtime-smoke-fast`
+- Backend-selection behavior:
+  - `llvmdsdl-fixtures-python-runtime-backend-selection`
+  - `llvmdsdl-fixtures-python-runtime-backend-selection-accel-required`
+  - `llvmdsdl-fixtures-python-malformed-input-contract`
+  - `llvmdsdl-fixtures-python-malformed-decode-fuzz-parity`
+  - `llvmdsdl-fixtures-python-malformed-decode-fuzz-parity-accel-required`
+  - `llvmdsdl-fixtures-python-runtime-parity`
+  - `llvmdsdl-fixtures-python-runtime-parity-accel-required`
+- C<->Python differential parity families:
+  - `llvmdsdl-fixtures-c-python-*-parity`
+  - `llvmdsdl-fixtures-c-python-*-parity-optimized`
+  - `llvmdsdl-signed-narrow-c-python-parity`
+  - `llvmdsdl-signed-narrow-c-python-parity-optimized`
+  - `llvmdsdl-signed-narrow-c-python-parity-runtime-fast`
+- Full-tree `uavcan` lanes:
+  - `llvmdsdl-uavcan-python-generation`
+  - `llvmdsdl-uavcan-python-generation-runtime-fast`
+  - `llvmdsdl-uavcan-python-runtime-specialization-diff`
+  - `llvmdsdl-uavcan-python-determinism`
+  - `llvmdsdl-uavcan-python-runtime-execution`
+  - `llvmdsdl-uavcan-python-runtime-execution-runtime-fast`
+  - `llvmdsdl-uavcan-python-runtime-execution-optimized`
+  - `llvmdsdl-uavcan-python-runtime-bench`
+
+Python troubleshooting matrix:
+
+| Symptom | Typical cause | Resolution |
+| --- | --- | --- |
+| `LLVMDSDL_PY_RUNTIME_MODE=accel` fails with `_dsdl_runtime_accel` import error | Accelerator not built or not staged beside generated package | Configure with `-DLLVMDSDL_ENABLE_PYTHON_ACCELERATOR=ON`, build, then run `stage-uavcan-python-runtime-accelerator-required` |
+| `LLVMDSDL_PY_RUNTIME_MODE=auto` reports `pure` backend unexpectedly | Auto mode falls back when accelerator is unavailable | Check `_runtime_loader.py` backend printout and stage accelerator if accel is required |
+| `pip install -e <out-dir>` fails | Missing generated `pyproject.toml` due to stale output or wrong `--out-dir` | Regenerate with `dsdlc python` and confirm `<out-dir>/pyproject.toml` exists |
+| Specialization diff lane fails | Unexpected semantic drift between `portable` and `fast` runtime specializations | Run `llvmdsdl-uavcan-python-runtime-specialization-diff` and inspect generated `_dsdl_runtime.py` differences only |
+| Bench lane fails when thresholds enabled | Missing or overly strict thresholds file | Start from `test/integration/python_runtime_bench_thresholds.json`, calibrate on reference hardware, then enable thresholds |
 
 ## Reproducible Full `uavcan` Generation Check
 
@@ -521,9 +652,11 @@ runtime-specialized (`fast`) modes, plus TypeScript generation with compile
 execution, runtime-specialized (`portable|fast`) generation/typecheck/parity/
 semantic-diff gates, and fixture/runtime parity validation lanes (including
 signed-narrow parity, optimized parity, variable-array/bigint/union/composite/
-service/delimited families), and Python generation with runtime smoke, backend
-selection (`auto|pure|accel`), full-tree generation/determinism, and runtime
-benchmark harness coverage.
+service/delimited families), and Python generation with runtime smoke,
+specialization (`portable|fast`), backend selection (`auto|pure|accel`),
+packaging metadata emission (`pyproject.toml`, `py.typed`), accelerator staging
+targets, full-tree generation/determinism, and runtime benchmark harness
+coverage.
 
 ## Codegen Throughput Benchmarking
 

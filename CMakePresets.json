@@ -46,7 +46,10 @@
       "name": "ci",
       "displayName": "CI",
       "description": "Multi-config CI preset with automatic LLVM/MLIR discovery from environment/system paths.",
-      "inherits": "base"
+      "inherits": "base",
+      "cacheVariables": {
+        "LLVMDSDL_ENABLE_PYTHON_ACCELERATOR": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -256,6 +259,18 @@
       "inherits": "test-base",
       "configurePreset": "ci",
       "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "test-ci-python-accel-required-relwithdebinfo",
+      "displayName": "Test (ci Python accelerator required gate, RelWithDebInfo)",
+      "inherits": "test-base",
+      "configurePreset": "ci",
+      "configuration": "RelWithDebInfo",
+      "filter": {
+        "include": {
+          "label": "python-accel-required"
+        }
+      }
     }
   ],
   "workflowPresets": [
@@ -332,7 +347,7 @@
     {
       "name": "matrix-ci",
       "displayName": "Workflow (matrix ci)",
-      "description": "Configure once, then run Debug smoke, RelWithDebInfo full, and Release smoke+bundle.",
+      "description": "Configure once, then run Debug smoke, RelWithDebInfo Python-accelerator required gate + full suite, and Release smoke+bundle.",
       "steps": [
         {
           "type": "configure",
@@ -349,6 +364,10 @@
         {
           "type": "build",
           "name": "build-ci-relwithdebinfo"
+        },
+        {
+          "type": "test",
+          "name": "test-ci-python-accel-required-relwithdebinfo"
         },
         {
           "type": "test",

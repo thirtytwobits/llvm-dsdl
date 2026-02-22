@@ -5,7 +5,7 @@
 #
 #===----------------------------------------------------------------------===#
 
-"""Python DSDL runtime primitives used by generated serializers/deserializers."""
+"""Python DSDL runtime primitives with byte-aligned fast-path helpers."""
 
 from __future__ import annotations
 
@@ -73,13 +73,34 @@ def copy_bits(dst: bytearray, dst_off_bits: int, src: BytesLike, src_off_bits: i
     if len_bits <= 0:
         return
 
+    if dst_off_bits % 8 == 0 and src_off_bits % 8 == 0 and len_bits % 8 == 0:
+        dst_start = dst_off_bits // 8
+        src_start = src_off_bits // 8
+        byte_len = len_bits // 8
+        if dst_start < 0 or src_start < 0:
+            raise ValueError("negative offsets are not supported")
+        if dst_start + byte_len > len(dst) or src_start + byte_len > len(source):
+            raise ValueError("serialization buffer too small")
+        dst[dst_start : dst_start + byte_len] = source[src_start : src_start + byte_len]
+        return
+
     for i in range(len_bits):
         set_bit(dst, dst_off_bits + i, get_bit(source, src_off_bits + i))
 
 
 def extract_bits(src: BytesLike, src_off_bits: int, len_bits: int) -> bytes:
+    source = _as_readonly_bytes(src)
+    if src_off_bits % 8 == 0 and len_bits % 8 == 0:
+        src_start = src_off_bits // 8
+        byte_len = len_bits // 8
+        if src_start < 0:
+            raise ValueError("negative offsets are not supported")
+        if src_start + byte_len > len(source):
+            raise ValueError("serialization buffer too small")
+        return source[src_start : src_start + byte_len]
+
     out = bytearray(byte_length_for_bits(len_bits))
-    copy_bits(out, 0, src, src_off_bits, len_bits)
+    copy_bits(out, 0, source, src_off_bits, len_bits)
     return bytes(out)
 
 

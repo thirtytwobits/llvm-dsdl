@@ -147,7 +147,16 @@ void printHelp(const std::string& selectedCommand = "")
         << "PYTHON OPTIONS (python)\n"
         << "  --py-package <name>\n"
         << "      Python package name (dotted path allowed) used as the generated root package\n"
-        << "      (default: dsdl_gen).\n\n"
+        << "      (default: dsdl_gen).\n"
+        << "  --py-runtime-specialization <portable|fast>\n"
+        << "      portable -> emit conservative pure-runtime bit helpers (default).\n"
+        << "      fast     -> emit byte-aligned copy/extract fast paths in generated pure-runtime helpers.\n"
+        << "                  Wire semantics on well-formed payloads remain unchanged relative to portable.\n"
+        << "                  Malformed/truncated payload contract:\n"
+        << "                    - portable pure runtime: tolerant reads (missing bits zero-extended).\n"
+        << "                    - fast pure runtime: byte-aligned out-of-range copy/extract raises ValueError.\n"
+        << "                    - accel runtime: follows accelerator helper behavior (currently tolerant extract,\n"
+        << "                      strict range checks for copy).\n\n"
         << "RUN SUMMARY\n"
         << "  On successful command execution, dsdlc prints a summary to stderr with:\n"
         << "    - files generated\n"
@@ -178,6 +187,9 @@ void printHelp(const std::string& selectedCommand = "")
         << "  dsdlc python --root-namespace-dir submodules/public_regulated_data_types/uavcan --py-package "
            "demo_uavcan_generated "
            "--out-dir build/uavcan-python\n"
+        << "  dsdlc python --root-namespace-dir submodules/public_regulated_data_types/uavcan --py-package "
+           "demo_uavcan_generated_fast "
+           "--py-runtime-specialization fast --out-dir build/uavcan-python-fast\n"
         << "  dsdlc ts --root-namespace-dir submodules/public_regulated_data_types/uavcan --ts-module "
            "demo_uavcan_generated_fast "
            "--ts-runtime-specialization fast --out-dir build/uavcan-ts-fast\n\n"
@@ -218,7 +230,7 @@ void printHelp(const std::string& selectedCommand = "")
         }
         else if (selectedCommand == "python")
         {
-            llvm::errs() << "  Requires --out-dir. Honors --py-package.\n";
+            llvm::errs() << "  Requires --out-dir. Honors --py-package and --py-runtime-specialization.\n";
         }
     }
 }
@@ -369,19 +381,20 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    std::vector<std::string>            roots;
-    std::vector<std::string>            lookups;
-    std::string                         outDir;
-    bool                                helpRequested             = false;
-    bool                                optimizeLoweredSerDes     = false;
-    llvmdsdl::CppProfile                cppProfile                = llvmdsdl::CppProfile::Both;
-    std::string                         rustCrateName             = "llvmdsdl_generated";
-    llvmdsdl::RustProfile               rustProfile               = llvmdsdl::RustProfile::Std;
-    llvmdsdl::RustRuntimeSpecialization rustRuntimeSpecialization = llvmdsdl::RustRuntimeSpecialization::Portable;
-    std::string                         goModuleName              = "llvmdsdl_generated";
-    std::string                         tsModuleName              = "llvmdsdl_generated";
-    llvmdsdl::TsRuntimeSpecialization   tsRuntimeSpecialization   = llvmdsdl::TsRuntimeSpecialization::Portable;
-    std::string                         pyPackageName             = "dsdl_gen";
+    std::vector<std::string>              roots;
+    std::vector<std::string>              lookups;
+    std::string                           outDir;
+    bool                                  helpRequested             = false;
+    bool                                  optimizeLoweredSerDes     = false;
+    llvmdsdl::CppProfile                  cppProfile                = llvmdsdl::CppProfile::Both;
+    std::string                           rustCrateName             = "llvmdsdl_generated";
+    llvmdsdl::RustProfile                 rustProfile               = llvmdsdl::RustProfile::Std;
+    llvmdsdl::RustRuntimeSpecialization   rustRuntimeSpecialization = llvmdsdl::RustRuntimeSpecialization::Portable;
+    std::string                           goModuleName              = "llvmdsdl_generated";
+    std::string                           tsModuleName              = "llvmdsdl_generated";
+    llvmdsdl::TsRuntimeSpecialization     tsRuntimeSpecialization   = llvmdsdl::TsRuntimeSpecialization::Portable;
+    llvmdsdl::PythonRuntimeSpecialization pyRuntimeSpecialization   = llvmdsdl::PythonRuntimeSpecialization::Portable;
+    std::string                           pyPackageName             = "dsdl_gen";
 
     for (int i = 2; i < argc; ++i)
     {
@@ -507,6 +520,24 @@ int main(int argc, char** argv)
         else if (arg == "--py-package")
         {
             pyPackageName = requireValue(arg);
+        }
+        else if (arg == "--py-runtime-specialization")
+        {
+            const auto value = requireValue(arg);
+            if (value == "portable")
+            {
+                pyRuntimeSpecialization = llvmdsdl::PythonRuntimeSpecialization::Portable;
+            }
+            else if (value == "fast")
+            {
+                pyRuntimeSpecialization = llvmdsdl::PythonRuntimeSpecialization::Fast;
+            }
+            else
+            {
+                llvm::errs() << "Invalid --py-runtime-specialization value: " << value << "\n";
+                printUsage();
+                return 1;
+            }
         }
         else
         {
@@ -707,6 +738,7 @@ int main(int argc, char** argv)
         llvmdsdl::PythonEmitOptions options;
         options.outDir                = outDir;
         options.packageName           = pyPackageName;
+        options.runtimeSpecialization = pyRuntimeSpecialization;
         options.optimizeLoweredSerDes = optimizeLoweredSerDes;
 
         if (llvm::Error err = llvmdsdl::emitPython(*semantic, *mlirModule, options, diagnostics))

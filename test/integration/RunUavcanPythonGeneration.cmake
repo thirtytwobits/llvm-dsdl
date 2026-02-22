@@ -16,6 +16,13 @@ endif()
 if(NOT DEFINED PY_PACKAGE OR "${PY_PACKAGE}" STREQUAL "")
   set(PY_PACKAGE "uavcan_dsdl_generated_py")
 endif()
+if(NOT DEFINED PY_RUNTIME_SPECIALIZATION OR "${PY_RUNTIME_SPECIALIZATION}" STREQUAL "")
+  set(PY_RUNTIME_SPECIALIZATION "portable")
+endif()
+if(NOT "${PY_RUNTIME_SPECIALIZATION}" STREQUAL "portable" AND
+   NOT "${PY_RUNTIME_SPECIALIZATION}" STREQUAL "fast")
+  message(FATAL_ERROR "Invalid PY_RUNTIME_SPECIALIZATION value: ${PY_RUNTIME_SPECIALIZATION}")
+endif()
 set(py_package_path "${PY_PACKAGE}")
 string(REPLACE "." "/" py_package_path "${py_package_path}")
 set(package_root "${OUT_DIR}/${py_package_path}")
@@ -28,6 +35,7 @@ execute_process(
     --root-namespace-dir "${UAVCAN_ROOT}"
     --out-dir "${OUT_DIR}"
     --py-package "${PY_PACKAGE}"
+    --py-runtime-specialization "${PY_RUNTIME_SPECIALIZATION}"
   RESULT_VARIABLE gen_result
   OUTPUT_VARIABLE gen_stdout
   ERROR_VARIABLE gen_stderr
@@ -39,13 +47,41 @@ if(NOT gen_result EQUAL 0)
 endif()
 
 foreach(required
+    "${OUT_DIR}/pyproject.toml"
     "${package_root}/__init__.py"
     "${package_root}/_dsdl_runtime.py"
-    "${package_root}/_runtime_loader.py")
+    "${package_root}/_runtime_loader.py"
+    "${package_root}/py.typed"
+    "${package_root}/llvmdsdl_codegen.json")
   if(NOT EXISTS "${required}")
     message(FATAL_ERROR "Missing required generated file: ${required}")
   endif()
 endforeach()
+
+file(READ "${OUT_DIR}/pyproject.toml" pyproject_toml)
+if(NOT pyproject_toml MATCHES
+      "\\[build-system\\]")
+  message(FATAL_ERROR "Generated pyproject.toml is missing [build-system]")
+endif()
+if(NOT pyproject_toml MATCHES
+      "\\[tool\\.setuptools\\.package-data\\]")
+  message(FATAL_ERROR "Generated pyproject.toml is missing [tool.setuptools.package-data]")
+endif()
+if(NOT pyproject_toml MATCHES "_dsdl_runtime_accel\\*\\.so")
+  message(FATAL_ERROR "Generated pyproject.toml is missing accelerator .so package-data pattern")
+endif()
+if(NOT pyproject_toml MATCHES "_dsdl_runtime_accel\\*\\.dylib")
+  message(FATAL_ERROR "Generated pyproject.toml is missing accelerator .dylib package-data pattern")
+endif()
+if(NOT pyproject_toml MATCHES "_dsdl_runtime_accel\\*\\.pyd")
+  message(FATAL_ERROR "Generated pyproject.toml is missing accelerator .pyd package-data pattern")
+endif()
+
+file(READ "${package_root}/llvmdsdl_codegen.json" metadata_json)
+if(NOT metadata_json MATCHES
+      "\"pythonRuntimeSpecialization\"[ \t\r\n]*:[ \t\r\n]*\"${PY_RUNTIME_SPECIALIZATION}\"")
+  message(FATAL_ERROR "Python generation metadata does not match specialization=${PY_RUNTIME_SPECIALIZATION}")
+endif()
 
 file(GLOB_RECURSE dsdl_files "${UAVCAN_ROOT}/*.dsdl")
 list(LENGTH dsdl_files dsdl_count)
