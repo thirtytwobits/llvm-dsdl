@@ -117,6 +117,67 @@ bool exprContainsOffset(const std::shared_ptr<ExprAST>& expr)
     return false;
 }
 
+std::uint32_t expressionSpanLengthFromSource(const std::string&    sourceText,
+                                             const SourceLocation& location,
+                                             const std::size_t     fallbackLength)
+{
+    const std::uint32_t fallback = static_cast<std::uint32_t>(std::max<std::size_t>(1, fallbackLength));
+    if (location.line == 0 || location.column == 0)
+    {
+        return fallback;
+    }
+
+    std::size_t lineStart = 0;
+    std::size_t lineIndex = 1;
+    while (lineIndex < location.line && lineStart < sourceText.size())
+    {
+        const std::size_t nextLine = sourceText.find('\n', lineStart);
+        if (nextLine == std::string::npos)
+        {
+            return fallback;
+        }
+        lineStart = nextLine + 1;
+        ++lineIndex;
+    }
+
+    const std::size_t lineEnd = sourceText.find('\n', lineStart);
+    const std::size_t stop    = lineEnd == std::string::npos ? sourceText.size() : lineEnd;
+    if (location.column < 1)
+    {
+        return fallback;
+    }
+
+    const std::size_t start = lineStart + static_cast<std::size_t>(location.column - 1);
+    if (start >= stop)
+    {
+        return fallback;
+    }
+
+    std::size_t       end     = stop;
+    const std::size_t comment = sourceText.find('#', start);
+    if (comment != std::string::npos && comment < end)
+    {
+        end = comment;
+    }
+
+    while (end > start)
+    {
+        const char c = sourceText[end - 1];
+        if (c == ' ' || c == '\t' || c == '\r' || c == '\f' || c == '\v')
+        {
+            --end;
+            continue;
+        }
+        break;
+    }
+
+    if (end <= start)
+    {
+        return fallback;
+    }
+    return static_cast<std::uint32_t>(end - start);
+}
+
 Value::Set bitLengthSetToValueSet(const BitLengthSet& bls)
 {
     Value::Set out;
@@ -587,13 +648,39 @@ private:
     {
         SemanticSection section;
 
-        ValueEnv                env;
-        BitLengthSet            structureOffset(0);
-        std::vector<TypeLayout> unionFields;
-        bool                    attributesStarted    = false;
-        bool                    serializationModeSet = false;
-        bool                    unionOffsetUsed      = false;
-        std::uint32_t           unionOptionCounter   = 0;
+        ValueEnv                      env;
+        BitLengthSet                  structureOffset(0);
+        std::vector<TypeLayout>       unionFields;
+        bool                          attributesStarted    = false;
+        bool                          serializationModeSet = false;
+        bool                          unionOffsetUsed      = false;
+        std::uint32_t                 unionOptionCounter   = 0;
+        std::optional<SourceLocation> firstStatementLocation;
+        std::optional<SourceLocation> unionDirectiveLocation;
+        std::optional<SourceLocation> serializationDirectiveLocation;
+        std::optional<SourceLocation> extentDirectiveLocation;
+        std::optional<SourceLocation> extentExpressionLocation;
+        std::optional<std::uint32_t>  extentExpressionLength;
+
+        const auto ownerFallbackLocation = [&owner]() {
+            return owner.filePath.empty() ? SourceLocation{"<unknown>", 1, 1} : SourceLocation{owner.filePath, 1, 1};
+        };
+
+        const auto sectionAnchorLocation = [&]() {
+            if (serializationDirectiveLocation.has_value())
+            {
+                return *serializationDirectiveLocation;
+            }
+            if (firstStatementLocation.has_value())
+            {
+                return *firstStatementLocation;
+            }
+            return ownerFallbackLocation();
+        };
+
+        const auto statementLocation = [](const StatementAST& statement) -> SourceLocation {
+            return std::visit([](const auto& node) -> SourceLocation { return node.location; }, statement);
+        };
 
         TypeAttributeResolver typeAttrResolver = [&](const TypeExprAST&    typeExpr,
                                                      const std::string&    attributeName,
@@ -706,6 +793,11 @@ private:
 
         for (const auto& stmt : statements)
         {
+            if (!firstStatementLocation.has_value())
+            {
+                firstStatementLocation = statementLocation(stmt);
+            }
+
             // Materialize _offset_ lazily only when the current statement can reference it.
             if (stmtNeedsOffset(stmt))
             {
@@ -736,7 +828,8 @@ private:
                     {
                         diagnostics_.error(d.location, "@union must appear before first attribute");
                     }
-                    section.isUnion = true;
+                    section.isUnion        = true;
+                    unionDirectiveLocation = d.location;
                     continue;
                 }
 
@@ -774,6 +867,9 @@ private:
                         diagnostics_.error(d.location, "@extent requires an expression");
                         continue;
                     }
+                    const SourceLocation expressionLocation = d.expression->location;
+                    const std::uint32_t  expressionLength =
+                        expressionSpanLengthFromSource(owner.text, expressionLocation, d.expression->str().size());
                     if (exprContainsOffset(d.expression) && section.isUnion)
                     {
                         unionOffsetUsed = true;
@@ -781,17 +877,23 @@ private:
                     auto v = evaluateExpression(*d.expression, env, diagnostics_, d.location, &typeAttrResolver);
                     if (!v || !std::holds_alternative<Rational>(v->data) || !std::get<Rational>(v->data).isInteger())
                     {
-                        diagnostics_.error(d.location, "@extent expression must evaluate to integer rational");
+                        diagnostics_.error(expressionLocation,
+                                           "@extent expression must evaluate to integer rational",
+                                           expressionLength);
                         continue;
                     }
                     const auto extent = std::get<Rational>(v->data).asInteger().value();
                     if (extent < 0)
                     {
-                        diagnostics_.error(d.location, "@extent cannot be negative");
+                        diagnostics_.error(expressionLocation, "@extent cannot be negative", expressionLength);
                     }
-                    section.extentBits   = extent;
-                    section.sealed       = false;
-                    serializationModeSet = true;
+                    section.extentBits             = extent;
+                    section.sealed                 = false;
+                    serializationModeSet           = true;
+                    serializationDirectiveLocation = d.location;
+                    extentDirectiveLocation        = d.location;
+                    extentExpressionLocation       = expressionLocation;
+                    extentExpressionLength         = expressionLength;
                     continue;
                 }
 
@@ -806,8 +908,9 @@ private:
                     {
                         diagnostics_.error(d.location, "@sealed does not accept an expression");
                     }
-                    section.sealed       = true;
-                    serializationModeSet = true;
+                    section.sealed                 = true;
+                    serializationModeSet           = true;
+                    serializationDirectiveLocation = d.location;
                     continue;
                 }
 
@@ -932,8 +1035,7 @@ private:
         {
             if (unionFields.size() < 2)
             {
-                diagnostics_.error(owner.filePath.empty() ? SourceLocation{"<unknown>", 1, 1}
-                                                          : SourceLocation{owner.filePath, 1, 1},
+                diagnostics_.error(unionDirectiveLocation.value_or(sectionAnchorLocation()),
                                    "tagged unions must contain at least two fields");
             }
 
@@ -955,31 +1057,41 @@ private:
 
         if (!serializationModeSet)
         {
-            diagnostics_.error(owner.filePath.empty() ? SourceLocation{"<unknown>", 1, 1}
-                                                      : SourceLocation{owner.filePath, 1, 1},
-                               "either @sealed or @extent are required");
+            diagnostics_.error(sectionAnchorLocation(), "either @sealed or @extent are required");
         }
 
         if (!section.sealed)
         {
-            const auto extent = section.extentBits.value_or(-1);
+            const auto           extent              = section.extentBits.value_or(-1);
+            const SourceLocation extentLocation      = extentDirectiveLocation.value_or(sectionAnchorLocation());
+            const SourceLocation extentValueLocation = extentExpressionLocation.value_or(extentLocation);
+            const std::uint32_t  extentValueLength   = extentExpressionLength.value_or(1);
+            std::int64_t         suggestedExtent     = std::max<std::int64_t>(section.offsetAtEnd.max(), extent);
+            suggestedExtent                          = std::max<std::int64_t>(0, suggestedExtent);
+            if (suggestedExtent % 8 != 0)
+            {
+                suggestedExtent += 8 - (suggestedExtent % 8);
+            }
             if (extent < 0)
             {
-                diagnostics_.error(owner.filePath.empty() ? SourceLocation{"<unknown>", 1, 1}
-                                                          : SourceLocation{owner.filePath, 1, 1},
-                                   "@extent must define non-negative extent bits");
+                diagnostics_.error(extentValueLocation,
+                                   "@extent must define non-negative extent bits",
+                                   extentValueLength,
+                                   suggestedExtent);
             }
             if (extent % 8 != 0)
             {
-                diagnostics_.error(owner.filePath.empty() ? SourceLocation{"<unknown>", 1, 1}
-                                                          : SourceLocation{owner.filePath, 1, 1},
-                                   "extent must be a multiple of 8 bits");
+                diagnostics_.error(extentValueLocation,
+                                   "extent must be a multiple of 8 bits",
+                                   extentValueLength,
+                                   suggestedExtent);
             }
             if (extent < section.offsetAtEnd.max())
             {
-                diagnostics_.error(owner.filePath.empty() ? SourceLocation{"<unknown>", 1, 1}
-                                                          : SourceLocation{owner.filePath, 1, 1},
-                                   "extent smaller than maximal serialized length");
+                diagnostics_.error(extentValueLocation,
+                                   "extent smaller than maximal serialized length",
+                                   extentValueLength,
+                                   suggestedExtent);
             }
         }
         else

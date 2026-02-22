@@ -8,6 +8,7 @@
 #===----------------------------------------------------------------------===#
 
 add_subdirectory(Support)
+add_subdirectory(LSP)
 add_subdirectory(Frontend)
 add_subdirectory(Semantics)
 add_subdirectory(IR)

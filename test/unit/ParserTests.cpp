@@ -6,6 +6,7 @@
 //===----------------------------------------------------------------------===//
 
 #include <llvm/Support/Error.h>
+#include <algorithm>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -118,6 +119,51 @@ bool runParserTests()
         versioned->minor != 0)
     {
         std::cerr << "unexpected type literal target\n";
+        return false;
+    }
+
+    const std::string commentText = "# file comment\n"
+                                    "uint8 a # field comment\n"
+                                    "uint16 B = 1 # constant comment\n"
+                                    "@sealed # directive comment\n";
+    llvmdsdl::DiagnosticEngine commentDiag;
+    llvmdsdl::Lexer            commentLexer("comments.dsdl", commentText);
+    auto                       commentTokens = commentLexer.lex();
+    const std::size_t          commentTokenCount =
+        static_cast<std::size_t>(std::count_if(commentTokens.begin(),
+                                               commentTokens.end(),
+                                               [](const llvmdsdl::Token& token) {
+                                                   return token.kind == llvmdsdl::TokenKind::Comment;
+                                               }));
+    if (commentTokenCount < 3)
+    {
+        std::cerr << "expected lexer to preserve comment tokens\n";
+        return false;
+    }
+
+    llvmdsdl::Parser commentParser("comments.dsdl", std::move(commentTokens), commentDiag);
+    auto             commentDef = commentParser.parseDefinition();
+    if (!commentDef)
+    {
+        std::cerr << "parser failed unexpectedly on comments fixture\n";
+        return false;
+    }
+    if (commentDef->statements.size() != 3)
+    {
+        std::cerr << "unexpected statement count in comments fixture: " << commentDef->statements.size() << "\n";
+        return false;
+    }
+
+    const auto* commentField = std::get_if<llvmdsdl::FieldDeclAST>(&commentDef->statements[0]);
+    if (!commentField || commentField->nameLocation.line != 2 || commentField->nameLocation.column != 7)
+    {
+        std::cerr << "field symbol location was not captured correctly\n";
+        return false;
+    }
+    const auto* commentConstant = std::get_if<llvmdsdl::ConstantDeclAST>(&commentDef->statements[1]);
+    if (!commentConstant || commentConstant->nameLocation.line != 3 || commentConstant->nameLocation.column != 8)
+    {
+        std::cerr << "constant symbol location was not captured correctly\n";
         return false;
     }
 

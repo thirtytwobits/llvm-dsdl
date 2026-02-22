@@ -16,29 +16,67 @@
 
 #include "llvmdsdl/Support/Diagnostics.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace llvmdsdl
 {
 
-void DiagnosticEngine::report(DiagnosticLevel level, const SourceLocation& location, std::string message)
+void DiagnosticEngine::report(DiagnosticLevel       level,
+                              const SourceLocation& location,
+                              std::string           message,
+                              const std::uint32_t   length)
 {
-    diagnostics_.push_back(Diagnostic{level, location, std::move(message)});
+    report(level, location, std::move(message), length, std::nullopt);
 }
 
-void DiagnosticEngine::note(const SourceLocation& location, std::string message)
+void DiagnosticEngine::report(DiagnosticLevel                   level,
+                              const SourceLocation&             location,
+                              std::string                       message,
+                              const std::uint32_t               length,
+                              const std::optional<std::int64_t> suggestedInteger)
 {
-    report(DiagnosticLevel::Note, location, std::move(message));
+    diagnostics_.push_back(
+        Diagnostic{level, location, std::move(message), std::max<std::uint32_t>(1, length), suggestedInteger});
 }
 
-void DiagnosticEngine::warning(const SourceLocation& location, std::string message)
+void DiagnosticEngine::note(const SourceLocation& location, std::string message, const std::uint32_t length)
 {
-    report(DiagnosticLevel::Warning, location, std::move(message));
+    note(location, std::move(message), length, std::nullopt);
 }
 
-void DiagnosticEngine::error(const SourceLocation& location, std::string message)
+void DiagnosticEngine::note(const SourceLocation&             location,
+                            std::string                       message,
+                            const std::uint32_t               length,
+                            const std::optional<std::int64_t> suggestedInteger)
 {
-    report(DiagnosticLevel::Error, location, std::move(message));
+    report(DiagnosticLevel::Note, location, std::move(message), length, suggestedInteger);
+}
+
+void DiagnosticEngine::warning(const SourceLocation& location, std::string message, const std::uint32_t length)
+{
+    warning(location, std::move(message), length, std::nullopt);
+}
+
+void DiagnosticEngine::warning(const SourceLocation&             location,
+                               std::string                       message,
+                               const std::uint32_t               length,
+                               const std::optional<std::int64_t> suggestedInteger)
+{
+    report(DiagnosticLevel::Warning, location, std::move(message), length, suggestedInteger);
+}
+
+void DiagnosticEngine::error(const SourceLocation& location, std::string message, const std::uint32_t length)
+{
+    error(location, std::move(message), length, std::nullopt);
+}
+
+void DiagnosticEngine::error(const SourceLocation&             location,
+                             std::string                       message,
+                             const std::uint32_t               length,
+                             const std::optional<std::int64_t> suggestedInteger)
+{
+    report(DiagnosticLevel::Error, location, std::move(message), length, suggestedInteger);
 }
 
 bool DiagnosticEngine::hasErrors() const

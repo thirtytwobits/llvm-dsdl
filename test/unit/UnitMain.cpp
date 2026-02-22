@@ -23,6 +23,13 @@ bool runHelperSymbolResolverTests();
 bool runWireLayoutFactsTests();
 bool runTypeStorageTests();
 bool runLoweredMetadataHardeningTests();
+bool runLspDocumentStoreTests();
+bool runLspRequestSchedulerTests();
+bool runLspAnalysisTests();
+bool runLspIndexTests();
+bool runLspLintTests();
+bool runLspRankingTests();
+bool runLspServerTests();
 
 int main()
 {
@@ -43,6 +50,13 @@ int main()
     ok      = runWireLayoutFactsTests() && ok;
     ok      = runTypeStorageTests() && ok;
     ok      = runLoweredMetadataHardeningTests() && ok;
+    ok      = runLspDocumentStoreTests() && ok;
+    ok      = runLspRequestSchedulerTests() && ok;
+    ok      = runLspAnalysisTests() && ok;
+    ok      = runLspIndexTests() && ok;
+    ok      = runLspLintTests() && ok;
+    ok      = runLspRankingTests() && ok;
+    ok      = runLspServerTests() && ok;
     if (!ok)
     {
         std::cerr << "unit tests failed\n";

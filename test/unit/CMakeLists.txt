@@ -16,11 +16,19 @@ add_executable(llvmdsdl-unit-tests
   WireLayoutFactsTests.cpp
   TypeStorageTests.cpp
   LoweredMetadataHardeningTests.cpp
+  LspDocumentStoreTests.cpp
+  LspRequestSchedulerTests.cpp
+  LspAnalysisTests.cpp
+  LspIndexTests.cpp
+  LspLintTests.cpp
+  LspRankingTests.cpp
+  LspServerTests.cpp
 )
 
 target_link_libraries(llvmdsdl-unit-tests
   PRIVATE
   llvmdsdlCodeGen
+  llvmdsdlLSP
 )
 
 target_include_directories(llvmdsdl-unit-tests

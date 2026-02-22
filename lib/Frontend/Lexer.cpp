@@ -210,10 +210,12 @@ std::vector<Token> Lexer::lex()
         }
         if (c == '#')
         {
+            std::string text;
             while (!isAtEnd() && peek() != '\n')
             {
-                (void) advance();
+                text.push_back(advance());
             }
+            emit(TokenKind::Comment, std::move(text), tokLine, tokCol);
             continue;
         }
 

@@ -1884,3 +1884,24 @@ else()
   message(STATUS
     "Skipping differential parity test: requires Python3 interpreter and sibling nunavut/pydsdl repos.")
 endif()
+
+find_program(NPM_EXECUTABLE npm QUIET)
+if(NPM_EXECUTABLE)
+  add_test(
+    NAME llvmdsdl-vscode-extension-smoke
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DNPM_EXECUTABLE=${NPM_EXECUTABLE}
+        -DEXTENSION_DIR=${LLVMDSDL_SOURCE_DIR}/editors/vscode/dsdld-client
+        -DDSDLD_BINARY=$<TARGET_FILE:dsdld>
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunVsCodeExtensionTests.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-vscode-extension-smoke
+    PROPERTIES
+      LABELS "integration;vscode;lsp"
+  )
+else()
+  message(STATUS "Skipping VSCode extension integration test: npm not found")
+endif()

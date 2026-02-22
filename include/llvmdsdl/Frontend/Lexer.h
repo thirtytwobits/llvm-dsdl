@@ -37,6 +37,9 @@ enum class TokenKind
     /// @brief Line break token preserving statement boundaries.
     Newline,
 
+    /// @brief End-of-line comment token beginning with `#`.
+    Comment,
+
     /// @brief Identifier token.
     Identifier,
 

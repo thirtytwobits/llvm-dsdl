@@ -36,3 +36,7 @@ venv/
 .nox/
 .coverage
 .coverage.*
+
+# JavaScript / VSCode extension
+node_modules/
+editors/vscode/dsdld-client/.vscode-test/

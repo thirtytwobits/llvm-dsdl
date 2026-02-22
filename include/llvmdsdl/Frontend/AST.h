@@ -310,6 +310,9 @@ struct ConstantDeclAST
     /// @brief Constant symbol name.
     std::string name;
 
+    /// @brief Source location of constant symbol name.
+    SourceLocation nameLocation;
+
     /// @brief Value expression.
     std::shared_ptr<ExprAST> value;
 };
@@ -325,6 +328,9 @@ struct FieldDeclAST
 
     /// @brief Field name.
     std::string name;
+
+    /// @brief Source location of field symbol name.
+    SourceLocation nameLocation;
 
     /// @brief True when the field represents padding.
     bool isPadding{false};

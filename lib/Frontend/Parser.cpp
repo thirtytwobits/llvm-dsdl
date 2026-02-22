@@ -311,7 +311,7 @@ void Parser::syncToNextLine()
     {
         (void) advance();
     }
-    while (match(TokenKind::Newline))
+    while (match(TokenKind::Newline) || match(TokenKind::Comment))
     {
     }
 }
@@ -323,7 +323,7 @@ llvm::Expected<DefinitionAST> Parser::parseDefinition()
 
     while (!isAtEnd())
     {
-        while (match(TokenKind::Newline))
+        while (match(TokenKind::Newline) || match(TokenKind::Comment))
         {
         }
         if (isAtEnd())
@@ -339,7 +339,7 @@ llvm::Expected<DefinitionAST> Parser::parseDefinition()
         else
         {
             def.statements.push_back(*stmt);
-            while (match(TokenKind::Newline))
+            while (match(TokenKind::Newline) || match(TokenKind::Comment))
             {
             }
         }
@@ -419,7 +419,7 @@ std::optional<DirectiveAST> Parser::parseDirective()
         out.kind = DirectiveKind::Unknown;
     }
 
-    if (!check(TokenKind::Newline) && !check(TokenKind::Eof))
+    if (!check(TokenKind::Newline) && !check(TokenKind::Comment) && !check(TokenKind::Eof))
     {
         out.expression = parseExpression();
     }
@@ -450,6 +450,7 @@ std::optional<StatementAST> Parser::parseAttribute()
             c.location = nameTok.location;
             c.type     = *type;
             c.name     = nameTok.text;
+            c.nameLocation = nameTok.location;
             c.value    = value;
             return StatementAST(c);
         }
@@ -458,6 +459,7 @@ std::optional<StatementAST> Parser::parseAttribute()
         f.location  = nameTok.location;
         f.type      = *type;
         f.name      = nameTok.text;
+        f.nameLocation = nameTok.location;
         f.isPadding = false;
         return StatementAST(f);
     }
@@ -468,6 +470,7 @@ std::optional<StatementAST> Parser::parseAttribute()
         f.location  = type->location;
         f.type      = *type;
         f.name      = "";
+        f.nameLocation = type->location;
         f.isPadding = true;
         return StatementAST(f);
     }

@@ -101,5 +101,123 @@ bool runAnalyzerTests()
         return false;
     }
 
+    const std::string extentText = "uint16 sample\n"
+                                   "@extent 8\n";
+
+    llvmdsdl::DiagnosticEngine extentParseDiag;
+    llvmdsdl::Lexer            extentLexer("uavcan.test.BadExtent.1.0.dsdl", extentText);
+    auto                       extentTokens = extentLexer.lex();
+    llvmdsdl::Parser           extentParser("uavcan.test.BadExtent.1.0.dsdl", std::move(extentTokens), extentParseDiag);
+    auto                       extentDef = extentParser.parseDefinition();
+    if (!extentDef)
+    {
+        llvm::consumeError(extentDef.takeError());
+        std::cerr << "bad-extent fixture parse failed unexpectedly\n";
+        return false;
+    }
+    if (extentParseDiag.hasErrors())
+    {
+        std::cerr << "bad-extent fixture parse diagnostics contained errors\n";
+        return false;
+    }
+
+    llvmdsdl::DiscoveredDefinition extentDiscovered;
+    extentDiscovered.filePath            = "uavcan/test/BadExtent.1.0.dsdl";
+    extentDiscovered.rootNamespacePath   = "uavcan";
+    extentDiscovered.fullName            = "uavcan.test.BadExtent";
+    extentDiscovered.shortName           = "BadExtent";
+    extentDiscovered.namespaceComponents = {"uavcan", "test"};
+    extentDiscovered.majorVersion        = 1;
+    extentDiscovered.minorVersion        = 0;
+    extentDiscovered.text                = extentText;
+
+    llvmdsdl::ASTModule extentModule;
+    extentModule.definitions.push_back(llvmdsdl::ParsedDefinition{extentDiscovered, *extentDef});
+
+    llvmdsdl::DiagnosticEngine extentSemDiag;
+    auto                       extentSemantic = llvmdsdl::analyze(extentModule, extentSemDiag);
+    if (extentSemantic)
+    {
+        std::cerr << "analyzer unexpectedly succeeded for invalid extent fixture\n";
+        return false;
+    }
+    llvm::consumeError(extentSemantic.takeError());
+
+    bool sawExtentDiagnosticAtExtentValue = false;
+    for (const llvmdsdl::Diagnostic& diagnostic : extentSemDiag.diagnostics())
+    {
+        if (diagnostic.message == "extent smaller than maximal serialized length" && diagnostic.location.line == 2 &&
+            diagnostic.location.column == 9 && diagnostic.length == 1)
+        {
+            sawExtentDiagnosticAtExtentValue = true;
+            break;
+        }
+    }
+    if (!sawExtentDiagnosticAtExtentValue)
+    {
+        std::cerr << "expected extent diagnostic to point at the @extent value span\n";
+        return false;
+    }
+
+    const std::string extentMultipleDigitsText = "uint16 sample\n"
+                                                 "@extent 13\n";
+
+    llvmdsdl::DiagnosticEngine extentDigitsParseDiag;
+    llvmdsdl::Lexer            extentDigitsLexer("uavcan.test.BadExtentDigits.1.0.dsdl", extentMultipleDigitsText);
+    auto                       extentDigitsTokens = extentDigitsLexer.lex();
+    llvmdsdl::Parser           extentDigitsParser("uavcan.test.BadExtentDigits.1.0.dsdl",
+                                        std::move(extentDigitsTokens),
+                                        extentDigitsParseDiag);
+    auto                       extentDigitsDef = extentDigitsParser.parseDefinition();
+    if (!extentDigitsDef)
+    {
+        llvm::consumeError(extentDigitsDef.takeError());
+        std::cerr << "bad-extent-digits fixture parse failed unexpectedly\n";
+        return false;
+    }
+    if (extentDigitsParseDiag.hasErrors())
+    {
+        std::cerr << "bad-extent-digits fixture parse diagnostics contained errors\n";
+        return false;
+    }
+
+    llvmdsdl::DiscoveredDefinition extentDigitsDiscovered;
+    extentDigitsDiscovered.filePath            = "uavcan/test/BadExtentDigits.1.0.dsdl";
+    extentDigitsDiscovered.rootNamespacePath   = "uavcan";
+    extentDigitsDiscovered.fullName            = "uavcan.test.BadExtentDigits";
+    extentDigitsDiscovered.shortName           = "BadExtentDigits";
+    extentDigitsDiscovered.namespaceComponents = {"uavcan", "test"};
+    extentDigitsDiscovered.majorVersion        = 1;
+    extentDigitsDiscovered.minorVersion        = 0;
+    extentDigitsDiscovered.text                = extentMultipleDigitsText;
+
+    llvmdsdl::ASTModule extentDigitsModule;
+    extentDigitsModule.definitions.push_back(llvmdsdl::ParsedDefinition{extentDigitsDiscovered, *extentDigitsDef});
+
+    llvmdsdl::DiagnosticEngine extentDigitsSemDiag;
+    auto                       extentDigitsSemantic = llvmdsdl::analyze(extentDigitsModule, extentDigitsSemDiag);
+    if (extentDigitsSemantic)
+    {
+        std::cerr << "analyzer unexpectedly succeeded for invalid multi-digit extent fixture\n";
+        return false;
+    }
+    llvm::consumeError(extentDigitsSemantic.takeError());
+
+    bool sawMultiDigitExtentSpan = false;
+    for (const llvmdsdl::Diagnostic& diagnostic : extentDigitsSemDiag.diagnostics())
+    {
+        if (diagnostic.message == "extent must be a multiple of 8 bits" && diagnostic.location.line == 2 &&
+            diagnostic.location.column == 9 && diagnostic.length == 2)
+        {
+            sawMultiDigitExtentSpan = true;
+            break;
+        }
+    }
+    if (!sawMultiDigitExtentSpan)
+    {
+        std::cerr << "expected multi-digit extent diagnostic span to match expression width\n";
+        return false;
+    }
+
     return true;
 }
