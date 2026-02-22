@@ -27,6 +27,39 @@ message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
 
+if(APPLE)
+  find_program(LLVMDSDL_OTOOL_EXE NAMES otool otool-classic)
+  set(LLVMDSDL_LLVM_DYLIB "")
+  foreach(llvm_lib_dir IN LISTS LLVM_LIBRARY_DIRS)
+    if(EXISTS "${llvm_lib_dir}/libLLVM.dylib")
+      set(LLVMDSDL_LLVM_DYLIB "${llvm_lib_dir}/libLLVM.dylib")
+      break()
+    endif()
+  endforeach()
+
+  if(LLVMDSDL_OTOOL_EXE AND LLVMDSDL_LLVM_DYLIB)
+    execute_process(
+      COMMAND "${LLVMDSDL_OTOOL_EXE}" -l "${LLVMDSDL_LLVM_DYLIB}"
+      OUTPUT_VARIABLE LLVMDSDL_OTOOL_OUTPUT
+      ERROR_QUIET
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    string(REGEX MATCH "minos[ \t]+([0-9]+\\.[0-9]+)" LLVMDSDL_LLVM_MINOS_MATCH "${LLVMDSDL_OTOOL_OUTPUT}")
+    if(CMAKE_MATCH_1)
+      set(LLVMDSDL_LLVM_MINOS "${CMAKE_MATCH_1}")
+      if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "${LLVMDSDL_LLVM_MINOS}" CACHE STRING "Minimum macOS deployment target" FORCE)
+        message(STATUS "Setting CMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET} (from LLVM minos)")
+      elseif(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS LLVMDSDL_LLVM_MINOS)
+        message(STATUS
+          "Raising CMAKE_OSX_DEPLOYMENT_TARGET from ${CMAKE_OSX_DEPLOYMENT_TARGET} "
+          "to ${LLVMDSDL_LLVM_MINOS} to match linked LLVM/MLIR binaries")
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "${LLVMDSDL_LLVM_MINOS}" CACHE STRING "Minimum macOS deployment target" FORCE)
+      endif()
+    endif()
+  endif()
+endif()
+
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
 

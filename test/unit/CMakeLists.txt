@@ -23,6 +23,8 @@ add_executable(llvmdsdl-unit-tests
   LspLintTests.cpp
   LspRankingTests.cpp
   LspServerTests.cpp
+  LspRobustnessTests.cpp
+  LspJsonRpcFuzzTests.cpp
 )
 
 target_link_libraries(llvmdsdl-unit-tests

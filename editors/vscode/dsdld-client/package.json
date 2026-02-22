@@ -31,6 +31,10 @@
         "extensions": [
           ".dsdl"
         ],
+        "icon": {
+          "light": "../../../dsdl.svg",
+          "dark": "../../../dsdl.svg"
+        },
         "configuration": "./language-configuration.json"
       }
     ],
@@ -79,7 +83,18 @@
         "dsdld.aiEnabled": {
           "type": "boolean",
           "default": false,
-          "description": "Enable AI-assisted features in dsdld."
+          "description": "Legacy AI toggle. When enabled and aiMode is unset, dsdld defaults to suggest mode."
+        },
+        "dsdld.aiMode": {
+          "type": "string",
+          "default": "off",
+          "enum": [
+            "off",
+            "suggest",
+            "assist",
+            "apply_with_confirmation"
+          ],
+          "description": "AI operating mode: suggestions only, assistive planning, or confirmation-gated edit application."
         },
         "dsdld.trace": {
           "type": "string",

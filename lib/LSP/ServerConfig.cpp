@@ -15,6 +15,7 @@
 #include "llvmdsdl/LSP/ServerConfig.h"
 
 #include <algorithm>
+#include <cctype>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
@@ -93,10 +94,7 @@ void applyTraceLevel(const llvm::json::Object& settings, ServerConfig& config)
     }
 }
 
-void applyNestedBoolean(const llvm::json::Object& settings,
-                        llvm::StringRef key,
-                        llvm::StringRef field,
-                        bool& outValue)
+void applyNestedBoolean(const llvm::json::Object& settings, llvm::StringRef key, llvm::StringRef field, bool& outValue)
 {
     const auto* nestedValue = settings.get(key);
     if (!nestedValue)
@@ -113,6 +111,78 @@ void applyNestedBoolean(const llvm::json::Object& settings,
     if (const std::optional<bool> parsed = nested->getBoolean(field))
     {
         outValue = *parsed;
+    }
+}
+
+std::optional<AiMode> parseAiModeString(llvm::StringRef rawMode)
+{
+    std::string normalized(rawMode.str());
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](const unsigned char value) {
+        return static_cast<char>(std::tolower(value));
+    });
+
+    if (normalized == "off")
+    {
+        return AiMode::Off;
+    }
+    if (normalized == "suggest")
+    {
+        return AiMode::Suggest;
+    }
+    if (normalized == "assist")
+    {
+        return AiMode::Assist;
+    }
+    if (normalized == "apply_with_confirmation")
+    {
+        return AiMode::ApplyWithConfirmation;
+    }
+    return std::nullopt;
+}
+
+void applyAiConfig(const llvm::json::Object& settings, ServerConfig& config)
+{
+    const auto* aiValue = settings.get("ai");
+    if (!aiValue)
+    {
+        return;
+    }
+    const auto* ai = aiValue->getAsObject();
+    if (!ai)
+    {
+        return;
+    }
+
+    bool                hadEnabledField = false;
+    std::optional<bool> enabled;
+    if (const std::optional<bool> parsedEnabled = ai->getBoolean("enabled"))
+    {
+        hadEnabledField = true;
+        enabled         = parsedEnabled;
+    }
+
+    bool                  hadModeField = false;
+    std::optional<AiMode> parsedMode;
+    if (const auto rawMode = ai->getString("mode"))
+    {
+        hadModeField = true;
+        parsedMode   = parseAiModeString(*rawMode);
+    }
+
+    // Backward compatibility: legacy `ai.enabled=true` defaults to suggest mode.
+    if (hadEnabledField && !*enabled)
+    {
+        config.aiMode = AiMode::Off;
+        return;
+    }
+    if (hadModeField && parsedMode.has_value())
+    {
+        config.aiMode = *parsedMode;
+        return;
+    }
+    if (hadEnabledField && *enabled)
+    {
+        config.aiMode = AiMode::Suggest;
     }
 }
 
@@ -213,7 +283,7 @@ bool applyDidChangeConfiguration(const llvm::json::Value& params, ServerConfig& 
     }
 
     applyLintConfig(*settings, config);
-    applyNestedBoolean(*settings, "ai", "enabled", config.aiEnabled);
+    applyAiConfig(*settings, config);
     applyNestedBoolean(*settings, "advanced", "enableMlirSnapshot", config.enableMlirSnapshot);
     applyTraceLevel(*settings, config);
     return true;

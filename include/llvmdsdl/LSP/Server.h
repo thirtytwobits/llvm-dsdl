@@ -17,6 +17,7 @@
 #ifndef LLVMDSDL_LSP_SERVER_H
 #define LLVMDSDL_LSP_SERVER_H
 
+#include "llvmdsdl/LSP/AI.h"
 #include "llvmdsdl/LSP/Analysis.h"
 #include "llvmdsdl/LSP/DocumentStore.h"
 #include "llvmdsdl/LSP/Index.h"
@@ -31,6 +32,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace llvmdsdl::lsp
@@ -117,40 +119,52 @@ public:
 
 private:
     [[nodiscard]] bool handleRequest(const llvm::json::Object& message,
-                                     llvm::StringRef method,
-                                     const llvm::json::Value& id);
-    void handleNotification(const llvm::json::Object& message, llvm::StringRef method);
+                                     llvm::StringRef           method,
+                                     const llvm::json::Value&  id);
+    void               handleNotification(const llvm::json::Object& message, llvm::StringRef method);
 
-    void sendResult(const llvm::json::Value& id, llvm::json::Value result);
-    void sendError(const llvm::json::Value& id, int code, std::string message);
-    void sendNotification(std::string method, llvm::json::Value params);
-    void publishEmptyDiagnostics(const std::string& uri);
-    void publishDiagnosticsFromAnalysis();
-    llvm::json::Value buildSemanticTokens(const std::string& uri) const;
-    void ensureIndexManager();
-    void ensureSignalStore();
-    void scheduleWorkspaceIndex(const AnalysisResult& analysisResult, bool waitForSnapshot);
+    void                      sendResult(const llvm::json::Value& id, llvm::json::Value result);
+    void                      sendError(const llvm::json::Value& id, int code, std::string message);
+    void                      sendNotification(std::string method, llvm::json::Value params);
+    void                      publishEmptyDiagnostics(const std::string& uri);
+    void                      publishDiagnosticsFromAnalysis();
+    llvm::json::Value         buildSemanticTokens(const std::string& uri) const;
+    void                      ensureIndexManager();
+    void                      ensureSignalStore();
+    void                      scheduleWorkspaceIndex(const AnalysisResult& analysisResult, bool waitForSnapshot);
     [[nodiscard]] std::string resolveIndexCacheDirectory() const;
     [[nodiscard]] std::string resolveSignalStorePath() const;
+    void                      appendAiCodeActions(const std::string&              uri,
+                                                  std::uint32_t                   startLine,
+                                                  std::uint32_t                   startCharacter,
+                                                  std::uint32_t                   endLine,
+                                                  std::uint32_t                   endCharacter,
+                                                  const std::vector<std::string>& diagnosticMessages,
+                                                  llvm::json::Array&              payload);
+    [[nodiscard]] AiResolveEditResult resolveAiCodeActionEdit(llvm::StringRef suggestionId, bool confirmed) const;
 
     void recordRequestTelemetry(llvm::StringRef method, std::uint64_t latencyMicros, bool cancelled);
 
     static std::string requestKeyFromId(const llvm::json::Value& id);
 
-    SendMessageFn   sendMessage_;
-    DocumentStore   documents_;
-    ServerConfig    config_;
-    AnalysisPipeline analysis_;
-    RequestScheduler scheduler_;
-    Telemetry       telemetry_;
-    std::unique_ptr<IndexManager> indexManager_;
-    std::string     indexCacheDirectory_;
-    std::unique_ptr<AdaptiveSignalStore> signalStore_;
-    std::string     signalStorePath_;
-    std::unordered_set<std::string> publishedDiagnosticUris_;
-    bool            shutdownRequested_{false};
-    bool            shouldExit_{false};
-    int             exitCode_{0};
+    SendMessageFn                                           sendMessage_;
+    DocumentStore                                           documents_;
+    ServerConfig                                            config_;
+    AnalysisPipeline                                        analysis_;
+    RequestScheduler                                        scheduler_;
+    Telemetry                                               telemetry_;
+    std::unique_ptr<IndexManager>                           indexManager_;
+    std::string                                             indexCacheDirectory_;
+    std::unique_ptr<AdaptiveSignalStore>                    signalStore_;
+    std::string                                             signalStorePath_;
+    std::unique_ptr<AiProvider>                             aiProvider_;
+    AiContextPacker                                         aiContextPacker_;
+    mutable AiAuditLogger                                   aiAuditLogger_;
+    std::unordered_map<std::string, AiCodeActionSuggestion> aiSuggestionsById_;
+    std::unordered_set<std::string>                         publishedDiagnosticUris_;
+    bool                                                    shutdownRequested_{false};
+    bool                                                    shouldExit_{false};
+    int                                                     exitCode_{0};
 };
 
 }  // namespace llvmdsdl::lsp

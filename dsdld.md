@@ -175,6 +175,8 @@ Status: Completed on February 21, 2026.
 
 ### Epic I: Agentic AI Integration
 
+Status: Completed on February 22, 2026.
+
 | ID | Task | Priority | Depends On | Exit Criteria |
 |---|---|---|---|---|
 | I1 | AI provider abstraction (`OFF`, `SUGGEST`, `ASSIST`, `APPLY_WITH_CONFIRMATION`) | P0 | A4 | Mode switching verified |
@@ -186,6 +188,8 @@ Status: Completed on February 21, 2026.
 
 ### Epic J: Performance, Reliability, and Scale
 
+Status: Completed on February 22, 2026.
+
 | ID | Task | Priority | Depends On | Exit Criteria |
 |---|---|---|---|---|
 | J1 | LSP replay harness for latency regression | P0 | A1 | p50/p95/p99 tracked in CI artifact |
@@ -195,6 +199,8 @@ Status: Completed on February 21, 2026.
 | J5 | Fuzz and malformed JSON-RPC handling | P1 | A1 | Invalid input never crashes server |
 
 ### Epic K: Documentation and Adoption
+
+Status: Completed on February 22, 2026.
 
 | ID | Task | Priority | Depends On | Exit Criteria |
 |---|---|---|---|---|

@@ -16,6 +16,9 @@ multi-language code generation throughput.
   - `go`
   - `ts`
   - `python`
+- `benchmark_lsp.py` benchmarks `dsdld` request latency for:
+  - mixed request replay (`replay`)
+  - workspace index cold/warm runs (`index-bench`)
 
 ## Thresholds
 
@@ -38,6 +41,8 @@ CMake utility targets are available:
 - `benchmark-codegen-init-thresholds`
 - `benchmark-codegen-check-dev-ab`
 - `benchmark-codegen-check-ci-oom`
+- `benchmark-lsp-replay`
+- `benchmark-lsp-index-cold-warm`
 
 ### Live status during long runs
 
@@ -49,6 +54,7 @@ The harness prints heartbeat lines while each language command is running, e.g.:
 CMake knob:
 
 - `LLVMDSDL_CODEGEN_BENCHMARK_STATUS_INTERVAL_SEC` (default `15`, set `0` to disable)
+- `LLVMDSDL_CODEGEN_BENCHMARK_MAX_RSS_MIB` (default `0`, set non-zero to fail on peak RSS cap)
 
 Example calibration flow:
 
@@ -92,3 +98,25 @@ cmake -S . -B build/matrix/dev-homebrew \
   -DLLVMDSDL_CODEGEN_BENCHMARK_STATUS_INTERVAL_SEC=10
 cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target benchmark-codegen-record -j1
 ```
+
+## LSP Benchmarks
+
+Run the mixed replay benchmark:
+
+```bash
+cmake --build <build-dir> --config RelWithDebInfo --target benchmark-lsp-replay
+```
+
+Run the cold/warm index benchmark:
+
+```bash
+cmake --build <build-dir> --config RelWithDebInfo --target benchmark-lsp-index-cold-warm
+```
+
+Reports are written under:
+
+- `<build-dir>/test/benchmark/lsp-benchmark/replay-report.json`
+- `<build-dir>/test/benchmark/lsp-benchmark/index-cold-warm-report.json`
+
+Both reports include p50/p95/p99 latency metrics suitable for CI artifact
+tracking and host A/B comparisons.

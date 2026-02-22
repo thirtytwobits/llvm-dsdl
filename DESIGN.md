@@ -329,3 +329,104 @@ be sourced from lowered MLIR contracts rather than backend-local fallback logic.
 - `dsdlc` enforces one spec-conformant semantic mode for Cyphal DSDL.
 - Non-conformant definitions are rejected with diagnostics; no permissive
   compatibility fallback mode is supported.
+
+---
+
+## 5. LSP Architecture (`dsdld`)
+
+`dsdld` is a first-class tool in this repository and reuses the core compiler
+stack rather than maintaining a separate parser/tokenizer implementation.
+
+### 5.1 High-Level LSP Flow
+
+```mermaid
+flowchart LR
+  A["Editor Client (VS Code / Neovim)"] --> B["JSON-RPC stdio transport"]
+  B --> C["Server dispatcher (lib/LSP/Server.cpp)"]
+  C --> D["Document overlays (DocumentStore)"]
+  C --> E["Analysis pipeline (AST + semantics reuse)"]
+  E --> F["Diagnostics + semantic tokens + nav/completion"]
+  E --> G["Lint engine + suppressions + autofix"]
+  E --> H["Workspace index + ranking signals"]
+  C --> I["Policy-gated AI actions + audit log"]
+  F --> A
+  G --> A
+  H --> A
+  I --> A
+```
+
+### 5.2 Request/Notification Model
+
+Core request handlers include:
+
+1. `initialize`, `shutdown`
+2. `textDocument/semanticTokens/full`
+3. `textDocument/hover`
+4. `textDocument/definition`
+5. `textDocument/references`
+6. `textDocument/documentSymbol`
+7. `textDocument/completion` and `completionItem/resolve`
+8. `textDocument/prepareRename` and `textDocument/rename`
+9. `textDocument/codeAction` and `codeAction/resolve`
+10. `workspace/symbol`
+
+Core notifications include:
+
+1. `textDocument/didOpen`
+2. `textDocument/didChange`
+3. `textDocument/didClose`
+4. `workspace/didChangeConfiguration`
+5. `$/cancelRequest`
+6. `exit`
+
+### 5.3 Shared Compiler Reuse
+
+The LSP path intentionally depends on the same codebase used by `dsdlc`:
+
+1. Frontend discovery/lexing/parsing to produce AST.
+2. Semantic analysis and evaluator for symbol/type resolution.
+3. Common diagnostics model with source locations.
+
+This prevents drift between batch compilation and editor-time behavior.
+
+### 5.4 Indexing And Ranking
+
+`dsdld` builds and maintains a workspace symbol index, with optional cache
+persistence and verification/repair workflows.
+
+Supporting docs:
+
+1. `docs/LSP_INDEX_SCHEMA.md`
+2. `docs/LSP_RANKING_MODEL.md`
+
+Ranking combines lexical features and adaptive usage signals for both completion
+and workspace-symbol queries.
+
+### 5.5 Linting
+
+Linting is deterministic, configurable, and supports:
+
+1. Workspace-level suppression
+2. Per-file suppression
+3. In-source suppression comments
+4. Optional plugin rule packs
+5. Autofix quick actions
+
+Lint authoring details are documented in:
+
+1. `docs/LSP_LINT_RULES.md`
+2. `docs/LSP_LINT_RULE_AUTHORING.md`
+
+### 5.6 AI Safety Model
+
+AI behavior is optional and policy-gated:
+
+1. Modes: `off`, `suggest`, `assist`, `apply_with_confirmation`
+2. Confirmation-gated edit materialization
+3. Safe tool allow-list
+4. Bounded context packing
+5. Redacted audit logging
+
+Operator guidance:
+
+1. `docs/LSP_AI_OPERATOR_GUIDE.md`

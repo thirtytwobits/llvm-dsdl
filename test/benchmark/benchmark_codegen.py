@@ -79,8 +79,8 @@ def forward_stream_lines(stream: Any, sink: Any, prefix: str, collector: list[st
         stream.close()
 
 
-def describe_process_metrics(pid: int) -> str:
-    """Returns lightweight child-process telemetry for heartbeat output."""
+def describe_process_metrics(pid: int) -> tuple[str, float | None]:
+    """Returns lightweight child-process telemetry and RSS MiB when available."""
     try:
         proc = subprocess.run(
             ["ps", "-o", "%cpu=,rss=", "-p", str(pid)],
@@ -89,16 +89,16 @@ def describe_process_metrics(pid: int) -> str:
             text=True,
         )
         if proc.returncode != 0:
-            return f"pid={pid} cpu=n/a rss=n/a"
+            return f"pid={pid} cpu=n/a rss=n/a", None
         values = proc.stdout.strip().split()
         if len(values) < 2:
-            return f"pid={pid} cpu=n/a rss=n/a"
+            return f"pid={pid} cpu=n/a rss=n/a", None
         cpu = values[0]
         rss_kib = float(values[1])
         rss_mib = rss_kib / 1024.0
-        return f"pid={pid} cpu={cpu}% rss={rss_mib:.1f}MiB"
+        return f"pid={pid} cpu={cpu}% rss={rss_mib:.1f}MiB", rss_mib
     except (OSError, ValueError):
-        return f"pid={pid} cpu=n/a rss=n/a"
+        return f"pid={pid} cpu=n/a rss=n/a", None
 
 
 def run_language(
@@ -111,10 +111,12 @@ def run_language(
     optimize_lowered_serdes: bool,
     timeout_seconds: int,
     status_interval_sec: int,
+    max_rss_mib: float,
 ) -> dict[str, Any]:
     samples: list[float] = []
     output_dir = out_base_dir / spec.key
     output_dir.mkdir(parents=True, exist_ok=True)
+    peak_rss_mib = 0.0
 
     for idx in range(iterations):
         run_out_dir = output_dir / f"iter-{idx + 1}"
@@ -168,6 +170,11 @@ def run_language(
 
         next_status_at = float(status_interval_sec)
         timed_out = False
+        last_metrics = f"pid={proc.pid} cpu=n/a rss=n/a"
+        initial_metrics, initial_rss_mib = describe_process_metrics(proc.pid)
+        last_metrics = initial_metrics
+        if initial_rss_mib is not None:
+            peak_rss_mib = max(peak_rss_mib, initial_rss_mib)
         while True:
             ret = proc.poll()
             elapsed = time.perf_counter() - start
@@ -181,6 +188,10 @@ def run_language(
                 except subprocess.TimeoutExpired:
                     proc.kill()
                 break
+            metrics, rss_mib = describe_process_metrics(proc.pid)
+            last_metrics = metrics
+            if rss_mib is not None:
+                peak_rss_mib = max(peak_rss_mib, rss_mib)
             if status_interval_sec > 0 and elapsed >= next_status_at:
                 try:
                     file_count = count_files(run_out_dir)
@@ -188,23 +199,22 @@ def run_language(
                     file_count = -1
                 stdout_line_count = len(stdout_lines)
                 stderr_line_count = len(stderr_lines)
-                metrics = describe_process_metrics(proc.pid)
                 quiet_hint = ""
                 if file_count == 0 and stdout_line_count == 0 and stderr_line_count == 0:
                     quiet_hint = " phase=frontend/lowering(no emitted files yet)"
                 if file_count >= 0:
                     print(
-                        f"[benchmark] {spec.key} iter {idx + 1}/{iterations}: running "
-                        f"{elapsed:.1f}s (generated files so far: {file_count}, "
-                        f"streamed lines stdout={stdout_line_count} stderr={stderr_line_count}, "
-                        f"{metrics}){quiet_hint}",
-                        flush=True,
-                    )
+                            f"[benchmark] {spec.key} iter {idx + 1}/{iterations}: running "
+                            f"{elapsed:.1f}s (generated files so far: {file_count}, "
+                            f"streamed lines stdout={stdout_line_count} stderr={stderr_line_count}, "
+                            f"{last_metrics}){quiet_hint}",
+                            flush=True,
+                        )
                 else:
                     print(
                         f"[benchmark] {spec.key} iter {idx + 1}/{iterations}: running "
                         f"{elapsed:.1f}s (streamed lines stdout={stdout_line_count} "
-                        f"stderr={stderr_line_count}, {metrics}){quiet_hint}",
+                        f"stderr={stderr_line_count}, {last_metrics}){quiet_hint}",
                         flush=True,
                     )
                 next_status_at += float(status_interval_sec)
@@ -229,6 +239,14 @@ def run_language(
                 sys.stderr.write(f"[{spec.key}] stderr:\n{stderr}\n")
             raise RuntimeError(f"benchmark generation failed for {spec.key}")
         samples.append(elapsed)
+        _, rss_mib = describe_process_metrics(proc.pid)
+        if rss_mib is not None:
+            peak_rss_mib = max(peak_rss_mib, rss_mib)
+        if max_rss_mib > 0 and peak_rss_mib > max_rss_mib:
+            raise RuntimeError(
+                f"benchmark generation exceeded max RSS for {spec.key}: "
+                f"peak={peak_rss_mib:.1f}MiB limit={max_rss_mib:.1f}MiB"
+            )
         print(
             f"[benchmark] {spec.key} iter {idx + 1}/{iterations}: {elapsed:.3f}s",
             flush=True,
@@ -244,6 +262,7 @@ def run_language(
         "max_sec": max(samples),
         "generated_file_count": count_files(output_dir),
         "output_dir": str(output_dir),
+        "peak_rss_mib": peak_rss_mib,
     }
     return result
 
@@ -289,6 +308,7 @@ def run_suite(args: argparse.Namespace) -> dict[str, Any]:
             optimize_lowered_serdes=args.optimize_lowered_serdes,
             timeout_seconds=args.per_language_timeout_sec,
             status_interval_sec=args.status_interval_sec,
+            max_rss_mib=args.max_rss_mib,
         )
     total_elapsed = time.perf_counter() - suite_start
 
@@ -309,6 +329,7 @@ def run_suite(args: argparse.Namespace) -> dict[str, Any]:
             "iterations": args.iterations,
             "optimize_lowered_serdes": args.optimize_lowered_serdes,
             "per_language_timeout_sec": args.per_language_timeout_sec,
+            "max_rss_mib": args.max_rss_mib,
             "languages": [spec.key for spec in selected_specs],
         },
         "languages": language_results,
@@ -323,17 +344,18 @@ def print_report_summary(report: dict[str, Any], title: str) -> None:
     print(f"dataset: {report['config']['root_namespace_dir']}")
     print(f"iterations: {report['config']['iterations']}")
     print("")
-    print(f"{'language':<10} {'median(s)':>10} {'min(s)':>10} {'max(s)':>10} {'files':>10}")
-    print("-" * 56)
+    print(f"{'language':<10} {'median(s)':>10} {'min(s)':>10} {'max(s)':>10} {'files':>10} {'peakRSS(MiB)':>13}")
+    print("-" * 72)
     report_keys = set(report["languages"].keys())
     ordered_keys = [spec.key for spec in LANGUAGE_SPECS if spec.key in report_keys]
     for key in ordered_keys:
         lang = report["languages"][key]
         print(
             f"{key:<10} {lang['median_sec']:>10.3f} {lang['min_sec']:>10.3f} "
-            f"{lang['max_sec']:>10.3f} {lang['generated_file_count']:>10}"
+            f"{lang['max_sec']:>10.3f} {lang['generated_file_count']:>10} "
+            f"{lang.get('peak_rss_mib', 0.0):>13.1f}"
         )
-    print("-" * 56)
+    print("-" * 72)
     print(f"{'total':<10} {report['total_elapsed_sec']:>10.3f}")
 
 
@@ -525,6 +547,12 @@ def add_common_runtime_args(parser: argparse.ArgumentParser) -> None:
         type=int,
         default=15,
         help="Heartbeat status print interval while a language command is running (0 disables).",
+    )
+    parser.add_argument(
+        "--max-rss-mib",
+        type=float,
+        default=0.0,
+        help="Maximum allowed per-language peak RSS in MiB (0 disables memory cap).",
     )
 
 

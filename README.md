@@ -10,6 +10,10 @@ Canonical project docs:
 - `DEMO.md`: 5-minute demo flow (quick + scale-up paths).
 - `DESIGN.md`: architecture snapshot.
 - `CONTRIBUTING.md` section 15: release readiness runbook.
+- `tools/dsdld/README.md`: `dsdld` usage (VS Code + Neovim setup).
+- `editors/vscode/dsdld-client/README.md`: extension install/debug/settings.
+- `docs/LSP_LINT_RULE_AUTHORING.md`: lint rule implementation workflow.
+- `docs/LSP_AI_OPERATOR_GUIDE.md`: AI safety and operator controls.
 - `LICENSE.md`: project license (MIT).
 - `THIRD_PARTY_NOTICES.md`: third-party licensing notices.
 

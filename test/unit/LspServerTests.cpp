@@ -218,7 +218,7 @@ bool runLspServerTests()
         R"({"jsonrpc":"2.0","method":"workspace/didChangeConfiguration","params":{"settings":{"roots":["/tmp/rootA","/tmp/rootB"],"lookupDirs":["/tmp/lookup"],"lint":{"enabled":false,"disabledRules":["style.no_tabs"],"fileSuppressions":{"file:///tmp/demo.dsdl":["naming.field_snake_case"]},"pluginLibraries":["/tmp/plugin.so"]},"ai":{"enabled":true},"trace":"verbose"}}})"));
 
     if (server.config().rootNamespaceDirs.size() != 2 || server.config().lookupDirs.size() != 1 ||
-        server.config().lintEnabled || !server.config().aiEnabled ||
+        server.config().lintEnabled || server.config().aiMode != llvmdsdl::lsp::AiMode::Suggest ||
         server.config().traceLevel != llvmdsdl::lsp::TraceLevel::Verbose)
     {
         std::cerr << "didChangeConfiguration did not apply expected settings\n";
@@ -857,6 +857,260 @@ bool runLspServerTests()
         if (!sawRefactorAction)
         {
             std::cerr << "missing expected refactor code action\n";
+            return false;
+        }
+    }
+
+    const std::string aiUri  = "file:///tmp/ai_no_sealed.dsdl";
+    const std::string aiText = "uint8 sample\n";
+    server.handleMessage(llvm::json::Object{
+        {"jsonrpc", "2.0"},
+        {"method", "textDocument/didOpen"},
+        {"params",
+         llvm::json::Object{
+             {"textDocument",
+              llvm::json::Object{
+                  {"uri", aiUri},
+                  {"version", 1},
+                  {"text", aiText},
+              }},
+         }},
+    });
+
+    server.handleMessage(llvm::json::Object{
+        {"jsonrpc", "2.0"},
+        {"method", "workspace/didChangeConfiguration"},
+        {"params",
+         llvm::json::Object{
+             {"settings",
+              llvm::json::Object{
+                  {"roots", llvm::json::Array{rootDir.string()}},
+                  {"lookupDirs", llvm::json::Array{}},
+                  {"lint", llvm::json::Object{{"enabled", false}}},
+                  {"ai", llvm::json::Object{{"mode", "assist"}}},
+              }},
+         }},
+    });
+    if (server.config().aiMode != llvmdsdl::lsp::AiMode::Assist)
+    {
+        std::cerr << "expected ai.mode=assist to set assist mode\n";
+        return false;
+    }
+
+    std::string aiSuggestionId;
+    server.handleMessage(llvm::json::Object{
+        {"jsonrpc", "2.0"},
+        {"id", 60},
+        {"method", "textDocument/codeAction"},
+        {"params",
+         llvm::json::Object{
+             {"textDocument", llvm::json::Object{{"uri", aiUri}}},
+             {"range",
+              llvm::json::Object{
+                  {"start", llvm::json::Object{{"line", 0}, {"character", 0}}},
+                  {"end", llvm::json::Object{{"line", 0}, {"character", 10}}},
+              }},
+             {"context", llvm::json::Object{{"diagnostics", llvm::json::Array{}}}},
+         }},
+    });
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        const auto*                 actionsResponse = findResponseByIntegerId(outgoing, 60);
+        const auto*                 result          = actionsResponse ? actionsResponse->getArray("result") : nullptr;
+        if (!result || result->empty())
+        {
+            std::cerr << "expected AI code actions when ai mode is assist\n";
+            return false;
+        }
+        for (const llvm::json::Value& actionValue : *result)
+        {
+            const auto* action = actionValue.getAsObject();
+            if (!action)
+            {
+                continue;
+            }
+            const auto  title                = action->getString("title");
+            const auto* data                 = action->getObject("data");
+            const auto* dsdld                = data ? data->getObject("dsdld") : nullptr;
+            const auto  maybeId              = dsdld ? dsdld->getString("aiSuggestionId") : std::nullopt;
+            const auto  requiresConfirmation = dsdld ? dsdld->getBoolean("requiresConfirmation") : std::nullopt;
+            if (title && *title == "AI: Add @sealed directive" && maybeId && requiresConfirmation.value_or(false))
+            {
+                aiSuggestionId = maybeId->str();
+                break;
+            }
+        }
+        if (aiSuggestionId.empty())
+        {
+            std::cerr << "expected confirmation-gated AI add-sealed suggestion\n";
+            return false;
+        }
+    }
+
+    server.handleMessage(llvm::json::Object{
+        {"jsonrpc", "2.0"},
+        {"id", 61},
+        {"method", "dsdld/ai/resolveEdit"},
+        {"params", llvm::json::Object{{"id", aiSuggestionId}, {"confirmed", true}}},
+    });
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        const auto*                 resolveResponse = findResponseByIntegerId(outgoing, 61);
+        const auto*                 error           = resolveResponse ? resolveResponse->getObject("error") : nullptr;
+        if (!error)
+        {
+            std::cerr << "expected resolve failure when ai mode is assist\n";
+            return false;
+        }
+    }
+
+    server.handleMessage(llvm::json::Object{
+        {"jsonrpc", "2.0"},
+        {"method", "workspace/didChangeConfiguration"},
+        {"params",
+         llvm::json::Object{
+             {"settings",
+              llvm::json::Object{
+                  {"roots", llvm::json::Array{rootDir.string()}},
+                  {"lookupDirs", llvm::json::Array{}},
+                  {"lint", llvm::json::Object{{"enabled", false}}},
+                  {"ai", llvm::json::Object{{"mode", "apply_with_confirmation"}}},
+              }},
+         }},
+    });
+    if (server.config().aiMode != llvmdsdl::lsp::AiMode::ApplyWithConfirmation)
+    {
+        std::cerr << "expected ai.mode=apply_with_confirmation\n";
+        return false;
+    }
+
+    server.handleMessage(llvm::json::Object{
+        {"jsonrpc", "2.0"},
+        {"id", 62},
+        {"method", "dsdld/ai/resolveEdit"},
+        {"params", llvm::json::Object{{"id", aiSuggestionId}, {"confirmed", false}}},
+    });
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        const auto*                 resolveResponse = findResponseByIntegerId(outgoing, 62);
+        const auto*                 result          = resolveResponse ? resolveResponse->getObject("result") : nullptr;
+        const auto                  message         = result ? result->getString("message") : std::nullopt;
+        const auto*                 edit            = result ? result->getObject("edit") : nullptr;
+        if (!result || !message || message->find("requires explicit confirmation") == std::string::npos || edit)
+        {
+            std::cerr << "expected confirmation message and no edit when confirmed=false\n";
+            return false;
+        }
+    }
+
+    server.handleMessage(llvm::json::Object{
+        {"jsonrpc", "2.0"},
+        {"id", 63},
+        {"method", "dsdld/ai/resolveEdit"},
+        {"params", llvm::json::Object{{"id", aiSuggestionId}, {"confirmed", true}}},
+    });
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        const auto*                 resolveResponse = findResponseByIntegerId(outgoing, 63);
+        const auto*                 result          = resolveResponse ? resolveResponse->getObject("result") : nullptr;
+        const auto*                 edit            = result ? result->getObject("edit") : nullptr;
+        const auto*                 changes         = edit ? edit->getObject("changes") : nullptr;
+        const auto*                 edits           = changes ? changes->getArray(aiUri) : nullptr;
+        if (!result || !edits || edits->empty())
+        {
+            std::cerr << "expected resolved AI edit after confirmation\n";
+            return false;
+        }
+    }
+
+    server.handleMessage(llvm::json::Object{
+        {"jsonrpc", "2.0"},
+        {"id", 64},
+        {"method", "codeAction/resolve"},
+        {"params",
+         llvm::json::Object{
+             {"title", "AI: Add @sealed directive"},
+             {"kind", "quickfix"},
+             {"data",
+              llvm::json::Object{
+                  {"dsdld",
+                   llvm::json::Object{
+                       {"aiSuggestionId", aiSuggestionId},
+                       {"confirmed", true},
+                   }},
+              }},
+         }},
+    });
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        const auto*                 resolveResponse = findResponseByIntegerId(outgoing, 64);
+        const auto*                 result          = resolveResponse ? resolveResponse->getObject("result") : nullptr;
+        const auto*                 edit            = result ? result->getObject("edit") : nullptr;
+        if (!result || !edit)
+        {
+            std::cerr << "expected codeAction/resolve to materialize confirmed AI edit\n";
+            return false;
+        }
+    }
+
+    server.handleMessage(llvm::json::Object{
+        {"jsonrpc", "2.0"},
+        {"id", 66},
+        {"method", "dsdld/ai/toolUse"},
+        {"params",
+         llvm::json::Object{
+             {"tool", "document.diagnostics"},
+             {"arguments",
+              llvm::json::Object{
+                  {"uri", aiUri},
+                  {"token", "supersecret"},
+              }},
+         }},
+    });
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        const auto*                 toolResponse = findResponseByIntegerId(outgoing, 66);
+        if (!toolResponse || !toolResponse->get("result"))
+        {
+            std::cerr << "expected successful AI tool-use response\n";
+            return false;
+        }
+    }
+
+    server.handleMessage(llvm::json::Object{
+        {"jsonrpc", "2.0"},
+        {"id", 67},
+        {"method", "dsdld/debug/aiAuditLog"},
+        {"params", llvm::json::Object{}},
+    });
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        const auto*                 auditResponse = findResponseByIntegerId(outgoing, 67);
+        const auto*                 result        = auditResponse ? auditResponse->getArray("result") : nullptr;
+        if (!result || result->empty())
+        {
+            std::cerr << "expected non-empty AI audit log\n";
+            return false;
+        }
+        bool sawRedaction = false;
+        for (const llvm::json::Value& rowValue : *result)
+        {
+            const auto* row    = rowValue.getAsObject();
+            const auto  detail = row ? row->getString("detail") : std::nullopt;
+            if (!detail)
+            {
+                continue;
+            }
+            if (detail->find("supersecret") != std::string::npos)
+            {
+                std::cerr << "AI audit log leaked unredacted secret\n";
+                return false;
+            }
+            sawRedaction = sawRedaction || detail->find("[REDACTED]") != std::string::npos;
+        }
+        if (!sawRedaction)
+        {
+            std::cerr << "expected at least one redacted audit-log entry\n";
             return false;
         }
     }

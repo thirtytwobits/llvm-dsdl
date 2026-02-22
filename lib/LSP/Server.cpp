@@ -392,6 +392,77 @@ std::vector<std::string> parseCodeActionDiagnosticMessages(const llvm::json::Val
     return messages;
 }
 
+struct AiResolveRequest final
+{
+    std::string suggestionId;
+    bool        confirmed{false};
+};
+
+std::optional<AiResolveRequest> parseAiResolveRequestFromData(const llvm::json::Object& data)
+{
+    const auto* dsdldValue = data.get("dsdld");
+    if (!dsdldValue)
+    {
+        return std::nullopt;
+    }
+    const auto* dsdld = dsdldValue->getAsObject();
+    if (!dsdld)
+    {
+        return std::nullopt;
+    }
+    const auto suggestionId = dsdld->getString("aiSuggestionId");
+    if (!suggestionId.has_value())
+    {
+        return std::nullopt;
+    }
+    return AiResolveRequest{
+        suggestionId->str(),
+        dsdld->getBoolean("confirmed").value_or(false),
+    };
+}
+
+std::optional<AiResolveRequest> parseAiResolveRequest(const llvm::json::Value* params)
+{
+    if (!params)
+    {
+        return std::nullopt;
+    }
+    const auto* paramsObject = params->getAsObject();
+    if (!paramsObject)
+    {
+        return std::nullopt;
+    }
+
+    if (const auto suggestionId = paramsObject->getString("id"))
+    {
+        return AiResolveRequest{
+            suggestionId->str(),
+            paramsObject->getBoolean("confirmed").value_or(false),
+        };
+    }
+
+    if (const auto* data = paramsObject->getObject("data"))
+    {
+        return parseAiResolveRequestFromData(*data);
+    }
+
+    return std::nullopt;
+}
+
+std::vector<std::string> extractSymbolHints(const std::vector<DocumentSymbolData>& symbols)
+{
+    std::vector<std::string> hints;
+    hints.reserve(symbols.size());
+    for (const DocumentSymbolData& symbol : symbols)
+    {
+        if (!symbol.name.empty())
+        {
+            hints.push_back(symbol.name);
+        }
+    }
+    return hints;
+}
+
 llvm::json::Value analysisLocationToLsp(const AnalysisLocation& location)
 {
     return llvm::json::Object{
@@ -628,6 +699,7 @@ llvm::json::Object rankingBreakdownToJson(const RankingBreakdown& breakdown)
 Server::Server(SendMessageFn sendMessage, RequestMetricSink metricSink)
     : sendMessage_(std::move(sendMessage))
 {
+    aiProvider_ = std::make_unique<OfflineAiProvider>();
     telemetry_.setSink(std::move(metricSink));
 }
 
@@ -679,6 +751,7 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
             {"renameProvider", llvm::json::Object{{"prepareProvider", true}}},
             {"codeActionProvider",
              llvm::json::Object{
+                 {"resolveProvider", true},
                  {"codeActionKinds",
                   llvm::json::Array{
                       "quickfix",
@@ -983,7 +1056,50 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
             }
             payload.push_back(std::move(item));
         }
+
+        appendAiCodeActions(range->uri,
+                            range->startLine,
+                            range->startCharacter,
+                            range->endLine,
+                            range->endCharacter,
+                            diagnosticMessages,
+                            payload);
         sendResult(id, std::move(payload));
+        return false;
+    }
+
+    if (method == "codeAction/resolve")
+    {
+        if (const auto* paramsObject = message.getObject("params"))
+        {
+            llvm::json::Object resolvedAction = *paramsObject;
+            if (const auto* data = resolvedAction.getObject("data"))
+            {
+                if (const auto request = parseAiResolveRequestFromData(*data))
+                {
+                    const AiResolveEditResult resolved =
+                        resolveAiCodeActionEdit(request->suggestionId, request->confirmed);
+                    llvm::json::Object updatedData = *data;
+                    if (const auto* existingDsdld = updatedData.getObject("dsdld"))
+                    {
+                        llvm::json::Object dsdldData     = *existingDsdld;
+                        dsdldData["confirmed"]           = request->confirmed;
+                        dsdldData["confirmationMessage"] = resolved.message;
+                        updatedData["dsdld"]             = std::move(dsdldData);
+                    }
+                    resolvedAction["data"] = std::move(updatedData);
+                    if (resolved.ok && resolved.hasEdit)
+                    {
+                        resolvedAction["edit"] = workspaceEditToLsp(resolved.edit);
+                    }
+                }
+            }
+            sendResult(id, std::move(resolvedAction));
+        }
+        else
+        {
+            sendResult(id, llvm::json::Object{});
+        }
         return false;
     }
 
@@ -1081,6 +1197,86 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
         {
             sendResult(id, llvm::json::Object{});
         }
+        return false;
+    }
+
+    if (method == "dsdld/ai/resolveEdit")
+    {
+        const auto request = parseAiResolveRequest(message.get("params"));
+        if (!request.has_value())
+        {
+            sendError(id, JsonRpcErrorInternal, "invalid AI resolve parameters");
+            return false;
+        }
+
+        const AiResolveEditResult resolved = resolveAiCodeActionEdit(request->suggestionId, request->confirmed);
+        if (!resolved.ok)
+        {
+            sendError(id, JsonRpcErrorInternal, resolved.message.empty() ? "AI resolve failed" : resolved.message);
+            return false;
+        }
+
+        llvm::json::Object payload{
+            {"id", request->suggestionId},
+            {"confirmed", request->confirmed},
+            {"message", resolved.message},
+        };
+        if (resolved.hasEdit)
+        {
+            payload["edit"] = workspaceEditToLsp(resolved.edit);
+        }
+        sendResult(id, std::move(payload));
+        return false;
+    }
+
+    if (method == "dsdld/ai/toolUse")
+    {
+        if (!AiPolicyGate::isEnabled(config_.aiMode))
+        {
+            sendError(id, JsonRpcErrorInternal, "AI mode is disabled");
+            return false;
+        }
+
+        const auto* params = message.get("params");
+        if (!params)
+        {
+            sendError(id, JsonRpcErrorInternal, "missing AI tool parameters");
+            return false;
+        }
+        const auto* paramsObject = params->getAsObject();
+        if (!paramsObject)
+        {
+            sendError(id, JsonRpcErrorInternal, "invalid AI tool parameters");
+            return false;
+        }
+
+        const auto tool = paramsObject->getString("tool");
+        if (!tool.has_value())
+        {
+            sendError(id, JsonRpcErrorInternal, "missing AI tool name");
+            return false;
+        }
+
+        const llvm::json::Object* arguments = paramsObject->getObject("arguments");
+        const llvm::json::Object  emptyArguments;
+        const AiToolResult        result = runAiTool(*tool,
+                                              arguments ? *arguments : emptyArguments,
+                                              analysis_,
+                                              config_,
+                                              documents_,
+                                              indexManager_.get());
+        std::string               argumentsText;
+        llvm::raw_string_ostream  argumentsStream(argumentsText);
+        llvm::json::Object        argumentsObject = arguments ? *arguments : emptyArguments;
+        argumentsStream << llvm::json::Value(std::move(argumentsObject));
+        argumentsStream.flush();
+        aiAuditLogger_.record("tool_use", "tool=" + tool->str() + " args=" + argumentsText);
+        if (!result.ok)
+        {
+            sendError(id, JsonRpcErrorInternal, result.errorMessage.empty() ? "AI tool failed" : result.errorMessage);
+            return false;
+        }
+        sendResult(id, result.value);
         return false;
     }
 
@@ -1218,6 +1414,7 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
             sendResult(id, std::move(payload));
             return false;
         }
+
         if (*kind == "workspaceSymbol")
         {
             const AnalysisResult analysisResult = analysis_.run(config_, documents_);
@@ -1250,6 +1447,20 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
         }
 
         sendResult(id, llvm::json::Array{});
+        return false;
+    }
+
+    if (method == "dsdld/debug/aiAuditLog")
+    {
+        llvm::json::Array payload;
+        for (const AiAuditRecord& record : aiAuditLogger_.snapshot())
+        {
+            payload.push_back(llvm::json::Object{
+                {"category", record.category},
+                {"detail", record.detail},
+            });
+        }
+        sendResult(id, std::move(payload));
         return false;
     }
 
@@ -1607,6 +1818,117 @@ std::string Server::resolveSignalStorePath() const
         return {};
     }
     return (std::filesystem::path(cacheDirectory) / "ranking-signals.json").lexically_normal().string();
+}
+
+void Server::appendAiCodeActions(const std::string&              uri,
+                                 const std::uint32_t             startLine,
+                                 const std::uint32_t             startCharacter,
+                                 const std::uint32_t             endLine,
+                                 const std::uint32_t             endCharacter,
+                                 const std::vector<std::string>& diagnosticMessages,
+                                 llvm::json::Array&              payload)
+{
+    if (!aiProvider_ || !AiPolicyGate::canSuggest(config_.aiMode))
+    {
+        return;
+    }
+
+    const DocumentSnapshot*        snapshot    = documents_.lookup(uri);
+    const std::string              sourceText  = snapshot ? snapshot->text : std::string{};
+    const std::vector<std::string> symbolHints = extractSymbolHints(analysis_.documentSymbols(uri));
+
+    const AiCodeActionContext                 context     = aiContextPacker_.buildCodeActionContext(uri,
+                                                                                sourceText,
+                                                                                startLine,
+                                                                                startCharacter,
+                                                                                endLine,
+                                                                                endCharacter,
+                                                                                diagnosticMessages,
+                                                                                symbolHints);
+    const std::vector<AiCodeActionSuggestion> suggestions = aiProvider_->suggestCodeActions(config_.aiMode, context);
+
+    aiAuditLogger_.record("code_action",
+                          "uri=" + uri + " diagnostics=" + std::to_string(diagnosticMessages.size()) +
+                              " snippet=" + context.selectionSnippet);
+
+    for (const AiCodeActionSuggestion& suggestion : suggestions)
+    {
+        aiSuggestionsById_.insert_or_assign(suggestion.id, suggestion);
+        if (aiSuggestionsById_.size() > 1024U)
+        {
+            aiSuggestionsById_.erase(aiSuggestionsById_.begin());
+        }
+
+        llvm::json::Object dsdldData{
+            {"aiSuggestionId", suggestion.id},
+            {"confirmed", false},
+            {"requiresConfirmation", suggestion.requiresConfirmation},
+            {"explanation", suggestion.explanation},
+        };
+        if (!suggestion.diagnosticMessage.empty())
+        {
+            dsdldData["diagnosticMessage"] = suggestion.diagnosticMessage;
+        }
+
+        payload.push_back(llvm::json::Object{
+            {"title", suggestion.title},
+            {"kind", suggestion.kind},
+            {"isPreferred", false},
+            {"data", llvm::json::Object{{"dsdld", std::move(dsdldData)}}},
+        });
+    }
+}
+
+AiResolveEditResult Server::resolveAiCodeActionEdit(const llvm::StringRef suggestionId, const bool confirmed) const
+{
+    const auto suggestionIt = aiSuggestionsById_.find(suggestionId.str());
+    if (suggestionIt == aiSuggestionsById_.end())
+    {
+        return AiResolveEditResult{
+            false,
+            false,
+            "unknown AI suggestion id",
+            WorkspaceEditData{},
+        };
+    }
+    const AiCodeActionSuggestion& suggestion = suggestionIt->second;
+
+    aiAuditLogger_.record("resolve_edit",
+                          "id=" + suggestion.id + " confirmed=" + (confirmed ? std::string("true") : "false"));
+
+    if (!suggestion.hasEdit)
+    {
+        return AiResolveEditResult{
+            true,
+            false,
+            suggestion.explanation,
+            WorkspaceEditData{},
+        };
+    }
+    if (suggestion.requiresConfirmation && !confirmed)
+    {
+        return AiResolveEditResult{
+            true,
+            false,
+            "AI edit requires explicit confirmation.",
+            WorkspaceEditData{},
+        };
+    }
+    if (!AiPolicyGate::canApplyConfirmedEdits(config_.aiMode))
+    {
+        return AiResolveEditResult{
+            false,
+            false,
+            "AI mode does not permit applying edits. Use `apply_with_confirmation`.",
+            WorkspaceEditData{},
+        };
+    }
+    return AiResolveEditResult{
+        true,
+        true,
+        "AI edit resolved.",
+        suggestion.edit,
+    };
 }
 
 void Server::recordRequestTelemetry(const llvm::StringRef method,

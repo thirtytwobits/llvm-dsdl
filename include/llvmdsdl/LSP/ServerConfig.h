@@ -27,6 +27,22 @@
 namespace llvmdsdl::lsp
 {
 
+/// @brief Operating mode for optional AI-assisted LSP features.
+enum class AiMode
+{
+    /// @brief Disable all AI-assisted behavior.
+    Off,
+
+    /// @brief Offer read-only suggestions and explanations.
+    Suggest,
+
+    /// @brief Offer deeper suggestions while still requiring explicit edit confirmation.
+    Assist,
+
+    /// @brief Allow edit materialization only after explicit confirmation.
+    ApplyWithConfirmation,
+};
+
 /// @brief Trace verbosity level for server logs and telemetry.
 enum class TraceLevel
 {
@@ -64,8 +80,8 @@ struct ServerConfig final
     /// @brief Dynamic lint rule-pack library paths.
     std::vector<std::string> lintPluginLibraries;
 
-    /// @brief Enables AI-related features when true.
-    bool aiEnabled{false};
+    /// @brief AI feature mode for suggestions/tooling and confirmation-gated edits.
+    AiMode aiMode{AiMode::Off};
 
     /// @brief Enables optional semantic-to-MLIR snapshot generation.
     bool enableMlirSnapshot{false};

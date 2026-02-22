@@ -7,6 +7,8 @@ emits diagnostics with optional autofix edits.
 
 Rule IDs are stable and can be suppressed via configuration or source comments.
 
+For rule implementation workflow, see `docs/LSP_LINT_RULE_AUTHORING.md`.
+
 ## Baseline Rules (v1)
 
 1. `naming.type_pascal_case`

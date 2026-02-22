@@ -9,6 +9,7 @@
 #===----------------------------------------------------------------------===#
 
 add_library(llvmdsdlLSP
+  AI.cpp
   Analysis.cpp
   DocumentStore.cpp
   Index.cpp

@@ -634,6 +634,10 @@ Release sign-off requires all of the following:
    - `README.md`
    - `DEMO.md`
    - `DESIGN.md`
+   - `tools/dsdld/README.md`
+   - `editors/vscode/dsdld-client/README.md`
+   - `docs/LSP_LINT_RULE_AUTHORING.md`
+   - `docs/LSP_AI_OPERATOR_GUIDE.md`
 
 ### 15.7 Codegen throughput benchmark (complex corpus)
 
@@ -676,3 +680,25 @@ Notes:
 
 1. `dev_ab` is intended for strict A/B comparisons on same or similar hardware.
 2. `ci_oom` is a looser guard intended to catch order-of-magnitude regressions in CI.
+
+### 15.8 dsdld + VS Code extension release gates
+
+Required LSP/editor gates:
+
+```bash
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target llvmdsdl-unit-tests dsdld -j
+build/matrix/dev-homebrew/test/unit/RelWithDebInfo/llvmdsdl-unit-tests
+
+ctest --test-dir build/matrix/dev-homebrew -C RelWithDebInfo -R llvmdsdl-vscode-extension-smoke --output-on-failure
+
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target benchmark-lsp-replay -j1
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target benchmark-lsp-index-cold-warm -j1
+```
+
+Expected outcomes:
+
+1. Unit suite passes including LSP robustness and malformed JSON-RPC tests.
+2. VS Code extension smoke test passes against built `dsdld`.
+3. LSP benchmark reports are produced under:
+   - `build/matrix/dev-homebrew/test/benchmark/lsp-benchmark/replay-report.json`
+   - `build/matrix/dev-homebrew/test/benchmark/lsp-benchmark/index-cold-warm-report.json`
