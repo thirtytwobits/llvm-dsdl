@@ -27,6 +27,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <limits>
 #include <string>
 #include <vector>
 #include <system_error>
@@ -134,6 +135,14 @@ void printHelp(const std::string& selectedCommand = "")
         << "  --rust-runtime-specialization <portable|fast>\n"
         << "      portable -> use conservative runtime defaults (default).\n"
         << "      fast     -> enable runtime-fast Cargo default feature for optimized bit-copy fast paths.\n\n"
+        << "  --rust-memory-mode <max-inline|inline-then-pool>\n"
+        << "      max-inline       -> variable-length fields use fixed-capacity inline storage sized to\n"
+        << "                          DSDL maxima (default).\n"
+        << "      inline-then-pool -> values up to --rust-inline-threshold-bytes remain inline; larger values\n"
+        << "                          use dedicated per-type pools.\n\n"
+        << "  --rust-inline-threshold-bytes <N>\n"
+        << "      Inline threshold for inline-then-pool mode (positive integer, default: 256).\n"
+        << "      The value is emitted into Cargo package metadata for auditability and runtime wiring.\n\n"
         << "GO OPTIONS (go)\n"
         << "  --go-module <name>\n"
         << "      Go module name written to go.mod (default: llvmdsdl_generated).\n\n"
@@ -178,6 +187,14 @@ void printHelp(const std::string& selectedCommand = "")
         << "  dsdlc rust --root-namespace-dir submodules/public_regulated_data_types/uavcan --rust-profile "
            "no-std-alloc "
            "--rust-crate-name uavcan_dsdl_embedded --out-dir build/uavcan-rust-no-std\n"
+        << "  dsdlc rust --root-namespace-dir submodules/public_regulated_data_types/uavcan --rust-profile "
+           "no-std-alloc "
+           "--rust-memory-mode max-inline --rust-crate-name uavcan_dsdl_embedded_inline --out-dir "
+           "build/uavcan-rust-no-std-inline\n"
+        << "  dsdlc rust --root-namespace-dir submodules/public_regulated_data_types/uavcan --rust-profile "
+           "no-std-alloc "
+           "--rust-memory-mode inline-then-pool --rust-inline-threshold-bytes 512 "
+           "--rust-crate-name uavcan_dsdl_embedded_pool --out-dir build/uavcan-rust-no-std-pool\n"
         << "  dsdlc go --root-namespace-dir submodules/public_regulated_data_types/uavcan --go-module "
            "demo/uavcan/generated "
            "--out-dir build/uavcan-go\n"
@@ -218,7 +235,8 @@ void printHelp(const std::string& selectedCommand = "")
         else if (selectedCommand == "rust")
         {
             llvm::errs() << "  Requires --out-dir. Honors --rust-crate-name, --rust-profile, and "
-                            "--rust-runtime-specialization.\n";
+                            "--rust-runtime-specialization, --rust-memory-mode, and "
+                            "--rust-inline-threshold-bytes.\n";
         }
         else if (selectedCommand == "go")
         {
@@ -390,6 +408,8 @@ int main(int argc, char** argv)
     std::string                           rustCrateName             = "llvmdsdl_generated";
     llvmdsdl::RustProfile                 rustProfile               = llvmdsdl::RustProfile::Std;
     llvmdsdl::RustRuntimeSpecialization   rustRuntimeSpecialization = llvmdsdl::RustRuntimeSpecialization::Portable;
+    llvmdsdl::RustMemoryMode              rustMemoryMode            = llvmdsdl::RustMemoryMode::MaxInline;
+    std::uint32_t                         rustInlineThresholdBytes  = 256U;
     std::string                           goModuleName              = "llvmdsdl_generated";
     std::string                           tsModuleName              = "llvmdsdl_generated";
     llvmdsdl::TsRuntimeSpecialization     tsRuntimeSpecialization   = llvmdsdl::TsRuntimeSpecialization::Portable;
@@ -490,6 +510,38 @@ int main(int argc, char** argv)
                 printUsage();
                 return 1;
             }
+        }
+        else if (arg == "--rust-memory-mode")
+        {
+            const auto value = requireValue(arg);
+            if (value == "max-inline")
+            {
+                rustMemoryMode = llvmdsdl::RustMemoryMode::MaxInline;
+            }
+            else if (value == "inline-then-pool")
+            {
+                rustMemoryMode = llvmdsdl::RustMemoryMode::InlineThenPool;
+            }
+            else
+            {
+                llvm::errs() << "Invalid --rust-memory-mode value: " << value << "\n";
+                printUsage();
+                return 1;
+            }
+        }
+        else if (arg == "--rust-inline-threshold-bytes")
+        {
+            const auto            value = requireValue(arg);
+            std::uint64_t         parsedThreshold{};
+            const llvm::StringRef valueRef(value);
+            if (valueRef.getAsInteger(10, parsedThreshold) || parsedThreshold == 0U ||
+                parsedThreshold > std::numeric_limits<std::uint32_t>::max())
+            {
+                llvm::errs() << "Invalid --rust-inline-threshold-bytes value: " << value << "\n";
+                printUsage();
+                return 1;
+            }
+            rustInlineThresholdBytes = static_cast<std::uint32_t>(parsedThreshold);
         }
         else if (arg == "--go-module")
         {
@@ -671,6 +723,8 @@ int main(int argc, char** argv)
         options.crateName             = rustCrateName;
         options.profile               = rustProfile;
         options.runtimeSpecialization = rustRuntimeSpecialization;
+        options.memoryMode            = rustMemoryMode;
+        options.inlineThresholdBytes  = rustInlineThresholdBytes;
         options.optimizeLoweredSerDes = optimizeLoweredSerDes;
 
         if (llvm::Error err = llvmdsdl::emitRust(*semantic, *mlirModule, options, diagnostics))

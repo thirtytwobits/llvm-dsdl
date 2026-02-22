@@ -15,7 +15,7 @@ The project currently supports:
 
 - C (`dsdlc c`)
 - C++23 (`dsdlc cpp`, with `std` and `pmr` profiles)
-- Rust (`dsdlc rust`, with `std` and `no-std-alloc` profiles, plus runtime specialization `portable|fast`)
+- Rust (`dsdlc rust`, with `std` and `no-std-alloc` profiles, runtime specialization `portable|fast`, and memory modes `max-inline|inline-then-pool`)
 - Go (`dsdlc go`)
 - TypeScript (`dsdlc ts`, with runtime specialization `portable|fast`)
 - Python (`dsdlc python`, with runtime specialization `portable|fast` and backend selection `auto|pure|accel`)
@@ -277,6 +277,32 @@ Current:
   `portable|fast`), with dedicated `rust-runtime-specialization` integration
   labels/workflows, C/Rust parity gates, and semantic-diff gates ensuring
   generated type semantics do not drift.
+- Rust memory-mode contract is now explicit through
+  `--rust-memory-mode <max-inline|inline-then-pool>` and
+  `--rust-inline-threshold-bytes <N>`, with generated `Cargo.toml` metadata
+  recording selected profile/specialization/memory-threshold settings.
+- Rust runtime foundations now include a `VarArray<T>` container abstraction,
+  pool-provider contract types, and fixture-backed runtime unit-test lanes for
+  `std` and `no-std-alloc` profiles.
+- Rust emitter integration now emits per-field pool class identifiers,
+  memory-contract constants, and decode-time pool-aware reserve routes while
+  preserving the generated public type API.
+- Rust allocation-failure taxonomy is contract-defined for non-std evolution:
+  malformed/truncated input errors remain separate from allocation failures, and
+  pool-mode allocation failures are surfaced deterministically with type-class
+  context in downstream runtime workstreams.
+- Rust integration coverage now includes memory-mode specific lanes for:
+  - signed-narrow and full-`uavcan` C/Rust differential parity,
+  - full-`uavcan` generation + cargo-check in `inline-then-pool` mode,
+  - memory-mode semantic-diff checks, and
+  - concurrent determinism checks.
+- Rust runtime failure-path coverage now includes deterministic tiny-pool OOM and
+  invalid-request contract tests, stable error-code mapping checks, and
+  non-mutating failure-path invariants for pool-backed reserve routes.
+- Rust benchmark coverage now includes an artifact-first runtime memory-mode lane
+  that compares generated `max-inline` and `inline-then-pool` crates across
+  small/medium/large payload families, with optional threshold gating and
+  embedded-profile recommendation output.
 - TypeScript generation (`dsdlc ts`) is now a first-class non-C-like target
   track with lowered-schema validation, shared lowered render-order planning,
   generated runtime support (`dsdl_runtime.ts`), and runtime-backed per-type
@@ -334,6 +360,8 @@ Python validation taxonomy (parity with mature targets):
 - Performance policy:
   - benchmark lane emits per-family/per-mode reports by default and supports
     optional threshold gating.
+  - Rust runtime benchmark lane emits per-family/per-mode encode/decode metrics
+    and estimated pool-route allocation-call counts for threshold tuning.
 
 Python runtime troubleshooting matrix:
 
@@ -358,7 +386,8 @@ At this stage, backend-specific behavior is intentionally limited to:
 - Language surface rendering (syntax, naming, file/module layout).
 - Runtime API binding (C runtime calls, C++ profile container selection, Rust/Go
   module wiring).
-- Target container/profile choices (`std` vs `pmr`, Rust crate/go module naming).
+- Target container/profile choices (`std` vs `pmr`, Rust crate/profile/memory-mode
+  naming, Go module naming).
 
 Wire-semantics behavior (scalar normalization, array prefix/validation, union tag
 helpers, delimiter checks, capacity checks, section-plan ordering) is expected to

@@ -14,6 +14,7 @@
 #ifndef LLVMDSDL_CODEGEN_RUSTEMITTER_H
 #define LLVMDSDL_CODEGEN_RUSTEMITTER_H
 
+#include <cstdint>
 #include <string>
 
 #include "llvm/Support/Error.h"
@@ -53,6 +54,17 @@ enum class RustRuntimeSpecialization
     Fast,
 };
 
+/// @brief Memory strategy for variable-length data in generated Rust code.
+enum class RustMemoryMode
+{
+
+    /// @brief Use fixed-capacity inline storage sized to DSDL maxima.
+    MaxInline,
+
+    /// @brief Inline below threshold and use per-type pools above threshold.
+    InlineThenPool,
+};
+
 /// @brief Configuration options for Rust code generation.
 struct RustEmitOptions final
 {
@@ -70,6 +82,12 @@ struct RustEmitOptions final
 
     /// @brief Requested runtime specialization.
     RustRuntimeSpecialization runtimeSpecialization{RustRuntimeSpecialization::Portable};
+
+    /// @brief Requested memory strategy for variable-length data.
+    RustMemoryMode memoryMode{RustMemoryMode::MaxInline};
+
+    /// @brief Inline storage threshold in bytes for pool mode.
+    std::uint32_t inlineThresholdBytes{256U};
 
     /// @brief Enables optional lowered-serdes optimization before emission.
     bool optimizeLoweredSerDes{false};

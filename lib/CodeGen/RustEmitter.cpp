@@ -160,6 +160,15 @@ std::string toUpperSnake(const std::string& in)
     return s;
 }
 
+std::string rustMemoryModeVariantPath(const RustEmitOptions& options)
+{
+    if (options.memoryMode == RustMemoryMode::InlineThenPool)
+    {
+        return "crate::dsdl_runtime::DsdlMemoryMode::InlineThenPool";
+    }
+    return "crate::dsdl_runtime::DsdlMemoryMode::MaxInline";
+}
+
 std::string unsignedStorageType(const std::uint32_t bitLength)
 {
     switch (scalarStorageBits(bitLength))
@@ -403,8 +412,10 @@ std::string defaultExpr(const SemanticFieldType& type, const EmitterContext& ctx
 class FunctionBodyEmitter final
 {
 public:
-    explicit FunctionBodyEmitter(const EmitterContext& ctx)
+    explicit FunctionBodyEmitter(const EmitterContext&                            ctx,
+                                 const std::unordered_map<std::string, std::string>& poolClassConstExprByField)
         : ctx_(ctx)
+        , poolClassConstExprByField_(poolClassConstExprByField)
     {
     }
 
@@ -490,7 +501,8 @@ public:
                                fieldRef,
                                2,
                                fieldStep.arrayLengthPrefixBits,
-                               fieldStep.fieldFacts);
+                               fieldStep.fieldFacts,
+                               poolClassConstExprForField(field->name));
         };
         callbacks.onPadding = [this, &out](const PlannedFieldStep& fieldStep) {
             const auto* const field = fieldStep.field;
@@ -512,8 +524,19 @@ public:
     }
 
 private:
-    const EmitterContext& ctx_;
-    std::size_t           id_{0};
+    const EmitterContext&                            ctx_;
+    const std::unordered_map<std::string, std::string>& poolClassConstExprByField_;
+    std::size_t                                      id_{0};
+
+    std::string poolClassConstExprForField(const std::string& fieldName) const
+    {
+        const auto it = poolClassConstExprByField_.find(fieldName);
+        if (it == poolClassConstExprByField_.end())
+        {
+            return "crate::dsdl_runtime::AllocationClassId(0u32)";
+        }
+        return it->second;
+    }
 
     std::string nextName(const std::string& prefix)
     {
@@ -703,7 +726,8 @@ private:
                                "self." + sanitizeRustIdent(field.name),
                                indent + 2,
                                step.arrayLengthPrefixBits,
-                               step.fieldFacts);
+                               step.fieldFacts,
+                               poolClassConstExprForField(field.name));
             emitLine(out, indent + 1, "}");
         }
         emitLine(out,
@@ -732,11 +756,13 @@ private:
                             const std::string&                 expr,
                             const int                          indent,
                             const std::optional<std::uint32_t> arrayLengthPrefixBitsOverride = std::nullopt,
-                            const LoweredFieldFacts* const     fieldFacts                    = nullptr)
+                            const LoweredFieldFacts* const     fieldFacts                    = nullptr,
+                            const std::string&                 poolClassConstExpr            = "")
     {
         if (type.arrayKind != ArrayKind::None)
         {
-            emitDeserializeArray(out, type, expr, indent, arrayLengthPrefixBitsOverride, fieldFacts);
+            emitDeserializeArray(
+                out, type, expr, indent, arrayLengthPrefixBitsOverride, fieldFacts, poolClassConstExpr);
             return;
         }
         emitDeserializeScalar(out, type, expr, indent, fieldFacts);
@@ -1010,8 +1036,18 @@ private:
                               const std::string&                 expr,
                               const int                          indent,
                               const std::optional<std::uint32_t> arrayLengthPrefixBitsOverride,
-                              const LoweredFieldFacts* const     fieldFacts)
+                              const LoweredFieldFacts* const     fieldFacts,
+                              const std::string&                 poolClassConstExpr)
     {
+        if (!poolClassConstExpr.empty())
+        {
+            emitLine(out,
+                     indent,
+                     expr + ".set_memory_contract(crate::dsdl_runtime::VarArrayMemoryContract::new("
+                         "Self::__LLVMDSDL_MEMORY_MODE, "
+                         "Self::__LLVMDSDL_INLINE_THRESHOLD_BYTES, " +
+                         poolClassConstExpr + "));");
+        }
         const auto arrayPlan =
             buildArrayWirePlan(type, fieldFacts, arrayLengthPrefixBitsOverride, HelperBindingDirection::Deserialize);
         const bool  variable        = arrayPlan.variable;
@@ -1053,15 +1089,26 @@ private:
             const auto validateRc = nextName("len_rc");
             emitLine(out, indent, "let " + validateRc + " = " + validateHelper + "(" + count + " as i64);");
             emitLine(out, indent, "if " + validateRc + " < 0 { return Err(" + validateRc + "); }");
-            emitLine(out, indent, expr + ".clear();");
-            emitLine(out, indent, expr + ".reserve(" + count + ");");
         }
         else
         {
-            emitLine(out, indent, expr + ".clear();");
-            emitLine(out, indent, expr + ".reserve(" + std::to_string(type.arrayCapacity) + "usize);");
             emitLine(out, indent, "let " + count + " = " + std::to_string(type.arrayCapacity) + "usize;");
         }
+        emitLine(out, indent, expr + ".clear();");
+        emitLine(out,
+                 indent,
+                 "if Self::__LLVMDSDL_MEMORY_MODE == "
+                 "crate::dsdl_runtime::DsdlMemoryMode::InlineThenPool {");
+        emitLine(out, indent + 1, "let mut _pool = crate::dsdl_runtime::PassthroughPoolProvider::default();");
+        emitLine(out, indent + 1, "if let Err(_alloc_err) = " + expr + ".reserve_with_pool(" + count + ", &mut _pool)"
+                                      " {");
+        emitLine(out,
+                 indent + 2,
+                 "return Err(-crate::dsdl_runtime::allocation_error_to_runtime_code(_alloc_err));");
+        emitLine(out, indent + 1, "}");
+        emitLine(out, indent, "} else {");
+        emitLine(out, indent + 1, expr + ".reserve(" + count + ");");
+        emitLine(out, indent, "}");
 
         const auto index = nextName("index");
         emitLine(out, indent, "for " + index + " in 0.." + count + " {");
@@ -1230,11 +1277,32 @@ void emitSectionType(std::ostringstream&              out,
                      const std::string&               typeName,
                      const SemanticSection&           section,
                      const EmitterContext&            ctx,
+                     const RustEmitOptions&           options,
                      const std::string&               fullName,
                      std::uint32_t                    majorVersion,
                      std::uint32_t                    minorVersion,
                      const LoweredSectionFacts* const sectionFacts)
 {
+    std::unordered_map<std::string, std::string> poolClassConstExprByField;
+    std::vector<std::pair<std::string, std::uint32_t>> poolClassConstants;
+    std::set<std::string>                             usedPoolConstNames;
+    std::uint32_t                                     nextPoolClassId = 1U;
+    for (const auto& field : section.fields)
+    {
+        if (field.isPadding || field.resolvedType.arrayKind == ArrayKind::None)
+        {
+            continue;
+        }
+        const std::string baseName = "__LLVMDSDL_POOL_CLASS_" + toUpperSnake(field.name);
+        std::string       constName = baseName;
+        for (std::uint32_t suffix = 1U; !usedPoolConstNames.insert(constName).second; ++suffix)
+        {
+            constName = baseName + "_" + std::to_string(suffix);
+        }
+        poolClassConstExprByField.emplace(field.name, "Self::" + constName);
+        poolClassConstants.emplace_back(constName, nextPoolClassId++);
+    }
+
     emitLine(out, 0, "#[derive(Clone, Debug, PartialEq)]");
     emitLine(out, 0, "pub struct " + typeName + " {");
 
@@ -1269,6 +1337,24 @@ void emitSectionType(std::ostringstream&              out,
         {
             continue;
         }
+        if (field.resolvedType.arrayKind != ArrayKind::None)
+        {
+            const auto  classExprIt = poolClassConstExprByField.find(field.name);
+            std::string classExpr   = "crate::dsdl_runtime::AllocationClassId(0u32)";
+            if (classExprIt != poolClassConstExprByField.end())
+            {
+                classExpr = classExprIt->second;
+            }
+            emitLine(out,
+                     3,
+                     sanitizeRustIdent(field.name) +
+                         ": crate::dsdl_runtime::DsdlVec::with_contract("
+                         "crate::dsdl_runtime::VarArrayMemoryContract::new("
+                         "Self::__LLVMDSDL_MEMORY_MODE, "
+                         "Self::__LLVMDSDL_INLINE_THRESHOLD_BYTES, " +
+                         classExpr + ")),");
+            continue;
+        }
         emitLine(out, 3, sanitizeRustIdent(field.name) + ": " + defaultExpr(field.resolvedType, ctx) + ",");
     }
     if (section.isUnion)
@@ -1294,6 +1380,22 @@ void emitSectionType(std::ostringstream&              out,
              1,
              "pub const SERIALIZATION_BUFFER_SIZE_BYTES: usize = " +
                  std::to_string((section.serializationBufferSizeBits + 7) / 8) + ";");
+    emitLine(out,
+             1,
+             "pub const __LLVMDSDL_MEMORY_MODE: crate::dsdl_runtime::DsdlMemoryMode = " +
+                 rustMemoryModeVariantPath(options) + ";");
+    emitLine(out,
+             1,
+             "pub const __LLVMDSDL_INLINE_THRESHOLD_BYTES: usize = " + std::to_string(options.inlineThresholdBytes) +
+                 "usize;");
+    for (const auto& [constName, classId] : poolClassConstants)
+    {
+        emitLine(out,
+                 1,
+                 "pub const " + constName +
+                     ": crate::dsdl_runtime::AllocationClassId = crate::dsdl_runtime::AllocationClassId(" +
+                     std::to_string(classId) + "u32);");
+    }
     if (section.isUnion)
     {
         std::size_t optionCount = 0;
@@ -1316,7 +1418,7 @@ void emitSectionType(std::ostringstream&              out,
     }
     out << "\n";
 
-    FunctionBodyEmitter body(ctx);
+    FunctionBodyEmitter body(ctx, poolClassConstExprByField);
     body.emitSerialize(out, typeName, section, sectionFacts);
     out << "\n";
     body.emitDeserialize(out, typeName, section, sectionFacts);
@@ -1361,7 +1463,8 @@ const LoweredSectionFacts* findLoweredSectionFacts(const LoweredFactsMap&    low
 
 std::string renderDefinitionFile(const SemanticDefinition& def,
                                  const EmitterContext&     ctx,
-                                 const LoweredFactsMap&    loweredFacts)
+                                 const LoweredFactsMap&    loweredFacts,
+                                 const RustEmitOptions&    options)
 {
     std::ostringstream out;
     emitLine(out, 0, "#![allow(non_camel_case_types)]");
@@ -1420,6 +1523,7 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
                         baseType,
                         def.request,
                         ctx,
+                        options,
                         def.info.fullName,
                         def.info.majorVersion,
                         def.info.minorVersion,
@@ -1434,6 +1538,7 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
                     reqType,
                     def.request,
                     ctx,
+                    options,
                     def.info.fullName + ".Request",
                     def.info.majorVersion,
                     def.info.minorVersion,
@@ -1446,6 +1551,7 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
                         respType,
                         *def.response,
                         ctx,
+                        options,
                         def.info.fullName + ".Response",
                         def.info.majorVersion,
                         def.info.minorVersion,
@@ -1474,11 +1580,26 @@ llvm::Expected<std::string> loadRustRuntime()
 
 std::string renderCargoToml(const RustEmitOptions& options)
 {
+    const auto rustProfileName = [&options]() -> const char* {
+        return options.profile == RustProfile::Std ? "std" : "no-std-alloc";
+    };
+    const auto rustRuntimeSpecializationName = [&options]() -> const char* {
+        return options.runtimeSpecialization == RustRuntimeSpecialization::Fast ? "fast" : "portable";
+    };
+    const auto rustMemoryModeName = [&options]() -> const char* {
+        return options.memoryMode == RustMemoryMode::InlineThenPool ? "inline-then-pool" : "max-inline";
+    };
+
     std::ostringstream out;
     out << "[package]\n";
     out << "name = \"" << options.crateName << "\"\n";
     out << "version = \"0.1.0\"\n";
     out << "edition = \"2021\"\n\n";
+    out << "[package.metadata.llvmdsdl]\n";
+    out << "rust-profile = \"" << rustProfileName() << "\"\n";
+    out << "rust-runtime-specialization = \"" << rustRuntimeSpecializationName() << "\"\n";
+    out << "rust-memory-mode = \"" << rustMemoryModeName() << "\"\n";
+    out << "rust-inline-threshold-bytes = " << options.inlineThresholdBytes << "\n\n";
 
     out << "[lib]\n";
     out << "path = \"src/lib.rs\"\n\n";
@@ -1589,7 +1710,7 @@ llvm::Error emitRust(const SemanticModule&  semantic,
         }
         std::filesystem::create_directories(dir);
 
-        if (auto err = writeFile(dir / (modName + ".rs"), renderDefinitionFile(def, ctx, loweredFacts)))
+        if (auto err = writeFile(dir / (modName + ".rs"), renderDefinitionFile(def, ctx, loweredFacts, options)))
         {
             return err;
         }

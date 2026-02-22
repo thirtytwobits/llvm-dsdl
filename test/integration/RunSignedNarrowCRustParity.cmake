@@ -22,6 +22,25 @@ if(NOT "${RUST_RUNTIME_SPECIALIZATION}" STREQUAL "portable" AND
   message(FATAL_ERROR
     "Invalid RUST_RUNTIME_SPECIALIZATION value: ${RUST_RUNTIME_SPECIALIZATION}")
 endif()
+if(NOT DEFINED RUST_MEMORY_MODE OR "${RUST_MEMORY_MODE}" STREQUAL "")
+  set(RUST_MEMORY_MODE "max-inline")
+endif()
+if(NOT "${RUST_MEMORY_MODE}" STREQUAL "max-inline" AND
+   NOT "${RUST_MEMORY_MODE}" STREQUAL "inline-then-pool")
+  message(FATAL_ERROR "Invalid RUST_MEMORY_MODE value: ${RUST_MEMORY_MODE}")
+endif()
+if(NOT DEFINED RUST_INLINE_THRESHOLD_BYTES OR
+   "${RUST_INLINE_THRESHOLD_BYTES}" STREQUAL "")
+  set(RUST_INLINE_THRESHOLD_BYTES "256")
+endif()
+if(NOT RUST_INLINE_THRESHOLD_BYTES MATCHES "^[0-9]+$")
+  message(FATAL_ERROR
+    "Invalid RUST_INLINE_THRESHOLD_BYTES value: ${RUST_INLINE_THRESHOLD_BYTES}")
+endif()
+if(RUST_INLINE_THRESHOLD_BYTES LESS 1)
+  message(FATAL_ERROR
+    "RUST_INLINE_THRESHOLD_BYTES must be positive: ${RUST_INLINE_THRESHOLD_BYTES}")
+endif()
 
 if(NOT EXISTS "${DSDLC}")
   message(FATAL_ERROR "dsdlc executable not found: ${DSDLC}")
@@ -100,6 +119,8 @@ execute_process(
       ${dsdlc_extra_args}
       --rust-profile "${RUST_PROFILE}"
       --rust-runtime-specialization "${RUST_RUNTIME_SPECIALIZATION}"
+      --rust-memory-mode "${RUST_MEMORY_MODE}"
+      --rust-inline-threshold-bytes "${RUST_INLINE_THRESHOLD_BYTES}"
       --rust-crate-name signed_narrow_generated
       --out-dir "${rust_out}"
   RESULT_VARIABLE rust_result

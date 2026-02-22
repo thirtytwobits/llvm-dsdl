@@ -36,6 +36,8 @@ It currently provides:
   - A local Rust runtime module (`src/dsdl_runtime.rs`) with bit-level primitives.
   - `std` and `no-std-alloc` profiles plus runtime specialization
     (`portable|fast`).
+  - Rust memory-mode contract options (`max-inline|inline-then-pool`) with
+    configurable inline threshold metadata.
   - MLIR schema/plan metadata validation before emission (matching C++ structural checks).
 - Go code generation (`dsdlc go`) with:
   - A generated module layout (`go.mod`, `uavcan/**`, `dsdlruntime/**`).
@@ -389,7 +391,7 @@ Naming style:
   suffixes are added to keep names unique (e.g. `uavcan::file::Path_1_0`,
   `uavcan::file::Path_2_0`).
 
-### Rust crate generation (`std`/`no-std-alloc` + runtime specialization)
+### Rust crate generation (`std`/`no-std-alloc` + runtime specialization + memory mode)
 
 ```bash
 "${DSDLC}" rust \
@@ -420,6 +422,27 @@ Runtime-specialized std profile:
   --rust-runtime-specialization fast
 ```
 
+No-std+alloc profile with explicit memory mode contracts:
+
+```bash
+"${DSDLC}" rust \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
+  --out-dir build/uavcan-rust-no-std-inline-out \
+  --rust-crate-name uavcan_dsdl_generated_no_std_inline \
+  --rust-profile no-std-alloc \
+  --rust-memory-mode max-inline
+```
+
+```bash
+"${DSDLC}" rust \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
+  --out-dir build/uavcan-rust-no-std-pool-out \
+  --rust-crate-name uavcan_dsdl_generated_no_std_pool \
+  --rust-profile no-std-alloc \
+  --rust-memory-mode inline-then-pool \
+  --rust-inline-threshold-bytes 512
+```
+
 Current behavior:
 
 - `--rust-profile std` is the default and recommended first path.
@@ -429,13 +452,72 @@ Current behavior:
 - `--rust-runtime-specialization fast` enables a runtime-optimized bit-copy path
   via Cargo feature `runtime-fast` while keeping generated semantic type files
   unchanged.
+- `--rust-memory-mode max-inline` is the default in both `std` and
+  `no-std-alloc` profiles.
+- `--rust-memory-mode inline-then-pool` enables a contract where
+  variable-length payloads remain inline up to
+  `--rust-inline-threshold-bytes` and use per-type pools above that threshold.
+- `--rust-inline-threshold-bytes` must be a positive integer (default `256`).
 - Runtime-specialization integration gates include C/Rust parity verification for
   both `std + fast` and `no-std-alloc + fast` profile combinations.
 - Generated Rust API uses `DsdlVec` aliasing in `dsdl_runtime` so profile
   changes do not alter lowered wire semantics.
+- `DsdlVec` is now backed by `VarArray<T>` in the runtime module, which preserves
+  Vec-compatible generated API usage while carrying memory-contract metadata for
+  `max-inline` and `inline-then-pool` evolution.
+- Generated Rust array fields now emit per-field pool-class constants, install
+  memory contracts during decode, and route allocation planning through
+  `reserve_with_pool(...)` in `inline-then-pool` mode while preserving the
+  existing serialize/deserialize method signatures.
+- Generated `Cargo.toml` now records the selected Rust profile, runtime
+  specialization, memory mode, and inline-threshold value under
+  `[package.metadata.llvmdsdl]`.
+- Allocation-failure taxonomy contract (stabilized in Workstream A):
+  - malformed/truncated wire input remains distinct from allocation errors;
+  - max-inline mode does not depend on pool allocation paths;
+  - inline-then-pool mode surfaces deterministic allocation-failure diagnostics
+    with type-class context and stable runtime codes:
+    - `DSDL_RUNTIME_ERROR_ALLOCATION_OUT_OF_MEMORY` (`13`)
+    - `DSDL_RUNTIME_ERROR_ALLOCATION_POOL_UNAVAILABLE` (`14`)
+    - `DSDL_RUNTIME_ERROR_ALLOCATION_INVALID_REQUEST` (`15`)
+  - runtime troubleshooting text is available via
+    `allocation_error_hint(AllocationErrorKind)`.
 - Generated Rust types expose both:
 - `deserialize(&mut self, &[u8]) -> Result<usize, i8>` (ergonomic path), and
 - `deserialize_with_consumed(&mut self, &[u8]) -> (i8, usize)` (C-like parity path that reports consumed bytes on error too).
+
+Rust runtime memory-mode benchmark (artifact-first, optional threshold gating):
+
+```bash
+# Runs generated Rust benchmark code for max-inline and inline-then-pool modes.
+ctest --test-dir build/matrix/dev-homebrew -C RelWithDebInfo \
+  -R llvmdsdl-fixtures-rust-runtime-bench --output-on-failure
+
+# Artifacts:
+# - build/matrix/dev-homebrew/test/integration/fixtures-rust-runtime-bench-out/rust-runtime-bench.json
+# - build/matrix/dev-homebrew/test/integration/fixtures-rust-runtime-bench-out/rust-runtime-bench.txt
+#
+# Per-mode raw outputs:
+# - .../fixtures-rust-runtime-bench-out/max-inline/rust-runtime-bench-max-inline.json
+# - .../fixtures-rust-runtime-bench-out/inline-then-pool/rust-runtime-bench-inline-then-pool.json
+```
+
+```bash
+# Optional threshold gates (off by default).
+cmake --preset dev-homebrew \
+  -DLLVMDSDL_RUST_RUNTIME_BENCH_ENABLE_THRESHOLDS=ON \
+  -DLLVMDSDL_RUST_RUNTIME_BENCH_THRESHOLDS_JSON=$PWD/test/integration/rust_runtime_bench_thresholds.json
+ctest --test-dir build/matrix/dev-homebrew -C RelWithDebInfo \
+  -R llvmdsdl-fixtures-rust-runtime-bench --output-on-failure
+```
+
+Embedded deployment guidance from the benchmark lane:
+
+- safety-critical deterministic profile: use `max-inline`.
+- memory-constrained profile with bounded pools: use `inline-then-pool` and tune
+  `--rust-inline-threshold-bytes` from measured payload families.
+- host-throughput profile: keep `max-inline` unless local benchmark results show
+  `inline-then-pool` parity for your representative data.
 
 ### TypeScript module generation (non-C-like target)
 
@@ -656,7 +738,8 @@ service/delimited families), and Python generation with runtime smoke,
 specialization (`portable|fast`), backend selection (`auto|pure|accel`),
 packaging metadata emission (`pyproject.toml`, `py.typed`), accelerator staging
 targets, full-tree generation/determinism, and runtime benchmark harness
-coverage.
+coverage, plus Rust runtime memory-mode benchmark artifacts (`max-inline` vs
+`inline-then-pool`) for small/medium/large payload families.
 
 ## Codegen Throughput Benchmarking
 

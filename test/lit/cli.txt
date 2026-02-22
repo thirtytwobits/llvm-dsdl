@@ -6,15 +6,21 @@
 # RUN: not %dsdlc cpp --root-namespace-dir %S/fixtures 2>&1 | FileCheck %s --check-prefix=MISSING_OUT_DIR
 # RUN: not %dsdlc cpp --cpp-profile not-a-profile --root-namespace-dir %S/fixtures --out-dir %t 2>&1 | FileCheck %s --check-prefix=BAD_CPP_PROFILE
 # RUN: not %dsdlc rust --rust-profile not-a-profile --root-namespace-dir %S/fixtures --out-dir %t 2>&1 | FileCheck %s --check-prefix=BAD_RUST_PROFILE
+# RUN: not %dsdlc rust --rust-memory-mode not-a-mode --root-namespace-dir %S/fixtures --out-dir %t 2>&1 | FileCheck %s --check-prefix=BAD_RUST_MEMORY_MODE
+# RUN: not %dsdlc rust --rust-inline-threshold-bytes not-a-number --root-namespace-dir %S/fixtures --out-dir %t 2>&1 | FileCheck %s --check-prefix=BAD_RUST_INLINE_THRESHOLD
+# RUN: not %dsdlc rust --rust-inline-threshold-bytes 0 --root-namespace-dir %S/fixtures --out-dir %t 2>&1 | FileCheck %s --check-prefix=BAD_RUST_INLINE_THRESHOLD
 # RUN: not %dsdlc ts --ts-runtime-specialization not-a-specialization --root-namespace-dir %S/fixtures --out-dir %t 2>&1 | FileCheck %s --check-prefix=BAD_TS_SPECIALIZATION
 # RUN: not %dsdlc python --py-runtime-specialization not-a-specialization --root-namespace-dir %S/fixtures --out-dir %t 2>&1 | FileCheck %s --check-prefix=BAD_PY_SPECIALIZATION
 # RUN: not %dsdlc cpp --cpp-profile 2>&1 | FileCheck %s --check-prefix=MISSING_VALUE_CPP
+# RUN: not %dsdlc rust --rust-memory-mode 2>&1 | FileCheck %s --check-prefix=MISSING_VALUE_RUST_MEMORY_MODE
 # RUN: not %dsdlc python --py-package 2>&1 | FileCheck %s --check-prefix=MISSING_VALUE_PYTHON
 # RUN: %dsdlc ast --root-namespace-dir %S/fixtures 2>&1 | FileCheck %s --check-prefix=SUMMARY
 
 # HELP: NAME
 # HELP: dsdlc - DSDL frontend, MLIR lowerer, and multi-language code generator
 # HELP: python Generate Python 3.10 package layout and dataclass SerDes/runtime integration.
+# HELP: --rust-memory-mode <max-inline|inline-then-pool>
+# HELP: --rust-inline-threshold-bytes <N>
 # HELP: RUN SUMMARY
 # HELP: files generated
 # HELP: elapsed wall time
@@ -38,6 +44,12 @@
 # BAD_RUST_PROFILE: Invalid --rust-profile value: not-a-profile
 # BAD_RUST_PROFILE: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
 
+# BAD_RUST_MEMORY_MODE: Invalid --rust-memory-mode value: not-a-mode
+# BAD_RUST_MEMORY_MODE: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
+
+# BAD_RUST_INLINE_THRESHOLD: Invalid --rust-inline-threshold-bytes value:
+# BAD_RUST_INLINE_THRESHOLD: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
+
 # BAD_TS_SPECIALIZATION: Invalid --ts-runtime-specialization value: not-a-specialization
 # BAD_TS_SPECIALIZATION: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
 
@@ -46,6 +58,9 @@
 
 # MISSING_VALUE_CPP: Missing value for --cpp-profile
 # MISSING_VALUE_CPP: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
+
+# MISSING_VALUE_RUST_MEMORY_MODE: Missing value for --rust-memory-mode
+# MISSING_VALUE_RUST_MEMORY_MODE: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
 
 # MISSING_VALUE_PYTHON: Missing value for --py-package
 # MISSING_VALUE_PYTHON: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>

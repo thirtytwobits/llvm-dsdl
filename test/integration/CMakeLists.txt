@@ -29,6 +29,30 @@ set(LLVMDSDL_PY_RUNTIME_BENCH_THRESHOLDS_JSON
     "${LLVMDSDL_SOURCE_DIR}/test/integration/python_runtime_bench_thresholds.json"
     CACHE FILEPATH
     "Threshold config used when LLVMDSDL_PY_RUNTIME_BENCH_ENABLE_THRESHOLDS is ON.")
+set(LLVMDSDL_RUST_RUNTIME_BENCH_INLINE_THRESHOLD_BYTES
+    "256"
+    CACHE STRING
+    "Inline threshold in bytes used by Rust runtime memory-mode benchmark.")
+set(LLVMDSDL_RUST_RUNTIME_BENCH_ITERATIONS_SMALL
+    "12000"
+    CACHE STRING
+    "Rust runtime benchmark iterations for the small payload family.")
+set(LLVMDSDL_RUST_RUNTIME_BENCH_ITERATIONS_MEDIUM
+    "4500"
+    CACHE STRING
+    "Rust runtime benchmark iterations for the medium payload family.")
+set(LLVMDSDL_RUST_RUNTIME_BENCH_ITERATIONS_LARGE
+    "1000"
+    CACHE STRING
+    "Rust runtime benchmark iterations for the large payload family.")
+set(LLVMDSDL_RUST_RUNTIME_BENCH_ENABLE_THRESHOLDS
+    OFF
+    CACHE BOOL
+    "Enable pass/fail threshold checks for the Rust runtime benchmark integration test.")
+set(LLVMDSDL_RUST_RUNTIME_BENCH_THRESHOLDS_JSON
+    "${LLVMDSDL_SOURCE_DIR}/test/integration/rust_runtime_bench_thresholds.json"
+    CACHE FILEPATH
+    "Threshold config used when LLVMDSDL_RUST_RUNTIME_BENCH_ENABLE_THRESHOLDS is ON.")
 string(REPLACE ";"
                "\\;"
                LLVMDSDL_PY_RUNTIME_BENCH_SPECIALIZATIONS_ARG
@@ -1319,6 +1343,50 @@ if(CMAKE_C_COMPILER AND CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
     PROPERTIES
       LABELS "integration;fixtures;rust;differential;rust-runtime-specialization"
   )
+
+  add_test(
+    NAME llvmdsdl-signed-narrow-c-rust-parity-inline-then-pool
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DRUST_MEMORY_MODE=inline-then-pool
+        -DRUST_INLINE_THRESHOLD_BYTES=64
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/signed-narrow-c-rust-parity-inline-then-pool-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DAR_EXECUTABLE=${CMAKE_AR}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunSignedNarrowCRustParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-signed-narrow-c-rust-parity-inline-then-pool
+    PROPERTIES
+      LABELS "integration;fixtures;rust;differential;rust-memory-mode"
+  )
+
+  add_test(
+    NAME llvmdsdl-signed-narrow-c-rust-parity-no-std-runtime-fast-inline-then-pool
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DRUST_PROFILE=no-std-alloc
+        -DRUST_RUNTIME_SPECIALIZATION=fast
+        -DRUST_MEMORY_MODE=inline-then-pool
+        -DRUST_INLINE_THRESHOLD_BYTES=64
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/signed-narrow-c-rust-parity-no-std-fast-inline-then-pool-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DAR_EXECUTABLE=${CMAKE_AR}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunSignedNarrowCRustParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-signed-narrow-c-rust-parity-no-std-runtime-fast-inline-then-pool
+    PROPERTIES
+      LABELS "integration;fixtures;rust;differential;rust-no-std;rust-runtime-specialization;rust-memory-mode"
+  )
 else()
   message(STATUS "Skipping signed_narrow C/Rust parity test: C compiler or cargo/rustc unavailable")
 endif()
@@ -1484,6 +1552,44 @@ set_tests_properties(
 )
 
 add_test(
+  NAME llvmdsdl-uavcan-rust-generation-inline-then-pool
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-rust-inline-then-pool-out
+      -DRUST_MEMORY_MODE=inline-then-pool
+      -DRUST_INLINE_THRESHOLD_BYTES=512
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanRustGeneration.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-uavcan-rust-generation-inline-then-pool
+  PROPERTIES
+    LABELS "integration;uavcan;rust;slow;rust-memory-mode"
+)
+
+add_test(
+  NAME llvmdsdl-uavcan-rust-generation-no-std-runtime-fast-inline-then-pool
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-rust-no-std-fast-inline-then-pool-out
+      -DRUST_PROFILE=no-std-alloc
+      -DRUST_RUNTIME_SPECIALIZATION=fast
+      -DRUST_MEMORY_MODE=inline-then-pool
+      -DRUST_INLINE_THRESHOLD_BYTES=512
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanRustGeneration.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-uavcan-rust-generation-no-std-runtime-fast-inline-then-pool
+  PROPERTIES
+    LABELS "integration;uavcan;rust;slow;rust-no-std;rust-runtime-specialization;rust-memory-mode"
+)
+
+add_test(
   NAME llvmdsdl-uavcan-rust-profile-semantic-diff
   COMMAND
     ${CMAKE_COMMAND}
@@ -1530,6 +1636,58 @@ set_tests_properties(
   llvmdsdl-uavcan-rust-runtime-specialization-diff-no-std-alloc
   PROPERTIES
     LABELS "integration;uavcan;rust;slow;rust-no-std;rust-runtime-specialization"
+)
+
+add_test(
+  NAME llvmdsdl-uavcan-rust-memory-mode-semantic-diff
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-rust-memory-mode-diff-out
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunRustMemoryModeSemanticDiff.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-uavcan-rust-memory-mode-semantic-diff
+  PROPERTIES
+    LABELS "integration;uavcan;rust;slow;rust-memory-mode"
+)
+
+add_test(
+  NAME llvmdsdl-uavcan-rust-memory-mode-semantic-diff-no-std-alloc
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-rust-memory-mode-diff-no-std-out
+      -DRUST_PROFILE=no-std-alloc
+      -DRUST_RUNTIME_SPECIALIZATION=fast
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunRustMemoryModeSemanticDiff.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-uavcan-rust-memory-mode-semantic-diff-no-std-alloc
+  PROPERTIES
+    LABELS "integration;uavcan;rust;slow;rust-no-std;rust-runtime-specialization;rust-memory-mode"
+)
+
+add_test(
+  NAME llvmdsdl-uavcan-rust-determinism-inline-then-pool
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-rust-determinism-inline-then-pool-out
+      -DRUST_MEMORY_MODE=inline-then-pool
+      -DRUST_INLINE_THRESHOLD_BYTES=512
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanRustDeterminism.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-uavcan-rust-determinism-inline-then-pool
+  PROPERTIES
+    LABELS "integration;uavcan;rust;slow;rust-memory-mode;determinism"
 )
 
 add_test(
@@ -1870,6 +2028,71 @@ find_program(CARGO_EXECUTABLE cargo QUIET)
 find_program(RUSTC_EXECUTABLE rustc QUIET)
 if(CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
   add_test(
+    NAME llvmdsdl-fixtures-rust-runtime-unit-tests
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DFIXTURES_ROOT=${LLVMDSDL_FIXTURES_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-rust-runtime-unit-tests-out
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DRUST_PROFILE=std
+        -DRUST_RUNTIME_SPECIALIZATION=portable
+        -DRUST_MEMORY_MODE=max-inline
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunRustRuntimeUnitTests.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-rust-runtime-unit-tests
+    PROPERTIES
+      LABELS "integration;fixtures;rust;runtime;contract"
+  )
+
+  add_test(
+    NAME llvmdsdl-fixtures-rust-runtime-unit-tests-no-std-pool
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DFIXTURES_ROOT=${LLVMDSDL_FIXTURES_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-rust-runtime-unit-tests-no-std-pool-out
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DRUST_PROFILE=no-std-alloc
+        -DRUST_RUNTIME_SPECIALIZATION=fast
+        -DRUST_MEMORY_MODE=inline-then-pool
+        -DRUST_INLINE_THRESHOLD_BYTES=64
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunRustRuntimeUnitTests.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-rust-runtime-unit-tests-no-std-pool
+    PROPERTIES
+      LABELS "integration;fixtures;rust;runtime;contract;rust-no-std;rust-runtime-specialization;rust-memory-mode"
+  )
+
+  add_test(
+    NAME llvmdsdl-fixtures-rust-runtime-bench
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/fixtures-rust-runtime-bench-out
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DRUST_BENCH_ROOT=${LLVMDSDL_SOURCE_DIR}/test/benchmark/rust_runtime/benchrust
+        -DRUST_INLINE_THRESHOLD_BYTES=${LLVMDSDL_RUST_RUNTIME_BENCH_INLINE_THRESHOLD_BYTES}
+        -DBENCH_ITERATIONS_SMALL=${LLVMDSDL_RUST_RUNTIME_BENCH_ITERATIONS_SMALL}
+        -DBENCH_ITERATIONS_MEDIUM=${LLVMDSDL_RUST_RUNTIME_BENCH_ITERATIONS_MEDIUM}
+        -DBENCH_ITERATIONS_LARGE=${LLVMDSDL_RUST_RUNTIME_BENCH_ITERATIONS_LARGE}
+        -DBENCH_ENABLE_THRESHOLDS=${LLVMDSDL_RUST_RUNTIME_BENCH_ENABLE_THRESHOLDS}
+        -DBENCH_THRESHOLDS_JSON=${LLVMDSDL_RUST_RUNTIME_BENCH_THRESHOLDS_JSON}
+        -DBENCH_REPORT_JSON=${CMAKE_CURRENT_BINARY_DIR}/fixtures-rust-runtime-bench-out/rust-runtime-bench.json
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunRustRuntimeBench.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-fixtures-rust-runtime-bench
+    PROPERTIES
+      LABELS "integration;fixtures;rust;runtime;bench;slow;rust-memory-mode"
+  )
+
+  add_test(
     NAME llvmdsdl-uavcan-rust-cargo-check
     COMMAND
       ${CMAKE_COMMAND}
@@ -1939,6 +2162,46 @@ if(CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
     llvmdsdl-uavcan-rust-cargo-check-no-std-runtime-fast
     PROPERTIES
       LABELS "integration;uavcan;rust;slow;rust-no-std;rust-runtime-specialization"
+  )
+
+  add_test(
+    NAME llvmdsdl-uavcan-rust-cargo-check-inline-then-pool
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-rust-cargo-check-inline-then-pool-out
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DRUST_MEMORY_MODE=inline-then-pool
+        -DRUST_INLINE_THRESHOLD_BYTES=512
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanRustCargoCheck.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-uavcan-rust-cargo-check-inline-then-pool
+    PROPERTIES
+      LABELS "integration;uavcan;rust;slow;rust-memory-mode"
+  )
+
+  add_test(
+    NAME llvmdsdl-uavcan-rust-cargo-check-no-std-runtime-fast-inline-then-pool
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-rust-cargo-check-no-std-fast-inline-then-pool-out
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DRUST_PROFILE=no-std-alloc
+        -DRUST_RUNTIME_SPECIALIZATION=fast
+        -DRUST_MEMORY_MODE=inline-then-pool
+        -DRUST_INLINE_THRESHOLD_BYTES=512
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanRustCargoCheck.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-uavcan-rust-cargo-check-no-std-runtime-fast-inline-then-pool
+    PROPERTIES
+      LABELS "integration;uavcan;rust;slow;rust-no-std;rust-runtime-specialization;rust-memory-mode"
   )
 endif()
 
@@ -2207,6 +2470,52 @@ if(CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
     llvmdsdl-uavcan-c-rust-parity-no-std-runtime-fast
     PROPERTIES
       LABELS "integration;uavcan;rust;differential;slow;rust-no-std;rust-runtime-specialization"
+  )
+
+  add_test(
+    NAME llvmdsdl-uavcan-c-rust-parity-inline-then-pool
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DRUST_MEMORY_MODE=inline-then-pool
+        -DRUST_INLINE_THRESHOLD_BYTES=512
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-c-rust-parity-inline-then-pool-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DAR_EXECUTABLE=${CMAKE_AR}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunCRustParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-uavcan-c-rust-parity-inline-then-pool
+    PROPERTIES
+      LABELS "integration;uavcan;rust;differential;slow;rust-memory-mode"
+  )
+
+  add_test(
+    NAME llvmdsdl-uavcan-c-rust-parity-no-std-runtime-fast-inline-then-pool
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DRUST_PROFILE=no-std-alloc
+        -DRUST_RUNTIME_SPECIALIZATION=fast
+        -DRUST_MEMORY_MODE=inline-then-pool
+        -DRUST_INLINE_THRESHOLD_BYTES=512
+        -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-c-rust-parity-no-std-fast-inline-then-pool-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DAR_EXECUTABLE=${CMAKE_AR}
+        -DCARGO_EXECUTABLE=${CARGO_EXECUTABLE}
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunCRustParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-uavcan-c-rust-parity-no-std-runtime-fast-inline-then-pool
+    PROPERTIES
+      LABELS "integration;uavcan;rust;differential;slow;rust-no-std;rust-runtime-specialization;rust-memory-mode"
   )
 else()
   message(STATUS "Skipping C/Rust parity test: cargo/rustc executable not found")

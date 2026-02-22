@@ -8,6 +8,7 @@
 # RUN: %dsdlc rust --root-namespace-dir %S/fixtures --rust-profile std --rust-crate-name llvmdsdl_smoke_std --out-dir %t/rust-std 2>&1 | FileCheck %s --check-prefix=RUST_STD_SUMMARY
 # RUN: test -f %t/rust-std/src/fixtures/vendor/helpers_1_0.rs
 # RUN: cat %t/rust-std/Cargo.toml | FileCheck %s --check-prefix=RUST_STD
+# RUN: cat %t/rust-std/src/fixtures/vendor/helpers_1_0.rs | FileCheck %s --check-prefix=RUST_STD_TYPE
 
 # RUN: %dsdlc rust --root-namespace-dir %S/fixtures --rust-profile no-std-alloc --rust-runtime-specialization fast --rust-crate-name llvmdsdl_smoke_fast --out-dir %t/rust-fast 2>&1 | FileCheck %s --check-prefix=RUST_FAST_SUMMARY
 # RUN: test -f %t/rust-fast/src/fixtures/vendor/helpers_1_0.rs
@@ -66,12 +67,26 @@
 # RUST_STD_SUMMARY: command: rust
 # RUST_STD_SUMMARY: files generated:
 # RUST_STD: name = "llvmdsdl_smoke_std"
+# RUST_STD: [package.metadata.llvmdsdl]
+# RUST_STD: rust-profile = "std"
+# RUST_STD: rust-runtime-specialization = "portable"
+# RUST_STD: rust-memory-mode = "max-inline"
+# RUST_STD: rust-inline-threshold-bytes = 256
 # RUST_STD: default = ["std"]
+# RUST_STD_TYPE: __LLVMDSDL_MEMORY_MODE: crate::dsdl_runtime::DsdlMemoryMode = crate::dsdl_runtime::DsdlMemoryMode::MaxInline;
+# RUST_STD_TYPE: __LLVMDSDL_INLINE_THRESHOLD_BYTES: usize = 256usize;
+# RUST_STD_TYPE: __LLVMDSDL_POOL_CLASS_C: crate::dsdl_runtime::AllocationClassId = crate::dsdl_runtime::AllocationClassId(1u32);
+# RUST_STD_TYPE: self.c.set_memory_contract(crate::dsdl_runtime::VarArrayMemoryContract::new(Self::__LLVMDSDL_MEMORY_MODE, Self::__LLVMDSDL_INLINE_THRESHOLD_BYTES, Self::__LLVMDSDL_POOL_CLASS_C));
+# RUST_STD_TYPE: crate::dsdl_runtime::PassthroughPoolProvider::default()
+# RUST_STD_TYPE: self.c.reserve_with_pool(_count
 
 # RUST_FAST_SUMMARY: Run summary:
 # RUST_FAST_SUMMARY: command: rust
 # RUST_FAST_SUMMARY: files generated:
 # RUST_FAST: name = "llvmdsdl_smoke_fast"
+# RUST_FAST: rust-profile = "no-std-alloc"
+# RUST_FAST: rust-runtime-specialization = "fast"
+# RUST_FAST: rust-memory-mode = "max-inline"
 # RUST_FAST: default = ["runtime-fast"]
 
 # GO_SUMMARY: Run summary:

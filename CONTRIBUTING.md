@@ -297,6 +297,32 @@ Expected result:
 Additional profile:
 
 - `--rust-profile no-std-alloc` is supported for `no_std + alloc` targets.
+- `--rust-memory-mode max-inline` is the default.
+- `--rust-memory-mode inline-then-pool` enables threshold-based pool routing.
+- `--rust-inline-threshold-bytes <N>` must be positive and defaults to `256`.
+- Generated `${OUT_RUST}/Cargo.toml` records these selections under
+  `[package.metadata.llvmdsdl]`.
+
+No-std + explicit memory mode examples:
+
+```bash
+"${DSDLC}" rust \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
+  --out-dir build/uavcan-rust-no-std-inline-out \
+  --rust-crate-name uavcan_dsdl_generated_no_std_inline \
+  --rust-profile no-std-alloc \
+  --rust-memory-mode max-inline
+```
+
+```bash
+"${DSDLC}" rust \
+  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
+  --out-dir build/uavcan-rust-no-std-pool-out \
+  --rust-crate-name uavcan_dsdl_generated_no_std_pool \
+  --rust-profile no-std-alloc \
+  --rust-memory-mode inline-then-pool \
+  --rust-inline-threshold-bytes 512
+```
 
 ### 10.1 Reproduce `uavcan` Python Generation
 
@@ -603,6 +629,60 @@ Checklist:
 
 - Use `--rust-profile std` for current production path.
 - Use `--rust-profile no-std-alloc` for `no_std + alloc` targets.
+- Use `--rust-memory-mode max-inline` for deterministic fixed-capacity behavior.
+- Use `--rust-memory-mode inline-then-pool` for threshold-triggered per-type pool
+  allocation behavior.
+- Tune `--rust-inline-threshold-bytes` for pool cutover; values must be positive.
+
+### 13.8 Rust runtime unit tests
+
+- Standard runtime unit tests:
+```bash
+ctest --test-dir build/matrix/dev-homebrew -C RelWithDebInfo --output-on-failure -R '^llvmdsdl-fixtures-rust-runtime-unit-tests$'
+```
+- `no-std-alloc` + pool-mode runtime unit tests:
+```bash
+ctest --test-dir build/matrix/dev-homebrew -C RelWithDebInfo --output-on-failure -R '^llvmdsdl-fixtures-rust-runtime-unit-tests-no-std-pool$'
+```
+- Failure-path contract-only slice:
+```bash
+ctest --test-dir build/matrix/dev-homebrew -C RelWithDebInfo --output-on-failure -L contract -R 'rust-runtime-unit-tests'
+```
+
+### 13.9 Rust memory-mode parity and determinism checks
+
+- Memory-mode semantic diff (`max-inline` vs `inline-then-pool`):
+```bash
+ctest --test-dir build/matrix/dev-homebrew -C RelWithDebInfo --output-on-failure -R '^llvmdsdl-uavcan-rust-memory-mode-semantic-diff$'
+```
+- Memory-mode concurrent determinism:
+```bash
+ctest --test-dir build/matrix/dev-homebrew -C RelWithDebInfo --output-on-failure -R '^llvmdsdl-uavcan-rust-determinism-inline-then-pool$'
+```
+
+### 13.10 Rust runtime memory-mode benchmark lane
+
+- Run the benchmark lane (artifact-first):
+```bash
+ctest --test-dir build/matrix/dev-homebrew -C RelWithDebInfo --output-on-failure -R '^llvmdsdl-fixtures-rust-runtime-bench$'
+```
+- Artifacts:
+  - `build/matrix/dev-homebrew/test/integration/fixtures-rust-runtime-bench-out/rust-runtime-bench.json`
+  - `build/matrix/dev-homebrew/test/integration/fixtures-rust-runtime-bench-out/rust-runtime-bench.txt`
+- Optional threshold gates:
+```bash
+cmake --preset dev-homebrew \
+  -DLLVMDSDL_RUST_RUNTIME_BENCH_ENABLE_THRESHOLDS=ON \
+  -DLLVMDSDL_RUST_RUNTIME_BENCH_THRESHOLDS_JSON=$PWD/test/integration/rust_runtime_bench_thresholds.json
+ctest --test-dir build/matrix/dev-homebrew -C RelWithDebInfo --output-on-failure -R '^llvmdsdl-fixtures-rust-runtime-bench$'
+```
+- Relevant knobs:
+  - `LLVMDSDL_RUST_RUNTIME_BENCH_INLINE_THRESHOLD_BYTES`
+  - `LLVMDSDL_RUST_RUNTIME_BENCH_ITERATIONS_SMALL`
+  - `LLVMDSDL_RUST_RUNTIME_BENCH_ITERATIONS_MEDIUM`
+  - `LLVMDSDL_RUST_RUNTIME_BENCH_ITERATIONS_LARGE`
+  - `LLVMDSDL_RUST_RUNTIME_BENCH_ENABLE_THRESHOLDS`
+  - `LLVMDSDL_RUST_RUNTIME_BENCH_THRESHOLDS_JSON`
 
 ## 14. Commit and PR Expectations
 
@@ -836,3 +916,31 @@ Relevant cache variables:
 - `LLVMDSDL_PY_RUNTIME_BENCH_ITERATIONS_LARGE`
 - `LLVMDSDL_PY_RUNTIME_BENCH_ENABLE_THRESHOLDS`
 - `LLVMDSDL_PY_RUNTIME_BENCH_THRESHOLDS_JSON`
+
+### 15.10 Rust runtime benchmark policy
+
+The Rust runtime benchmark lane compares generated `max-inline` and
+`inline-then-pool` crates on small/medium/large payload families and emits
+artifacts by default.
+
+Run and inspect artifacts:
+
+```bash
+ctest --test-dir build/matrix/dev-homebrew -C RelWithDebInfo \
+  -R llvmdsdl-fixtures-rust-runtime-bench --output-on-failure
+```
+
+Artifacts:
+
+- `build/matrix/dev-homebrew/test/integration/fixtures-rust-runtime-bench-out/rust-runtime-bench.json`
+- `build/matrix/dev-homebrew/test/integration/fixtures-rust-runtime-bench-out/rust-runtime-bench.txt`
+
+Optional threshold gating:
+
+```bash
+cmake --preset dev-homebrew \
+  -DLLVMDSDL_RUST_RUNTIME_BENCH_ENABLE_THRESHOLDS=ON \
+  -DLLVMDSDL_RUST_RUNTIME_BENCH_THRESHOLDS_JSON=$PWD/test/integration/rust_runtime_bench_thresholds.json
+ctest --test-dir build/matrix/dev-homebrew -C RelWithDebInfo \
+  -R llvmdsdl-fixtures-rust-runtime-bench --output-on-failure
+```

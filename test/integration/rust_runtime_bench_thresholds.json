@@ -1,0 +1,32 @@
+{
+  "max_elapsed_sec": {
+    "max-inline": {
+      "small": {
+        "encode": 0.0,
+        "decode": 0.0
+      },
+      "medium": {
+        "encode": 0.0,
+        "decode": 0.0
+      },
+      "large": {
+        "encode": 0.0,
+        "decode": 0.0
+      }
+    },
+    "inline-then-pool": {
+      "small": {
+        "encode": 0.0,
+        "decode": 0.0
+      },
+      "medium": {
+        "encode": 0.0,
+        "decode": 0.0
+      },
+      "large": {
+        "encode": 0.0,
+        "decode": 0.0
+      }
+    }
+  }
+}
