@@ -34,6 +34,11 @@
 
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
+#include "llvmdsdl/CodeGen/CompositeImportGraph.h"
+#include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
+#include "llvmdsdl/CodeGen/DefinitionIndex.h"
+#include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
+#include "llvmdsdl/CodeGen/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingRender.h"
 #include "llvmdsdl/CodeGen/RuntimeHelperBindings.h"
 #include "llvmdsdl/CodeGen/ScriptedBodyPlan.h"
@@ -54,172 +59,9 @@ class DiagnosticEngine;
 namespace
 {
 
-bool isTsKeyword(const std::string& name)
-{
-    static const std::set<std::string> kKeywords =
-        {"break", "case",       "catch",     "class",      "const",   "continue", "debugger",  "default", "delete",
-         "do",    "else",       "enum",      "export",     "extends", "false",    "finally",   "for",     "function",
-         "if",    "import",     "in",        "instanceof", "new",     "null",     "return",    "super",   "switch",
-         "this",  "throw",      "true",      "try",        "typeof",  "var",      "void",      "while",   "with",
-         "as",    "implements", "interface", "let",        "package", "private",  "protected", "public",  "static",
-         "yield", "any",        "boolean",   "number",     "string",  "symbol",   "type",      "from",    "of"};
-    return kKeywords.contains(name);
-}
-
-std::string sanitizeTsIdent(std::string name)
-{
-    if (name.empty())
-    {
-        return "_";
-    }
-    for (char& c : name)
-    {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
-        {
-            c = '_';
-        }
-    }
-    if (std::isdigit(static_cast<unsigned char>(name.front())))
-    {
-        name.insert(name.begin(), '_');
-    }
-    if (isTsKeyword(name))
-    {
-        name += "_";
-    }
-    return name;
-}
-
-std::string toSnakeCase(const std::string& in)
-{
-    std::string out;
-    out.reserve(in.size() + 8);
-
-    bool prevUnderscore = false;
-    for (std::size_t i = 0; i < in.size(); ++i)
-    {
-        const char c    = in[i];
-        const char prev = (i > 0) ? in[i - 1] : '\0';
-        const char next = (i + 1 < in.size()) ? in[i + 1] : '\0';
-        if (!std::isalnum(static_cast<unsigned char>(c)))
-        {
-            if (!out.empty() && !prevUnderscore)
-            {
-                out.push_back('_');
-                prevUnderscore = true;
-            }
-            continue;
-        }
-
-        if (std::isupper(static_cast<unsigned char>(c)))
-        {
-            const bool boundary =
-                std::islower(static_cast<unsigned char>(prev)) ||
-                (std::isupper(static_cast<unsigned char>(prev)) && std::islower(static_cast<unsigned char>(next)));
-            if (!out.empty() && !prevUnderscore && boundary)
-            {
-                out.push_back('_');
-            }
-            out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-            prevUnderscore = false;
-        }
-        else
-        {
-            out.push_back(c);
-            prevUnderscore = (c == '_');
-        }
-    }
-
-    if (out.empty())
-    {
-        out = "_";
-    }
-    if (std::isdigit(static_cast<unsigned char>(out.front())))
-    {
-        out.insert(out.begin(), '_');
-    }
-    return sanitizeTsIdent(out);
-}
-
-std::string toPascalCase(const std::string& in)
-{
-    std::string out;
-    out.reserve(in.size() + 8);
-
-    bool upperNext = true;
-    for (char c : in)
-    {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
-        {
-            upperNext = true;
-            continue;
-        }
-        if (c == '_')
-        {
-            upperNext = true;
-            continue;
-        }
-        if (upperNext)
-        {
-            out.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
-            upperNext = false;
-        }
-        else
-        {
-            out.push_back(c);
-        }
-    }
-
-    if (out.empty())
-    {
-        out = "X";
-    }
-    return sanitizeTsIdent(out);
-}
-
-std::string toUpperSnake(const std::string& in)
-{
-    auto out = toSnakeCase(in);
-    for (char& c : out)
-    {
-        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-    }
-    return out;
-}
-
 std::string tsConstValue(const Value& value)
 {
-    if (const auto* b = std::get_if<bool>(&value.data))
-    {
-        return *b ? "true" : "false";
-    }
-    if (const auto* r = std::get_if<Rational>(&value.data))
-    {
-        if (r->isInteger())
-        {
-            return std::to_string(r->asInteger().value());
-        }
-        std::ostringstream out;
-        out << "(" << r->numerator() << " / " << r->denominator() << ")";
-        return out.str();
-    }
-    if (const auto* s = std::get_if<std::string>(&value.data))
-    {
-        std::string escaped;
-        escaped.reserve(s->size() + 2);
-        escaped.push_back('"');
-        for (char c : *s)
-        {
-            if (c == '\\' || c == '"')
-            {
-                escaped.push_back('\\');
-            }
-            escaped.push_back(c);
-        }
-        escaped.push_back('"');
-        return escaped;
-    }
-    return value.str();
+    return renderConstantLiteral(ConstantLiteralLanguage::TypeScript, value);
 }
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
@@ -231,41 +73,27 @@ class EmitterContext final
 {
 public:
     explicit EmitterContext(const SemanticModule& semantic)
+        : index_(semantic)
     {
-        for (const auto& def : semantic.definitions)
-        {
-            byKey_.emplace(loweredTypeKey(def.info.fullName, def.info.majorVersion, def.info.minorVersion), &def);
-        }
     }
 
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
     {
-        const auto it = byKey_.find(loweredTypeKey(ref.fullName, ref.majorVersion, ref.minorVersion));
-        if (it == byKey_.end())
-        {
-            return nullptr;
-        }
-        return it->second;
+        return index_.find(ref);
     }
 
     std::string namespacePath(const DiscoveredDefinition& info) const
     {
-        std::string out;
-        for (const auto& component : info.namespaceComponents)
-        {
-            if (!out.empty())
-            {
-                out += "/";
-            }
-            out += toSnakeCase(component);
-        }
-        return out;
+        return renderNamespaceRelativePath(CodegenNamingLanguage::TypeScript, info.namespaceComponents)
+            .generic_string();
     }
 
     std::string typeName(const DiscoveredDefinition& info) const
     {
-        return toPascalCase(info.shortName) + "_" + std::to_string(info.majorVersion) + "_" +
-               std::to_string(info.minorVersion);
+        return renderVersionedTypeName(CodegenNamingLanguage::TypeScript,
+                                       info.shortName,
+                                       info.majorVersion,
+                                       info.minorVersion);
     }
 
     std::string typeName(const SemanticTypeRef& ref) const
@@ -284,20 +112,15 @@ public:
 
     std::string fileStem(const DiscoveredDefinition& info) const
     {
-        return toSnakeCase(info.shortName) + "_" + std::to_string(info.majorVersion) + "_" +
-               std::to_string(info.minorVersion);
+        return renderVersionedFileStem(CodegenNamingLanguage::TypeScript,
+                                       info.shortName,
+                                       info.majorVersion,
+                                       info.minorVersion);
     }
 
     std::filesystem::path relativeFilePath(const DiscoveredDefinition& info) const
     {
-        std::filesystem::path rel;
-        const auto            nsPath = namespacePath(info);
-        if (!nsPath.empty())
-        {
-            rel /= nsPath;
-        }
-        rel /= fileStem(info) + ".ts";
-        return rel;
+        return renderRelativeTypeFilePath(CodegenNamingLanguage::TypeScript, info, "ts");
     }
 
     std::filesystem::path relativeFilePath(const SemanticTypeRef& ref) const
@@ -307,18 +130,11 @@ public:
             return relativeFilePath(def->info);
         }
 
-        std::filesystem::path rel;
-        for (const auto& component : ref.namespaceComponents)
-        {
-            rel /= toSnakeCase(component);
-        }
-        rel /= toSnakeCase(ref.shortName) + "_" + std::to_string(ref.majorVersion) + "_" +
-               std::to_string(ref.minorVersion) + ".ts";
-        return rel;
+        return renderRelativeTypeFilePath(CodegenNamingLanguage::TypeScript, ref, "ts");
     }
 
 private:
-    std::unordered_map<std::string, const SemanticDefinition*> byKey_;
+    DefinitionIndex index_;
 };
 
 std::string tsFieldBaseType(const SemanticFieldType& type, const EmitterContext& ctx)
@@ -391,54 +207,15 @@ std::string moduleAliasFromPath(const std::string& modulePath)
             alias.push_back('_');
         }
     }
-    return sanitizeTsIdent(alias.empty() ? "module" : alias);
-}
-
-struct ImportSpec final
-{
-    std::string modulePath;
-    std::string typeName;
-};
-
-std::vector<ImportSpec> collectCompositeImports(const SemanticSection&      section,
-                                                const DiscoveredDefinition& owner,
-                                                const EmitterContext&       ctx)
-{
-    std::map<std::string, std::set<std::string>> importsByModule;
-    const auto                                   ownerPath = ctx.relativeFilePath(owner);
-
-    for (const auto& field : section.fields)
-    {
-        if (field.isPadding || !field.resolvedType.compositeType)
-        {
-            continue;
-        }
-        const auto& ref        = *field.resolvedType.compositeType;
-        const auto  targetPath = ctx.relativeFilePath(ref);
-        if (targetPath == ownerPath)
-        {
-            continue;
-        }
-        const auto modulePath = relativeImportPath(ownerPath, targetPath);
-        importsByModule[modulePath].insert(ctx.typeName(ref));
-    }
-
-    std::vector<ImportSpec> out;
-    for (const auto& [modulePath, names] : importsByModule)
-    {
-        for (const auto& name : names)
-        {
-            out.push_back({modulePath, name});
-        }
-    }
-    return out;
+    return codegenSanitizeIdentifier(CodegenNamingLanguage::TypeScript, alias.empty() ? "module" : alias);
 }
 
 void emitSectionConstants(std::ostringstream& out, const std::string& prefix, const SemanticSection& section)
 {
     for (const auto& constant : section.constants)
     {
-        const auto constName = toUpperSnake(prefix) + "_" + toUpperSnake(constant.name);
+        const auto constName = codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::TypeScript, prefix) + "_" +
+                               codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::TypeScript, constant.name);
         emitLine(out, 0, "export const " + constName + " = " + tsConstValue(constant.value) + ";");
     }
 }
@@ -455,7 +232,9 @@ void emitStructSectionType(std::ostringstream&    out,
         {
             continue;
         }
-        const auto fieldName = sanitizeTsIdent(toSnakeCase(field.name));
+        const auto fieldName =
+            codegenSanitizeIdentifier(CodegenNamingLanguage::TypeScript,
+                                      codegenToSnakeCaseIdentifier(CodegenNamingLanguage::TypeScript, field.name));
         emitLine(out, 1, fieldName + ": " + tsFieldType(field.resolvedType, ctx) + ";");
     }
     emitLine(out, 0, "}");
@@ -484,8 +263,10 @@ void emitUnionSectionType(std::ostringstream&    out,
     emitLine(out, 0, "export type " + typeName + " =");
     for (std::size_t i = 0; i < options.size(); ++i)
     {
-        const auto*        field     = options[i];
-        const auto         fieldName = sanitizeTsIdent(toSnakeCase(field->name));
+        const auto* field = options[i];
+        const auto  fieldName =
+            codegenSanitizeIdentifier(CodegenNamingLanguage::TypeScript,
+                                      codegenToSnakeCaseIdentifier(CodegenNamingLanguage::TypeScript, field->name));
         std::ostringstream variant;
         variant << "{ _tag: " << field->unionOptionIndex << "; " << fieldName << ": "
                 << tsFieldType(field->resolvedType, ctx) << "; }";
@@ -526,7 +307,7 @@ std::string compositeTypeName(const RuntimeFieldPlan& field, const EmitterContex
 
 std::string helperBindingNameTs(const std::string& helperSymbol)
 {
-    return "mlir_" + sanitizeTsIdent(helperSymbol);
+    return "mlir_" + codegenSanitizeIdentifier(CodegenNamingLanguage::TypeScript, helperSymbol);
 }
 
 std::string normalizeTsDeserScalarExpr(const RuntimeFieldPlan&        field,
@@ -722,7 +503,16 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
     const RuntimeHelperNameResolver helperNameResolver = [](const std::string& symbol) {
         return helperBindingNameTs(symbol);
     };
-    const auto  bodyPlan           = buildScriptedSectionBodyPlan(section, plan, sectionFacts, helperNameResolver);
+    auto bodyPlan = buildScriptedSectionBodyPlan(section, plan, sectionFacts, helperNameResolver);
+    for (auto& scriptedField : bodyPlan.fields)
+    {
+        const auto& semanticName = scriptedField.field.semanticFieldName.empty()
+                                       ? scriptedField.field.fieldName
+                                       : scriptedField.field.semanticFieldName;
+        scriptedField.field.fieldName =
+            codegenSanitizeIdentifier(CodegenNamingLanguage::TypeScript,
+                                      codegenToSnakeCaseIdentifier(CodegenNamingLanguage::TypeScript, semanticName));
+    }
     const auto& sectionHelperNames = bodyPlan.sectionHelpers;
 
     const auto emitSerializeHelperBindings = [&]() {
@@ -1688,19 +1478,24 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
 
     std::map<std::string, std::set<std::string>> importsByModule;
-    for (const auto& imp : collectCompositeImports(def.request, def.info, ctx))
-    {
-        importsByModule[imp.modulePath].insert(imp.typeName);
-    }
+    const auto                                   ownerPath         = ctx.relativeFilePath(def.info);
+    const auto                                   addSectionImports = [&](const SemanticSection& section) {
+        const auto dependencies = collectCompositeDependencies(section, def.info);
+        const auto imports      = projectCompositeImports(
+            dependencies,
+            [&](const SemanticTypeRef& ref) { return relativeImportPath(ownerPath, ctx.relativeFilePath(ref)); },
+            [&](const SemanticTypeRef& ref) { return ctx.typeName(ref); });
+        for (const auto& importSpec : imports)
+        {
+            importsByModule[importSpec.modulePath].insert(importSpec.typeName);
+        }
+    };
+    addSectionImports(def.request);
     if (def.response)
     {
-        for (const auto& imp : collectCompositeImports(*def.response, def.info, ctx))
-        {
-            importsByModule[imp.modulePath].insert(imp.typeName);
-        }
+        addSectionImports(*def.response);
     }
 
-    const auto                                   ownerPath = ctx.relativeFilePath(def.info);
     std::map<std::string, std::set<std::string>> runtimeImportsByModule;
     const auto                                   addRuntimeImportsForPlan = [&](const RuntimeSectionPlan* const plan) {
         if (plan == nullptr)
@@ -2191,8 +1986,9 @@ llvm::Error emitTs(const SemanticModule& semantic,
             return err;
         }
     }
-    if (auto err =
-            writeGeneratedFile(outRoot / "dsdl_runtime.ts", renderTsRuntimeModule(options.runtimeSpecialization), options.writePolicy))
+    if (auto err = writeGeneratedFile(outRoot / "dsdl_runtime.ts",
+                                      renderTsRuntimeModule(options.runtimeSpecialization),
+                                      options.writePolicy))
     {
         return err;
     }
@@ -2230,7 +2026,7 @@ llvm::Error emitTs(const SemanticModule& semantic,
         generatedRelativePaths.push_back(relPath);
 
         const auto fullPath = outRoot / relPath;
-        auto rendered = renderDefinitionFile(*def, ctx, loweredFacts);
+        auto       rendered = renderDefinitionFile(*def, ctx, loweredFacts);
         if (!rendered)
         {
             return rendered.takeError();

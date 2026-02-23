@@ -35,12 +35,16 @@
 #include <variant>
 
 #include "llvmdsdl/CodeGen/ArrayWirePlan.h"
+#include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
+#include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/HelperBindingRender.h"
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/NativeHelperContract.h"
 #include "llvmdsdl/CodeGen/NativeEmitterTraversal.h"
+#include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 #include "llvm/ADT/StringExtras.h"
@@ -63,133 +67,9 @@ class DiagnosticEngine;
 namespace
 {
 
-bool isGoKeyword(const std::string& name)
+std::string toExportedIdent(const llvm::StringRef in)
 {
-    static const std::set<std::string> kKeywords = {"break",    "default",     "func",   "interface", "select",
-                                                    "case",     "defer",       "go",     "map",       "struct",
-                                                    "chan",     "else",        "goto",   "package",   "switch",
-                                                    "const",    "fallthrough", "if",     "range",     "type",
-                                                    "continue", "for",         "import", "return",    "var"};
-    return kKeywords.contains(name);
-}
-
-std::string sanitizeGoIdent(std::string name)
-{
-    if (name.empty())
-    {
-        return "_";
-    }
-    for (char& c : name)
-    {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
-        {
-            c = '_';
-        }
-    }
-    if (std::isdigit(static_cast<unsigned char>(name.front())))
-    {
-        name.insert(name.begin(), '_');
-    }
-    if (isGoKeyword(name))
-    {
-        name += "_";
-    }
-    return name;
-}
-
-std::string toSnakeCase(const std::string& in)
-{
-    std::string out;
-    out.reserve(in.size() + 8);
-
-    bool prevUnderscore = false;
-    for (std::size_t i = 0; i < in.size(); ++i)
-    {
-        const char c    = in[i];
-        const char prev = (i > 0) ? in[i - 1] : '\0';
-        const char next = (i + 1 < in.size()) ? in[i + 1] : '\0';
-        if (!std::isalnum(static_cast<unsigned char>(c)))
-        {
-            if (!out.empty() && !prevUnderscore)
-            {
-                out.push_back('_');
-                prevUnderscore = true;
-            }
-            continue;
-        }
-
-        if (std::isupper(static_cast<unsigned char>(c)))
-        {
-            const bool boundary =
-                std::islower(static_cast<unsigned char>(prev)) ||
-                (std::isupper(static_cast<unsigned char>(prev)) && std::islower(static_cast<unsigned char>(next)));
-            if (!out.empty() && !prevUnderscore && boundary)
-            {
-                out.push_back('_');
-            }
-            out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-            prevUnderscore = false;
-        }
-        else
-        {
-            out.push_back(c);
-            prevUnderscore = (c == '_');
-        }
-    }
-
-    if (out.empty())
-    {
-        out = "_";
-    }
-    if (std::isdigit(static_cast<unsigned char>(out.front())))
-    {
-        out.insert(out.begin(), '_');
-    }
-    return sanitizeGoIdent(out);
-}
-
-std::string toUpperSnake(const std::string& in)
-{
-    auto out = toSnakeCase(in);
-    for (char& c : out)
-    {
-        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-    }
-    return out;
-}
-
-std::string toExportedIdent(const std::string& in)
-{
-    std::string out;
-    out.reserve(in.size() + 8);
-    bool upperNext = true;
-    for (char c : in)
-    {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
-        {
-            upperNext = true;
-            continue;
-        }
-        if (c == '_')
-        {
-            upperNext = true;
-            continue;
-        }
-        if (upperNext)
-        {
-            out.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
-            upperNext = false;
-        }
-        else
-        {
-            out.push_back(c);
-        }
-    }
-    if (out.empty())
-    {
-        out = "X";
-    }
-    out = sanitizeGoIdent(out);
+    auto out = codegenToPascalCaseIdentifier(CodegenNamingLanguage::Go, in);
     if (!std::isupper(static_cast<unsigned char>(out.front())))
     {
         out.front() = static_cast<char>(std::toupper(static_cast<unsigned char>(out.front())));
@@ -206,7 +86,7 @@ std::string packagePathFromComponents(const std::vector<std::string>& components
         {
             out += "/";
         }
-        out += toSnakeCase(c);
+        out += codegenToSnakeCaseIdentifier(CodegenNamingLanguage::Go, c);
     }
     return out;
 }
@@ -219,7 +99,7 @@ std::string packageNameFromPath(const std::string& path)
     }
     const auto split = path.find_last_of('/');
     const auto leaf  = split == std::string::npos ? path : path.substr(split + 1);
-    auto       out   = sanitizeGoIdent(leaf);
+    auto       out   = codegenSanitizeIdentifier(CodegenNamingLanguage::Go, leaf);
     if (out.empty())
     {
         out = "rootdsdl";
@@ -229,67 +109,17 @@ std::string packageNameFromPath(const std::string& path)
 
 std::string unsignedStorageType(const std::uint32_t bitLength)
 {
-    switch (scalarStorageBits(bitLength))
-    {
-    case 8:
-        return "uint8";
-    case 16:
-        return "uint16";
-    case 32:
-        return "uint32";
-    default:
-        return "uint64";
-    }
+    return renderUnsignedStorageToken(StorageTokenLanguage::Go, bitLength);
 }
 
 std::string signedStorageType(const std::uint32_t bitLength)
 {
-    switch (scalarStorageBits(bitLength))
-    {
-    case 8:
-        return "int8";
-    case 16:
-        return "int16";
-    case 32:
-        return "int32";
-    default:
-        return "int64";
-    }
+    return renderSignedStorageToken(StorageTokenLanguage::Go, bitLength);
 }
 
 std::string goConstValue(const Value& value)
 {
-    if (const auto* b = std::get_if<bool>(&value.data))
-    {
-        return *b ? "true" : "false";
-    }
-    if (const auto* r = std::get_if<Rational>(&value.data))
-    {
-        if (r->isInteger())
-        {
-            return std::to_string(r->asInteger().value());
-        }
-        std::ostringstream out;
-        out << "(" << r->numerator() << " / " << r->denominator() << ")";
-        return out.str();
-    }
-    if (const auto* s = std::get_if<std::string>(&value.data))
-    {
-        std::string escaped;
-        escaped.reserve(s->size() + 2);
-        escaped.push_back('"');
-        for (char c : *s)
-        {
-            if (c == '\\' || c == '"')
-            {
-                escaped.push_back('\\');
-            }
-            escaped.push_back(c);
-        }
-        escaped.push_back('"');
-        return escaped;
-    }
-    return value.str();
+    return renderConstantLiteral(ConstantLiteralLanguage::Go, value);
 }
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
@@ -301,21 +131,13 @@ class EmitterContext final
 {
 public:
     explicit EmitterContext(const SemanticModule& semantic)
+        : index_(semantic)
     {
-        for (const auto& def : semantic.definitions)
-        {
-            byKey_.emplace(loweredTypeKey(def.info.fullName, def.info.majorVersion, def.info.minorVersion), &def);
-        }
     }
 
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
     {
-        const auto it = byKey_.find(loweredTypeKey(ref.fullName, ref.majorVersion, ref.minorVersion));
-        if (it == byKey_.end())
-        {
-            return nullptr;
-        }
-        return it->second;
+        return index_.find(ref);
     }
 
     std::string packagePath(const DiscoveredDefinition& info) const
@@ -334,8 +156,8 @@ public:
 
     std::string goTypeName(const DiscoveredDefinition& info) const
     {
-        return toExportedIdent(info.shortName) + "_" + std::to_string(info.majorVersion) + "_" +
-               std::to_string(info.minorVersion);
+        return codegenToPascalCaseIdentifier(CodegenNamingLanguage::Go, info.shortName) + "_" +
+               std::to_string(info.majorVersion) + "_" + std::to_string(info.minorVersion);
     }
 
     std::string goTypeName(const SemanticTypeRef& ref) const
@@ -353,12 +175,12 @@ public:
 
     std::string goFileName(const DiscoveredDefinition& info) const
     {
-        return toSnakeCase(info.shortName) + "_" + std::to_string(info.majorVersion) + "_" +
-               std::to_string(info.minorVersion) + ".go";
+        return codegenToSnakeCaseIdentifier(CodegenNamingLanguage::Go, info.shortName) + "_" +
+               std::to_string(info.majorVersion) + "_" + std::to_string(info.minorVersion) + ".go";
     }
 
 private:
-    std::unordered_map<std::string, const SemanticDefinition*> byKey_;
+    DefinitionIndex index_;
 };
 
 void collectSectionDependencies(const SemanticSection& section, std::set<std::string>& out)
@@ -409,7 +231,8 @@ std::map<std::string, std::string> computeImportAliases(const SemanticDefinition
         {
             continue;
         }
-        auto alias = "pkg_" + sanitizeGoIdent(llvm::join(ref.namespaceComponents, "_"));
+        auto alias =
+            "pkg_" + codegenSanitizeIdentifier(CodegenNamingLanguage::Go, llvm::join(ref.namespaceComponents, "_"));
         if (alias == "pkg_")
         {
             alias = "pkg_dep";
@@ -651,7 +474,7 @@ private:
 
     std::string helperBindingName(const std::string& helperSymbol) const
     {
-        return "mlir_" + sanitizeGoIdent(helperSymbol);
+        return "mlir_" + codegenSanitizeIdentifier(CodegenNamingLanguage::Go, helperSymbol);
     }
 
     void emitSerializeMlirHelperBindings(std::ostringstream&             out,
@@ -1228,7 +1051,7 @@ void emitSectionType(std::ostringstream&                       out,
                      const std::map<std::string, std::string>& importAliases,
                      const LoweredSectionFacts*                sectionFacts)
 {
-    const auto typeConstPrefix = toUpperSnake(typeName);
+    const auto typeConstPrefix = codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Go, typeName);
     emitLine(out, 0, "const " + typeConstPrefix + "_FULL_NAME = \"" + fullName + "\"");
     emitLine(out,
              0,
@@ -1257,7 +1080,11 @@ void emitSectionType(std::ostringstream&                       out,
 
     for (const auto& c : section.constants)
     {
-        emitLine(out, 0, "const " + typeConstPrefix + "_" + toUpperSnake(c.name) + " = " + goConstValue(c.value));
+        emitLine(out,
+                 0,
+                 "const " + typeConstPrefix + "_" +
+                     codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Go, c.name) + " = " +
+                     goConstValue(c.value));
     }
     out << "\n";
 

@@ -7,6 +7,10 @@ add_executable(llvmdsdl-unit-tests
   RuntimeTests.cpp
   ArrayWirePlanTests.cpp
   CodegenDiagnosticTextTests.cpp
+  ConstantLiteralRenderTests.cpp
+  CompositeImportGraphTests.cpp
+  DefinitionIndexTests.cpp
+  DefinitionPathProjectionTests.cpp
   NativeHelperContractTests.cpp
   LoweredBodyPlanTests.cpp
   LoweredRenderIRTests.cpp
@@ -16,11 +20,13 @@ add_executable(llvmdsdl-unit-tests
   ScriptedBodyPlanTests.cpp
   HelperBindingRenderTests.cpp
   RuntimeHelperBindingsTests.cpp
+  NamingPolicyTests.cpp
   RuntimeLoweredPlanTests.cpp
   RuntimeLoweredOrderingTests.cpp
   HelperSymbolResolverTests.cpp
   WireLayoutFactsTests.cpp
   TypeStorageTests.cpp
+  StorageTypeTokensTests.cpp
   LoweredMetadataHardeningTests.cpp
   LspDocumentStoreTests.cpp
   LspRequestSchedulerTests.cpp

@@ -5,12 +5,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <llvm/Support/Error.h>
 #include <iostream>
-#include <string_view>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -62,21 +62,50 @@ bool hasErrorContaining(const llvmdsdl::DiagnosticEngine& diag, std::string_view
     return false;
 }
 
+std::optional<llvmdsdl::Value> evaluateAssertExpression(const std::string&                   expression,
+                                                        llvmdsdl::DiagnosticEngine&          diag,
+                                                        const llvmdsdl::ValueEnv&            env      = {},
+                                                        const llvmdsdl::TypeAttributeResolver* resolver = nullptr)
+{
+    auto expr = parseAssertExpression(expression, diag);
+    if (!expr)
+    {
+        return std::nullopt;
+    }
+    return llvmdsdl::evaluateExpression(*expr, env, diag, expr->location, resolver);
+}
+
+bool expectRational(const std::optional<llvmdsdl::Value>& value, const llvmdsdl::Rational& expected)
+{
+    return value.has_value() && std::holds_alternative<llvmdsdl::Rational>(value->data) &&
+           std::get<llvmdsdl::Rational>(value->data) == expected;
+}
+
+bool expectBool(const std::optional<llvmdsdl::Value>& value, const bool expected)
+{
+    return value.has_value() && std::holds_alternative<bool>(value->data) && std::get<bool>(value->data) == expected;
+}
+
+bool expectString(const std::optional<llvmdsdl::Value>& value, const std::string& expected)
+{
+    return value.has_value() && std::holds_alternative<std::string>(value->data) &&
+           std::get<std::string>(value->data) == expected;
+}
+
+bool expectSet(const std::optional<llvmdsdl::Value>& value, const std::set<llvmdsdl::Rational>& expected)
+{
+    return value.has_value() && std::holds_alternative<llvmdsdl::Value::Set>(value->data) &&
+           std::get<llvmdsdl::Value::Set>(value->data) == expected;
+}
+
 }  // namespace
 
 bool runEvaluatorTests()
 {
     {
         llvmdsdl::DiagnosticEngine diag;
-        auto                       expr = parseAssertExpression("Foo.1.0.MAX", diag);
-        if (!expr)
-        {
-            std::cerr << "failed to parse evaluator expression\n";
-            return false;
-        }
-
         llvmdsdl::ValueEnv env;
-        auto               value = llvmdsdl::evaluateExpression(*expr, env, diag, expr->location, nullptr);
+        auto               value = evaluateAssertExpression("Foo.1.0.MAX", diag, env, nullptr);
         if (value)
         {
             std::cerr << "expected evaluation without resolver to fail\n";
@@ -91,13 +120,6 @@ bool runEvaluatorTests()
 
     {
         llvmdsdl::DiagnosticEngine diag;
-        auto                       expr = parseAssertExpression("Foo.1.0.MAX", diag);
-        if (!expr)
-        {
-            std::cerr << "failed to parse resolver evaluator expression\n";
-            return false;
-        }
-
         bool                            resolverCalled = false;
         llvmdsdl::TypeAttributeResolver resolver =
             [&](const llvmdsdl::TypeExprAST& type,
@@ -113,9 +135,8 @@ bool runEvaluatorTests()
         };
 
         llvmdsdl::ValueEnv env;
-        auto               value = llvmdsdl::evaluateExpression(*expr, env, diag, expr->location, &resolver);
-        if (!value || !std::holds_alternative<llvmdsdl::Rational>(value->data) ||
-            std::get<llvmdsdl::Rational>(value->data) != llvmdsdl::Rational(42, 1))
+        auto               value = evaluateAssertExpression("Foo.1.0.MAX", diag, env, &resolver);
+        if (!expectRational(value, llvmdsdl::Rational(42, 1)))
         {
             std::cerr << "resolver-based evaluation produced unexpected result\n";
             return false;
@@ -129,12 +150,45 @@ bool runEvaluatorTests()
 
     {
         llvmdsdl::DiagnosticEngine diag;
-        auto                       expr = parseAssertExpression("Foo.1.0._extent_", diag);
-        if (!expr)
+        bool                            resolverCalled = false;
+        llvmdsdl::TypeAttributeResolver resolver =
+            [&](const llvmdsdl::TypeExprAST&, const std::string&, const llvmdsdl::SourceLocation&) {
+                resolverCalled = true;
+                return std::optional<llvmdsdl::Value>{};
+            };
+
+        llvmdsdl::ValueEnv env;
+        auto               value = evaluateAssertExpression("Foo.1.0.MAX", diag, env, &resolver);
+        if (value)
         {
-            std::cerr << "failed to parse _extent_ evaluator expression\n";
+            std::cerr << "expected resolver nullopt response to fail evaluation\n";
             return false;
         }
+        if (!resolverCalled)
+        {
+            std::cerr << "resolver was not invoked for nullopt fallback path\n";
+            return false;
+        }
+        if (!hasErrorContaining(diag, "failed to evaluate expression"))
+        {
+            std::cerr << "expected fallback evaluation failure diagnostic\n";
+            return false;
+        }
+    }
+
+    {
+        llvmdsdl::DiagnosticEngine diag;
+        llvmdsdl::ValueEnv         env;
+        auto                       value = evaluateAssertExpression("Foo.1.0._extent_", diag, env, nullptr);
+        if (!expectRational(value, llvmdsdl::Rational(0, 1)))
+        {
+            std::cerr << "default _extent_ evaluator path produced unexpected result\n";
+            return false;
+        }
+    }
+
+    {
+        llvmdsdl::DiagnosticEngine diag;
 
         llvmdsdl::TypeAttributeResolver resolver =
             [&](const llvmdsdl::TypeExprAST&,
@@ -148,11 +202,331 @@ bool runEvaluatorTests()
         };
 
         llvmdsdl::ValueEnv env;
-        auto               value = llvmdsdl::evaluateExpression(*expr, env, diag, expr->location, &resolver);
-        if (!value || !std::holds_alternative<llvmdsdl::Rational>(value->data) ||
-            std::get<llvmdsdl::Rational>(value->data) != llvmdsdl::Rational(128, 1))
+        auto               value = evaluateAssertExpression("Foo.1.0._extent_", diag, env, &resolver);
+        if (!expectRational(value, llvmdsdl::Rational(128, 1)))
         {
             std::cerr << "_extent_ resolver evaluation produced unexpected result\n";
+            return false;
+        }
+    }
+
+    {
+        llvmdsdl::DiagnosticEngine diag;
+        llvmdsdl::ValueEnv         env;
+        auto                       product = evaluateAssertExpression("2 + 3 * 4", diag, env, nullptr);
+        if (!expectRational(product, llvmdsdl::Rational(14, 1)))
+        {
+            std::cerr << "arithmetic precedence evaluation produced unexpected result\n";
+            return false;
+        }
+        auto quotient = evaluateAssertExpression("5 / 2", diag, env, nullptr);
+        if (!expectRational(quotient, llvmdsdl::Rational(5, 2)))
+        {
+            std::cerr << "rational division evaluation produced unexpected result\n";
+            return false;
+        }
+        auto modulus = evaluateAssertExpression("7 % 4", diag, env, nullptr);
+        if (!expectRational(modulus, llvmdsdl::Rational(3, 1)))
+        {
+            std::cerr << "modulus evaluation produced unexpected result\n";
+            return false;
+        }
+        auto power = evaluateAssertExpression("2 ** 3", diag, env, nullptr);
+        if (!expectRational(power, llvmdsdl::Rational(8, 1)))
+        {
+            std::cerr << "integer power evaluation produced unexpected result\n";
+            return false;
+        }
+
+        auto invalidPower = evaluateAssertExpression("2 ** -1", diag, env, nullptr);
+        if (invalidPower || !hasErrorContaining(diag, "invalid rational operation"))
+        {
+            std::cerr << "expected invalid rational operation for negative exponent\n";
+            return false;
+        }
+    }
+
+    {
+        llvmdsdl::DiagnosticEngine diag;
+        llvmdsdl::ValueEnv         env;
+        auto                       conjunction = evaluateAssertExpression("true && false", diag, env, nullptr);
+        if (!expectBool(conjunction, false))
+        {
+            std::cerr << "logical and evaluation produced unexpected result\n";
+            return false;
+        }
+        auto disjunction = evaluateAssertExpression("true || false", diag, env, nullptr);
+        if (!expectBool(disjunction, true))
+        {
+            std::cerr << "logical or evaluation produced unexpected result\n";
+            return false;
+        }
+        auto inequality = evaluateAssertExpression("true != false", diag, env, nullptr);
+        if (!expectBool(inequality, true))
+        {
+            std::cerr << "boolean inequality evaluation produced unexpected result\n";
+            return false;
+        }
+        auto logicalNot = evaluateAssertExpression("!false", diag, env, nullptr);
+        if (!expectBool(logicalNot, true))
+        {
+            std::cerr << "logical not evaluation produced unexpected result\n";
+            return false;
+        }
+
+        auto invalidNot = evaluateAssertExpression("!1", diag, env, nullptr);
+        if (invalidNot || !hasErrorContaining(diag, "logical not requires boolean operand"))
+        {
+            std::cerr << "expected logical-not operand diagnostic\n";
+            return false;
+        }
+    }
+
+    {
+        llvmdsdl::DiagnosticEngine diag;
+        llvmdsdl::ValueEnv         env;
+        auto                       concat = evaluateAssertExpression("\"ab\" + \"cd\"", diag, env, nullptr);
+        if (!expectString(concat, "abcd"))
+        {
+            std::cerr << "string concatenation produced unexpected result\n";
+            return false;
+        }
+        auto equal = evaluateAssertExpression("\"ab\" == \"ab\"", diag, env, nullptr);
+        if (!expectBool(equal, true))
+        {
+            std::cerr << "string equality produced unexpected result\n";
+            return false;
+        }
+
+        auto mismatch = evaluateAssertExpression("\"ab\" + 1", diag, env, nullptr);
+        if (mismatch || !hasErrorContaining(diag, "unsupported operand types: string and rational"))
+        {
+            std::cerr << "expected unsupported operand type diagnostic for string+rational\n";
+            return false;
+        }
+    }
+
+    {
+        llvmdsdl::DiagnosticEngine diag;
+        llvmdsdl::ValueEnv         env;
+        auto                       setUnion = evaluateAssertExpression("{1, 2} | {2, 3}", diag, env, nullptr);
+        if (!expectSet(setUnion, {llvmdsdl::Rational(1, 1), llvmdsdl::Rational(2, 1), llvmdsdl::Rational(3, 1)}))
+        {
+            std::cerr << "set union evaluation produced unexpected result\n";
+            return false;
+        }
+        auto setIntersection = evaluateAssertExpression("{1, 2} & {2, 3}", diag, env, nullptr);
+        if (!expectSet(setIntersection, {llvmdsdl::Rational(2, 1)}))
+        {
+            std::cerr << "set intersection evaluation produced unexpected result\n";
+            return false;
+        }
+        auto setSymDiff = evaluateAssertExpression("{1, 2} ^ {2, 3}", diag, env, nullptr);
+        if (!expectSet(setSymDiff, {llvmdsdl::Rational(1, 1), llvmdsdl::Rational(3, 1)}))
+        {
+            std::cerr << "set symmetric difference evaluation produced unexpected result\n";
+            return false;
+        }
+        auto setAdd = evaluateAssertExpression("{1, 2} + {10}", diag, env, nullptr);
+        if (!expectSet(setAdd, {llvmdsdl::Rational(11, 1), llvmdsdl::Rational(12, 1)}))
+        {
+            std::cerr << "set elementwise add evaluation produced unexpected result\n";
+            return false;
+        }
+        auto setPlusScalar = evaluateAssertExpression("{1, 2} + 3", diag, env, nullptr);
+        if (!expectSet(setPlusScalar, {llvmdsdl::Rational(4, 1), llvmdsdl::Rational(5, 1)}))
+        {
+            std::cerr << "set plus scalar evaluation produced unexpected result\n";
+            return false;
+        }
+        auto scalarPlusSet = evaluateAssertExpression("3 + {1, 2}", diag, env, nullptr);
+        if (!expectSet(scalarPlusSet, {llvmdsdl::Rational(4, 1), llvmdsdl::Rational(5, 1)}))
+        {
+            std::cerr << "scalar plus set evaluation produced unexpected result\n";
+            return false;
+        }
+        auto strictSubset = evaluateAssertExpression("{1, 2} < {1, 2, 3}", diag, env, nullptr);
+        if (!expectBool(strictSubset, true))
+        {
+            std::cerr << "strict subset relation evaluation produced unexpected result\n";
+            return false;
+        }
+        auto strictSuperset = evaluateAssertExpression("{1, 2, 3} > {1, 2}", diag, env, nullptr);
+        if (!expectBool(strictSuperset, true))
+        {
+            std::cerr << "strict superset relation evaluation produced unexpected result\n";
+            return false;
+        }
+
+        auto invalidSetDivide = evaluateAssertExpression("{1} / {0}", diag, env, nullptr);
+        if (invalidSetDivide || !hasErrorContaining(diag, "invalid elementwise set operation"))
+        {
+            std::cerr << "expected invalid elementwise set operation diagnostic\n";
+            return false;
+        }
+    }
+
+    {
+        llvmdsdl::DiagnosticEngine diag;
+        llvmdsdl::ValueEnv         env;
+        auto                       setCount = evaluateAssertExpression("{1, 4, 2}.count", diag, env, nullptr);
+        if (!expectRational(setCount, llvmdsdl::Rational(3, 1)))
+        {
+            std::cerr << "set .count attribute produced unexpected result\n";
+            return false;
+        }
+        auto setMin = evaluateAssertExpression("{1, 4, 2}.min", diag, env, nullptr);
+        if (!expectRational(setMin, llvmdsdl::Rational(1, 1)))
+        {
+            std::cerr << "set .min attribute produced unexpected result\n";
+            return false;
+        }
+        auto setMax = evaluateAssertExpression("{1, 4, 2}.max", diag, env, nullptr);
+        if (!expectRational(setMax, llvmdsdl::Rational(4, 1)))
+        {
+            std::cerr << "set .max attribute produced unexpected result\n";
+            return false;
+        }
+
+        auto emptySetMin = evaluateAssertExpression("{}.min", diag, env, nullptr);
+        if (emptySetMin || !hasErrorContaining(diag, "cannot access set min/max on an empty set literal"))
+        {
+            std::cerr << "expected empty-set min/max diagnostic\n";
+            return false;
+        }
+        auto unknownSetAttribute = evaluateAssertExpression("{1}.unknown", diag, env, nullptr);
+        if (unknownSetAttribute ||
+            (!hasErrorContaining(diag, "attribute operator is not defined on set<rational>") && !diag.hasErrors()))
+        {
+            std::cerr << "expected unknown set attribute diagnostic\n";
+            return false;
+        }
+        const llvmdsdl::SourceLocation loc{"evaluator_attr_test.dsdl", 1, 1};
+
+        auto lhsBool      = std::make_shared<llvmdsdl::ExprAST>();
+        lhsBool->location = loc;
+        lhsBool->value    = true;
+
+        auto rhsIdentifier      = std::make_shared<llvmdsdl::ExprAST>();
+        rhsIdentifier->location = loc;
+        rhsIdentifier->value    = llvmdsdl::ExprAST::Identifier{"count"};
+
+        llvmdsdl::ExprAST wrongTargetExpr;
+        wrongTargetExpr.location = loc;
+        wrongTargetExpr.value =
+            llvmdsdl::ExprAST::Binary{llvmdsdl::BinaryOp::Attribute, lhsBool, rhsIdentifier};
+
+        auto wrongAttributeTarget = llvmdsdl::evaluateExpression(wrongTargetExpr, env, diag, loc, nullptr);
+        if (wrongAttributeTarget || !hasErrorContaining(diag, "attribute operator is not defined on bool"))
+        {
+            std::cerr << "expected unsupported attribute target diagnostic\n";
+            return false;
+        }
+
+        auto rhsRational      = std::make_shared<llvmdsdl::ExprAST>();
+        rhsRational->location = loc;
+        rhsRational->value    = llvmdsdl::Rational(1, 1);
+
+        llvmdsdl::ExprAST wrongRhsExpr;
+        wrongRhsExpr.location = loc;
+        wrongRhsExpr.value = llvmdsdl::ExprAST::Binary{llvmdsdl::BinaryOp::Attribute, lhsBool, rhsRational};
+
+        auto wrongAttributeRhs = llvmdsdl::evaluateExpression(wrongRhsExpr, env, diag, loc, nullptr);
+        if (wrongAttributeRhs || !hasErrorContaining(diag, "attribute operator expects identifier on RHS"))
+        {
+            std::cerr << "expected attribute RHS identifier diagnostic\n";
+            return false;
+        }
+    }
+
+    {
+        llvmdsdl::DiagnosticEngine diag;
+        llvmdsdl::ValueEnv         env;
+        env.insert_or_assign("answer", llvmdsdl::Value{llvmdsdl::Rational(41, 1)});
+
+        auto withEnv = evaluateAssertExpression("answer + 1", diag, env, nullptr);
+        if (!expectRational(withEnv, llvmdsdl::Rational(42, 1)))
+        {
+            std::cerr << "identifier lookup from environment produced unexpected result\n";
+            return false;
+        }
+
+        auto undefinedIdentifier = evaluateAssertExpression("missing_symbol + 1", diag, env, nullptr);
+        if (undefinedIdentifier || !hasErrorContaining(diag, "undefined identifier: missing_symbol"))
+        {
+            std::cerr << "expected undefined identifier diagnostic\n";
+            return false;
+        }
+    }
+
+    {
+        llvmdsdl::DiagnosticEngine diag;
+        llvmdsdl::ValueEnv         env;
+
+        auto unaryTypeError = evaluateAssertExpression("-true", diag, env, nullptr);
+        if (unaryTypeError || !hasErrorContaining(diag, "unary +/- requires rational operand"))
+        {
+            std::cerr << "expected unary rational operand diagnostic\n";
+            return false;
+        }
+
+        const llvmdsdl::SourceLocation setLoc{"evaluator_set_literal_test.dsdl", 1, 1};
+        auto                           rationalElem      = std::make_shared<llvmdsdl::ExprAST>();
+        rationalElem->location                         = setLoc;
+        rationalElem->value                            = llvmdsdl::Rational(1, 1);
+        auto boolElem                                   = std::make_shared<llvmdsdl::ExprAST>();
+        boolElem->location                              = setLoc;
+        boolElem->value                                 = true;
+
+        llvmdsdl::ExprAST invalidSetExpr;
+        invalidSetExpr.location = setLoc;
+        invalidSetExpr.value = llvmdsdl::ExprAST::SetLiteral{{rationalElem, boolElem}};
+
+        auto invalidSetLiteral = llvmdsdl::evaluateExpression(invalidSetExpr, env, diag, setLoc, nullptr);
+        if (invalidSetLiteral || !hasErrorContaining(diag, "set literal elements must evaluate to rational"))
+        {
+            std::cerr << "expected set-literal element type diagnostic\n";
+            return false;
+        }
+    }
+
+    {
+        llvmdsdl::DiagnosticEngine diag;
+        llvmdsdl::ValueEnv         env;
+        auto                       boolValue = evaluateAssertExpression("true", diag, env, nullptr);
+        auto                       rationalValue = evaluateAssertExpression("5", diag, env, nullptr);
+        auto                       stringValue = evaluateAssertExpression("\"text\"", diag, env, nullptr);
+        auto                       setValue = evaluateAssertExpression("{2, 1}", diag, env, nullptr);
+        auto                       typeValue = evaluateAssertExpression("Foo.1.0", diag, env, nullptr);
+        if (!boolValue || !rationalValue || !stringValue || !setValue || !typeValue)
+        {
+            std::cerr << "failed to evaluate values for string/type formatting coverage\n";
+            return false;
+        }
+
+        if (boolValue->typeName() != "bool" || boolValue->str() != "true")
+        {
+            std::cerr << "bool value formatting/typeName mismatch\n";
+            return false;
+        }
+        if (rationalValue->typeName() != "rational" || rationalValue->str() != "5")
+        {
+            std::cerr << "rational value formatting/typeName mismatch\n";
+            return false;
+        }
+        if (stringValue->typeName() != "string" || stringValue->str() != "'text'")
+        {
+            std::cerr << "string value formatting/typeName mismatch\n";
+            return false;
+        }
+        if (setValue->typeName() != "set<rational>" || setValue->str() != "{1, 2}")
+        {
+            std::cerr << "set value formatting/typeName mismatch\n";
+            return false;
+        }
+        if (typeValue->typeName() != "metaserializable" || typeValue->str() != "Foo.1.0")
+        {
+            std::cerr << "type-literal value formatting/typeName mismatch\n";
             return false;
         }
     }

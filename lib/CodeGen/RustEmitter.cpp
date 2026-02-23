@@ -19,7 +19,6 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
 #include <cassert>
-#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -36,13 +35,17 @@
 #include <variant>
 
 #include "llvmdsdl/CodeGen/ArrayWirePlan.h"
+#include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
+#include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/HelperBindingRender.h"
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/NativeHelperContract.h"
 #include "llvmdsdl/CodeGen/NativeEmitterTraversal.h"
 #include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
+#include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 #include "llvm/Support/raw_ostream.h"
@@ -62,106 +65,6 @@ class DiagnosticEngine;
 namespace
 {
 
-bool isRustKeyword(const std::string& name)
-{
-    static const std::set<std::string> kKeywords = {"as",      "break",   "const",    "continue", "crate",  "else",
-                                                    "enum",    "extern",  "false",    "fn",       "for",    "if",
-                                                    "impl",    "in",      "let",      "loop",     "match",  "mod",
-                                                    "move",    "mut",     "pub",      "ref",      "return", "self",
-                                                    "Self",    "static",  "struct",   "super",    "trait",  "true",
-                                                    "type",    "unsafe",  "use",      "where",    "while",  "async",
-                                                    "await",   "dyn",     "abstract", "become",   "box",    "do",
-                                                    "final",   "macro",   "override", "priv",     "try",    "typeof",
-                                                    "unsized", "virtual", "yield"};
-    return kKeywords.contains(name);
-}
-
-std::string sanitizeRustIdent(std::string name)
-{
-    if (name.empty())
-    {
-        return "_";
-    }
-    for (char& c : name)
-    {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
-        {
-            c = '_';
-        }
-    }
-    if (std::isdigit(static_cast<unsigned char>(name.front())))
-    {
-        name.insert(name.begin(), '_');
-    }
-    if (isRustKeyword(name))
-    {
-        name += '_';
-    }
-    return name;
-}
-
-std::string toSnakeCase(const std::string& in)
-{
-    std::string out;
-    out.reserve(in.size() + 8);
-
-    bool prevUnderscore = false;
-    for (std::size_t i = 0; i < in.size(); ++i)
-    {
-        const char c    = in[i];
-        const char prev = (i > 0) ? in[i - 1] : '\0';
-        const char next = (i + 1 < in.size()) ? in[i + 1] : '\0';
-        if (!std::isalnum(static_cast<unsigned char>(c)))
-        {
-            if (!out.empty() && !prevUnderscore)
-            {
-                out.push_back('_');
-                prevUnderscore = true;
-            }
-            continue;
-        }
-
-        if (std::isupper(static_cast<unsigned char>(c)))
-        {
-            const bool boundary =
-                std::islower(static_cast<unsigned char>(prev)) ||
-                (std::isupper(static_cast<unsigned char>(prev)) && std::islower(static_cast<unsigned char>(next)));
-            if (!out.empty() && !prevUnderscore && boundary)
-            {
-                out.push_back('_');
-            }
-            out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-            prevUnderscore = false;
-        }
-        else
-        {
-            out.push_back(c);
-            prevUnderscore = (c == '_');
-        }
-    }
-
-    if (out.empty())
-    {
-        out = "_";
-    }
-    if (std::isdigit(static_cast<unsigned char>(out.front())))
-    {
-        out.insert(out.begin(), '_');
-    }
-    out = sanitizeRustIdent(out);
-    return out;
-}
-
-std::string toUpperSnake(const std::string& in)
-{
-    auto s = toSnakeCase(in);
-    for (char& c : s)
-    {
-        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-    }
-    return s;
-}
-
 std::string rustMemoryModeVariantPath(const RustEmitOptions& options)
 {
     if (options.memoryMode == RustMemoryMode::InlineThenPool)
@@ -173,67 +76,17 @@ std::string rustMemoryModeVariantPath(const RustEmitOptions& options)
 
 std::string unsignedStorageType(const std::uint32_t bitLength)
 {
-    switch (scalarStorageBits(bitLength))
-    {
-    case 8:
-        return "u8";
-    case 16:
-        return "u16";
-    case 32:
-        return "u32";
-    default:
-        return "u64";
-    }
+    return renderUnsignedStorageToken(StorageTokenLanguage::Rust, bitLength);
 }
 
 std::string signedStorageType(const std::uint32_t bitLength)
 {
-    switch (scalarStorageBits(bitLength))
-    {
-    case 8:
-        return "i8";
-    case 16:
-        return "i16";
-    case 32:
-        return "i32";
-    default:
-        return "i64";
-    }
+    return renderSignedStorageToken(StorageTokenLanguage::Rust, bitLength);
 }
 
 std::string rustConstValue(const Value& value)
 {
-    if (const auto* b = std::get_if<bool>(&value.data))
-    {
-        return *b ? "true" : "false";
-    }
-    if (const auto* r = std::get_if<Rational>(&value.data))
-    {
-        if (r->isInteger())
-        {
-            return std::to_string(r->asInteger().value());
-        }
-        std::ostringstream out;
-        out << "(" << r->numerator() << "f64 / " << r->denominator() << "f64)";
-        return out.str();
-    }
-    if (const auto* s = std::get_if<std::string>(&value.data))
-    {
-        std::string escaped;
-        escaped.reserve(s->size() + 2);
-        escaped.push_back('"');
-        for (char c : *s)
-        {
-            if (c == '\\' || c == '"')
-            {
-                escaped.push_back('\\');
-            }
-            escaped.push_back(c);
-        }
-        escaped.push_back('"');
-        return escaped;
-    }
-    return value.str();
+    return renderConstantLiteral(ConstantLiteralLanguage::Rust, value);
 }
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
@@ -245,27 +98,19 @@ class EmitterContext final
 {
 public:
     explicit EmitterContext(const SemanticModule& semantic)
+        : index_(semantic)
     {
-        for (const auto& def : semantic.definitions)
-        {
-            byKey_.emplace(loweredTypeKey(def.info.fullName, def.info.majorVersion, def.info.minorVersion), &def);
-        }
     }
 
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
     {
-        const auto it = byKey_.find(loweredTypeKey(ref.fullName, ref.majorVersion, ref.minorVersion));
-        if (it == byKey_.end())
-        {
-            return nullptr;
-        }
-        return it->second;
+        return index_.find(ref);
     }
 
     std::string rustModuleName(const DiscoveredDefinition& info) const
     {
-        return toSnakeCase(info.shortName) + "_" + std::to_string(info.majorVersion) + "_" +
-               std::to_string(info.minorVersion);
+        return codegenToSnakeCaseIdentifier(CodegenNamingLanguage::Rust, info.shortName) + "_" +
+               std::to_string(info.majorVersion) + "_" + std::to_string(info.minorVersion);
     }
 
     std::string rustTypeName(const DiscoveredDefinition& info) const
@@ -277,15 +122,15 @@ public:
             {
                 out += "_";
             }
-            out += sanitizeRustIdent(info.namespaceComponents[i]);
+            out += codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, info.namespaceComponents[i]);
         }
         if (!out.empty())
         {
             out += "_";
         }
-        out += sanitizeRustIdent(info.shortName);
+        out += codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, info.shortName);
         out += "_" + std::to_string(info.majorVersion) + "_" + std::to_string(info.minorVersion);
-        return sanitizeRustIdent(out);
+        return codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, out);
     }
 
     std::string rustTypeName(const SemanticTypeRef& ref) const
@@ -309,7 +154,7 @@ public:
         out << "crate";
         for (const auto& ns : ref.namespaceComponents)
         {
-            out << "::" << sanitizeRustIdent(ns);
+            out << "::" << codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, ns);
         }
 
         if (const auto* def = find(ref))
@@ -328,7 +173,7 @@ public:
     }
 
 private:
-    std::unordered_map<std::string, const SemanticDefinition*> byKey_;
+    DefinitionIndex index_;
 };
 
 std::string rustFieldBaseType(const SemanticFieldType& type, const EmitterContext& ctx)
@@ -446,7 +291,7 @@ public:
         };
         callbacks.onField = [this, &out](const PlannedFieldStep& fieldStep) {
             const auto* const field    = fieldStep.field;
-            const auto        fieldRef = "self." + sanitizeRustIdent(field->name);
+            const auto        fieldRef = "self." + codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, field->name);
             emitSerializeAny(out,
                              field->resolvedType,
                              fieldRef,
@@ -503,7 +348,7 @@ public:
         };
         callbacks.onField = [this, &out](const PlannedFieldStep& fieldStep) {
             const auto* const field    = fieldStep.field;
-            const auto        fieldRef = "self." + sanitizeRustIdent(field->name);
+            const auto        fieldRef = "self." + codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, field->name);
             emitDeserializeAny(out,
                                field->resolvedType,
                                fieldRef,
@@ -555,7 +400,7 @@ private:
 
     std::string helperBindingName(const std::string& helperSymbol) const
     {
-        return "mlir_" + sanitizeRustIdent(helperSymbol);
+        return "mlir_" + codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, helperSymbol);
     }
 
     void emitSerializeMlirHelperBindings(std::ostringstream&             out,
@@ -670,7 +515,7 @@ private:
             emitAlignSerialize(out, field.resolvedType.alignmentBits, indent + 2);
             emitSerializeAny(out,
                              field.resolvedType,
-                             "self." + sanitizeRustIdent(field.name),
+                             "self." + codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, field.name),
                              indent + 2,
                              step.arrayLengthPrefixBits,
                              step.fieldFacts);
@@ -713,7 +558,7 @@ private:
             emitAlignDeserialize(out, field.resolvedType.alignmentBits, indent + 2);
             emitDeserializeAny(out,
                                field.resolvedType,
-                               "self." + sanitizeRustIdent(field.name),
+                               "self." + codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, field.name),
                                indent + 2,
                                step.arrayLengthPrefixBits,
                                step.fieldFacts,
@@ -1228,8 +1073,9 @@ void emitSectionType(std::ostringstream&              out,
         {
             continue;
         }
-        const std::string baseName  = "__LLVMDSDL_POOL_CLASS_" + toUpperSnake(field.name);
-        std::string       constName = baseName;
+        const std::string baseName =
+            "__LLVMDSDL_POOL_CLASS_" + codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Rust, field.name);
+        std::string constName = baseName;
         for (std::uint32_t suffix = 1U; !usedPoolConstNames.insert(constName).second; ++suffix)
         {
             constName = baseName + "_" + std::to_string(suffix);
@@ -1249,7 +1095,10 @@ void emitSectionType(std::ostringstream&              out,
             continue;
         }
         ++fieldCount;
-        emitLine(out, 1, "pub " + sanitizeRustIdent(field.name) + ": " + rustFieldType(field.resolvedType, ctx) + ",");
+        emitLine(out,
+                 1,
+                 "pub " + codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, field.name) + ": " +
+                     rustFieldType(field.resolvedType, ctx) + ",");
     }
 
     if (section.isUnion)
@@ -1282,7 +1131,7 @@ void emitSectionType(std::ostringstream&              out,
             }
             emitLine(out,
                      3,
-                     sanitizeRustIdent(field.name) +
+                     codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, field.name) +
                          ": crate::dsdl_runtime::DsdlVec::with_contract("
                          "crate::dsdl_runtime::VarArrayMemoryContract::new("
                          "Self::__LLVMDSDL_MEMORY_MODE, "
@@ -1290,7 +1139,10 @@ void emitSectionType(std::ostringstream&              out,
                          classExpr + ")),");
             continue;
         }
-        emitLine(out, 3, sanitizeRustIdent(field.name) + ": " + defaultExpr(field.resolvedType, ctx) + ",");
+        emitLine(out,
+                 3,
+                 codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, field.name) + ": " +
+                     defaultExpr(field.resolvedType, ctx) + ",");
     }
     if (section.isUnion)
     {
@@ -1348,8 +1200,8 @@ void emitSectionType(std::ostringstream&              out,
     {
         emitLine(out,
                  1,
-                 "pub const " + toUpperSnake(c.name) + ": " + rustConstType(c.type, c.value) + " = " +
-                     rustConstValue(c.value) + ";");
+                 "pub const " + codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Rust, c.name) + ": " +
+                     rustConstType(c.type, c.value) + " = " + rustConstValue(c.value) + ";");
     }
     out << "\n";
 
@@ -1587,7 +1439,7 @@ llvm::Error emitRust(const SemanticModule&  semantic,
                                        "MLIR schema coverage validation failed for Rust emission");
     }
     std::filesystem::path outRoot(options.outDir);
-    std::filesystem::path srcRoot = outRoot / "src";
+    std::filesystem::path srcRoot          = outRoot / "src";
     const auto            selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
     if (options.emitCargoToml)
@@ -1624,7 +1476,7 @@ llvm::Error emitRust(const SemanticModule&  semantic,
         ns.reserve(def.info.namespaceComponents.size());
         for (const auto& c : def.info.namespaceComponents)
         {
-            ns.push_back(sanitizeRustIdent(c));
+            ns.push_back(codegenSanitizeIdentifier(CodegenNamingLanguage::Rust, c));
         }
 
         std::string dirRel;
@@ -1648,8 +1500,9 @@ llvm::Error emitRust(const SemanticModule&  semantic,
         {
             dir /= dirRel;
         }
-        if (auto err =
-                writeGeneratedFile(dir / (modName + ".rs"), renderDefinitionFile(def, ctx, loweredFacts, options), options.writePolicy))
+        if (auto err = writeGeneratedFile(dir / (modName + ".rs"),
+                                          renderDefinitionFile(def, ctx, loweredFacts, options),
+                                          options.writePolicy))
         {
             return err;
         }

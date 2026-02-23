@@ -43,6 +43,10 @@
 #include <variant>
 
 #include "llvmdsdl/CodeGen/TypeStorage.h"
+#include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
+#include "llvmdsdl/CodeGen/DefinitionIndex.h"
+#include "llvmdsdl/CodeGen/NamingPolicy.h"
+#include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 #include "llvmdsdl/Transforms/Passes.h"
 #include "mlir/Conversion/Passes.h"  // IWYU pragma: keep
 #include "mlir/Pass/PassManager.h"
@@ -65,42 +69,6 @@ namespace
 std::string typeKey(const std::string& name, std::uint32_t major, std::uint32_t minor)
 {
     return name + ":" + std::to_string(major) + ":" + std::to_string(minor);
-}
-
-bool isCKeyword(const std::string& name)
-{
-    static const std::set<std::string> kKeywords =
-        {"auto",       "break",     "case",           "char",          "const",    "continue", "default",  "do",
-         "double",     "else",      "enum",           "extern",        "float",    "for",      "goto",     "if",
-         "inline",     "int",       "long",           "register",      "restrict", "return",   "short",    "signed",
-         "sizeof",     "static",    "struct",         "switch",        "typedef",  "union",    "unsigned", "void",
-         "volatile",   "while",     "_Alignas",       "_Alignof",      "_Atomic",  "_Bool",    "_Complex", "_Generic",
-         "_Imaginary", "_Noreturn", "_Static_assert", "_Thread_local", "true",     "false"};
-    return kKeywords.contains(name);
-}
-
-std::string sanitizeIdentifier(std::string name)
-{
-    if (name.empty())
-    {
-        return "_";
-    }
-    for (char& c : name)
-    {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
-        {
-            c = '_';
-        }
-    }
-    if (std::isdigit(static_cast<unsigned char>(name.front())))
-    {
-        name.insert(name.begin(), '_');
-    }
-    if (isCKeyword(name))
-    {
-        name += '_';
-    }
-    return name;
 }
 
 std::string sanitizeMacroToken(std::string token)
@@ -181,13 +149,13 @@ std::string cTypeNameFromInfo(const DiscoveredDefinition& info)
         {
             out += "__";
         }
-        out += sanitizeIdentifier(info.namespaceComponents[i]);
+        out += codegenSanitizeIdentifier(CodegenNamingLanguage::C, info.namespaceComponents[i]);
     }
     if (!out.empty())
     {
         out += "__";
     }
-    out += sanitizeIdentifier(info.shortName);
+    out += codegenSanitizeIdentifier(CodegenNamingLanguage::C, info.shortName);
     return out;
 }
 
@@ -211,98 +179,30 @@ std::string headerGuard(const DiscoveredDefinition& info)
 
 std::string valueToCExpr(const Value& value)
 {
-    if (const auto* b = std::get_if<bool>(&value.data))
-    {
-        return *b ? "true" : "false";
-    }
-    if (const auto* r = std::get_if<Rational>(&value.data))
-    {
-        if (r->isInteger())
-        {
-            return std::to_string(r->asInteger().value());
-        }
-        std::ostringstream out;
-        out << "((double)" << r->numerator() << "/(double)" << r->denominator() << ")";
-        return out.str();
-    }
-    if (const auto* s = std::get_if<std::string>(&value.data))
-    {
-        if (s->size() == 1)
-        {
-            const char c = (*s)[0];
-            if (c == '\\' || c == '\'')
-            {
-                return std::string("'\\") + c + "'";
-            }
-            return std::string("'") + c + "'";
-        }
-        std::string escaped;
-        escaped.reserve(s->size() + 2);
-        escaped.push_back('"');
-        for (char c : *s)
-        {
-            if (c == '\\' || c == '"')
-            {
-                escaped.push_back('\\');
-            }
-            escaped.push_back(c);
-        }
-        escaped.push_back('"');
-        return escaped;
-    }
-    return value.str();
+    return renderConstantLiteral(ConstantLiteralLanguage::C, value);
 }
 
 std::string unsignedStorageType(const std::uint32_t bitLength)
 {
-    switch (scalarStorageBits(bitLength))
-    {
-    case 8:
-        return "uint8_t";
-    case 16:
-        return "uint16_t";
-    case 32:
-        return "uint32_t";
-    default:
-        return "uint64_t";
-    }
+    return renderUnsignedStorageToken(StorageTokenLanguage::C, bitLength);
 }
 
 std::string signedStorageType(const std::uint32_t bitLength)
 {
-    switch (scalarStorageBits(bitLength))
-    {
-    case 8:
-        return "int8_t";
-    case 16:
-        return "int16_t";
-    case 32:
-        return "int32_t";
-    default:
-        return "int64_t";
-    }
+    return renderSignedStorageToken(StorageTokenLanguage::C, bitLength);
 }
 
 class EmitterContext final
 {
 public:
     explicit EmitterContext(const SemanticModule& semantic)
+        : index_(semantic)
     {
-        for (const auto& def : semantic.definitions)
-        {
-            const auto key = typeKey(def.info.fullName, def.info.majorVersion, def.info.minorVersion);
-            byKey_.emplace(key, &def);
-        }
     }
 
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
     {
-        const auto it = byKey_.find(typeKey(ref.fullName, ref.majorVersion, ref.minorVersion));
-        if (it == byKey_.end())
-        {
-            return nullptr;
-        }
-        return it->second;
+        return index_.find(ref);
     }
 
     std::string cTypeName(const SemanticDefinition& def) const
@@ -357,7 +257,7 @@ public:
     }
 
 private:
-    std::unordered_map<std::string, const SemanticDefinition*> byKey_;
+    DefinitionIndex index_;
 };
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
@@ -446,7 +346,7 @@ void emitSectionTypedef(std::ostringstream&    out,
             continue;
         }
 
-        const auto cMember  = sanitizeIdentifier(field.name);
+        const auto cMember  = codegenSanitizeIdentifier(CodegenNamingLanguage::C, field.name);
         const auto baseType = cTypeFromFieldType(field.resolvedType, ctx);
 
         if (field.resolvedType.arrayKind == ArrayKind::None)

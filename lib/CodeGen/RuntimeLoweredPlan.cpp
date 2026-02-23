@@ -18,7 +18,6 @@
 #include "llvmdsdl/CodeGen/RuntimeLoweredPlan.h"
 
 #include <algorithm>
-#include <cctype>
 #include <set>
 #include <string>
 #include <cstddef>
@@ -35,93 +34,6 @@ namespace llvmdsdl
 {
 namespace
 {
-
-bool isRuntimeKeyword(const std::string& name)
-{
-    static const std::set<std::string> kKeywords =
-        {"break", "case",       "catch",     "class",      "const",   "continue", "debugger",  "default", "delete",
-         "do",    "else",       "enum",      "export",     "extends", "false",    "finally",   "for",     "function",
-         "if",    "import",     "in",        "instanceof", "new",     "null",     "return",    "super",   "switch",
-         "this",  "throw",      "true",      "try",        "typeof",  "var",      "void",      "while",   "with",
-         "as",    "implements", "interface", "let",        "package", "private",  "protected", "public",  "static",
-         "yield", "any",        "boolean",   "number",     "string",  "symbol",   "type",      "from",    "of"};
-    return kKeywords.contains(name);
-}
-
-std::string sanitizeRuntimeIdent(std::string name)
-{
-    if (name.empty())
-    {
-        return "_";
-    }
-    for (char& c : name)
-    {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
-        {
-            c = '_';
-        }
-    }
-    if (std::isdigit(static_cast<unsigned char>(name.front())))
-    {
-        name.insert(name.begin(), '_');
-    }
-    if (isRuntimeKeyword(name))
-    {
-        name += "_";
-    }
-    return name;
-}
-
-std::string toSnakeCase(const std::string& in)
-{
-    std::string out;
-    out.reserve(in.size() + 8);
-
-    bool prevUnderscore = false;
-    for (std::size_t i = 0; i < in.size(); ++i)
-    {
-        const char c    = in[i];
-        const char prev = (i > 0) ? in[i - 1] : '\0';
-        const char next = (i + 1 < in.size()) ? in[i + 1] : '\0';
-        if (!std::isalnum(static_cast<unsigned char>(c)))
-        {
-            if (!out.empty() && !prevUnderscore)
-            {
-                out.push_back('_');
-                prevUnderscore = true;
-            }
-            continue;
-        }
-
-        if (std::isupper(static_cast<unsigned char>(c)))
-        {
-            const bool boundary =
-                std::islower(static_cast<unsigned char>(prev)) ||
-                (std::isupper(static_cast<unsigned char>(prev)) && std::islower(static_cast<unsigned char>(next)));
-            if (!out.empty() && !prevUnderscore && boundary)
-            {
-                out.push_back('_');
-            }
-            out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-            prevUnderscore = false;
-        }
-        else
-        {
-            out.push_back(c);
-            prevUnderscore = (c == '_');
-        }
-    }
-
-    if (out.empty())
-    {
-        out = "_";
-    }
-    if (std::isdigit(static_cast<unsigned char>(out.front())))
-    {
-        out.insert(out.begin(), '_');
-    }
-    return sanitizeRuntimeIdent(out);
-}
 
 std::size_t expectedStepCount(const SemanticSection& section)
 {
@@ -386,7 +298,7 @@ llvm::Expected<RuntimeSectionPlan> buildRuntimeSectionPlan(const SemanticSection
 
         RuntimeFieldPlan fieldPlan;
         fieldPlan.semanticFieldName = field.name;
-        fieldPlan.fieldName         = sanitizeRuntimeIdent(toSnakeCase(field.name));
+        fieldPlan.fieldName         = field.name;
         fieldPlan.kind              = kind;
         fieldPlan.castMode          = field.resolvedType.castMode;
         fieldPlan.bitLength         = fieldBits;

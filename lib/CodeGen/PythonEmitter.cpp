@@ -36,6 +36,11 @@
 
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
+#include "llvmdsdl/CodeGen/CompositeImportGraph.h"
+#include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
+#include "llvmdsdl/CodeGen/DefinitionIndex.h"
+#include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
+#include "llvmdsdl/CodeGen/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/HelperBindingRender.h"
 #include "llvmdsdl/CodeGen/RuntimeHelperBindings.h"
 #include "llvmdsdl/CodeGen/ScriptedBodyPlan.h"
@@ -55,172 +60,9 @@ class DiagnosticEngine;
 namespace
 {
 
-bool isPyKeyword(const std::string& name)
-{
-    static const std::set<std::string> kKeywords = {"False",  "None",     "True",  "and",    "as",       "assert",
-                                                    "async",  "await",    "break", "class",  "continue", "def",
-                                                    "del",    "elif",     "else",  "except", "finally",  "for",
-                                                    "from",   "global",   "if",    "import", "in",       "is",
-                                                    "lambda", "nonlocal", "not",   "or",     "pass",     "raise",
-                                                    "return", "try",      "while", "with",   "yield",    "match",
-                                                    "case"};
-    return kKeywords.contains(name);
-}
-
-std::string sanitizePyIdent(std::string name)
-{
-    if (name.empty())
-    {
-        return "_";
-    }
-    for (char& c : name)
-    {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
-        {
-            c = '_';
-        }
-    }
-    if (std::isdigit(static_cast<unsigned char>(name.front())))
-    {
-        name.insert(name.begin(), '_');
-    }
-    if (isPyKeyword(name))
-    {
-        name += "_";
-    }
-    return name;
-}
-
-std::string toSnakeCase(const std::string& in)
-{
-    std::string out;
-    out.reserve(in.size() + 8);
-
-    bool prevUnderscore = false;
-    for (std::size_t i = 0; i < in.size(); ++i)
-    {
-        const char c    = in[i];
-        const char prev = (i > 0) ? in[i - 1] : '\0';
-        const char next = (i + 1 < in.size()) ? in[i + 1] : '\0';
-        if (!std::isalnum(static_cast<unsigned char>(c)))
-        {
-            if (!out.empty() && !prevUnderscore)
-            {
-                out.push_back('_');
-                prevUnderscore = true;
-            }
-            continue;
-        }
-
-        if (std::isupper(static_cast<unsigned char>(c)))
-        {
-            const bool boundary =
-                std::islower(static_cast<unsigned char>(prev)) ||
-                (std::isupper(static_cast<unsigned char>(prev)) && std::islower(static_cast<unsigned char>(next)));
-            if (!out.empty() && !prevUnderscore && boundary)
-            {
-                out.push_back('_');
-            }
-            out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-            prevUnderscore = false;
-        }
-        else
-        {
-            out.push_back(c);
-            prevUnderscore = (c == '_');
-        }
-    }
-
-    if (out.empty())
-    {
-        out = "_";
-    }
-    if (std::isdigit(static_cast<unsigned char>(out.front())))
-    {
-        out.insert(out.begin(), '_');
-    }
-    return sanitizePyIdent(out);
-}
-
-std::string toPascalCase(const std::string& in)
-{
-    std::string out;
-    out.reserve(in.size() + 8);
-
-    bool upperNext = true;
-    for (char c : in)
-    {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_'))
-        {
-            upperNext = true;
-            continue;
-        }
-        if (c == '_')
-        {
-            upperNext = true;
-            continue;
-        }
-        if (upperNext)
-        {
-            out.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
-            upperNext = false;
-        }
-        else
-        {
-            out.push_back(c);
-        }
-    }
-
-    if (out.empty())
-    {
-        out = "X";
-    }
-    return sanitizePyIdent(out);
-}
-
-std::string toUpperSnake(const std::string& in)
-{
-    auto out = toSnakeCase(in);
-    for (char& c : out)
-    {
-        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-    }
-    return out;
-}
-
 std::string pyConstValue(const Value& value)
 {
-    if (const auto* b = std::get_if<bool>(&value.data))
-    {
-        return *b ? "True" : "False";
-    }
-    if (const auto* r = std::get_if<Rational>(&value.data))
-    {
-        if (r->isInteger())
-        {
-            return std::to_string(r->asInteger().value());
-        }
-        std::ostringstream out;
-        out << "(" << r->numerator() << " / " << r->denominator() << ")";
-        return out.str();
-    }
-    if (const auto* s = std::get_if<std::string>(&value.data))
-    {
-        std::string escaped;
-        escaped.reserve(s->size() + 2);
-        escaped.push_back('"');
-        for (char c : *s)
-        {
-            if (c == '\\' || c == '"')
-            {
-                escaped.push_back('\\');
-            }
-            escaped.push_back(c);
-        }
-        escaped.push_back('"');
-        return escaped;
-    }
-    return value.str();
+    return renderConstantLiteral(ConstantLiteralLanguage::Python, value);
 }
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
@@ -230,12 +72,12 @@ void emitLine(std::ostringstream& out, const int indent, const std::string& line
 
 std::string runtimeSerializeFn(const std::string& typeName)
 {
-    return "_serialize_" + sanitizePyIdent(typeName);
+    return "_serialize_" + codegenSanitizeIdentifier(CodegenNamingLanguage::Python, typeName);
 }
 
 std::string runtimeDeserializeFn(const std::string& typeName)
 {
-    return "_deserialize_" + sanitizePyIdent(typeName);
+    return "_deserialize_" + codegenSanitizeIdentifier(CodegenNamingLanguage::Python, typeName);
 }
 
 std::string joinDotted(const std::vector<std::string>& parts)
@@ -262,7 +104,9 @@ std::vector<std::string> splitPackageName(const std::string& packageName)
         {
             if (!current.empty())
             {
-                out.push_back(sanitizePyIdent(toSnakeCase(current)));
+                out.push_back(
+                    codegenSanitizeIdentifier(CodegenNamingLanguage::Python,
+                                              codegenToSnakeCaseIdentifier(CodegenNamingLanguage::Python, current)));
                 current.clear();
             }
             continue;
@@ -271,7 +115,8 @@ std::vector<std::string> splitPackageName(const std::string& packageName)
     }
     if (!current.empty())
     {
-        out.push_back(sanitizePyIdent(toSnakeCase(current)));
+        out.push_back(codegenSanitizeIdentifier(CodegenNamingLanguage::Python,
+                                                codegenToSnakeCaseIdentifier(CodegenNamingLanguage::Python, current)));
     }
     if (out.empty())
     {
@@ -285,41 +130,26 @@ class EmitterContext final
 public:
     EmitterContext(const SemanticModule& semantic, std::vector<std::string> packageComponents)
         : packageComponents_(std::move(packageComponents))
+        , index_(semantic)
     {
-        for (const auto& def : semantic.definitions)
-        {
-            byKey_.emplace(loweredTypeKey(def.info.fullName, def.info.majorVersion, def.info.minorVersion), &def);
-        }
     }
 
     const SemanticDefinition* find(const SemanticTypeRef& ref) const
     {
-        const auto it = byKey_.find(loweredTypeKey(ref.fullName, ref.majorVersion, ref.minorVersion));
-        if (it == byKey_.end())
-        {
-            return nullptr;
-        }
-        return it->second;
+        return index_.find(ref);
     }
 
     std::string namespacePath(const DiscoveredDefinition& info) const
     {
-        std::string out;
-        for (const auto& component : info.namespaceComponents)
-        {
-            if (!out.empty())
-            {
-                out += "/";
-            }
-            out += toSnakeCase(component);
-        }
-        return out;
+        return renderNamespaceRelativePath(CodegenNamingLanguage::Python, info.namespaceComponents).generic_string();
     }
 
     std::string typeName(const DiscoveredDefinition& info) const
     {
-        return toPascalCase(info.shortName) + "_" + std::to_string(info.majorVersion) + "_" +
-               std::to_string(info.minorVersion);
+        return renderVersionedTypeName(CodegenNamingLanguage::Python,
+                                       info.shortName,
+                                       info.majorVersion,
+                                       info.minorVersion);
     }
 
     std::string typeName(const SemanticTypeRef& ref) const
@@ -338,20 +168,15 @@ public:
 
     std::string fileStem(const DiscoveredDefinition& info) const
     {
-        return toSnakeCase(info.shortName) + "_" + std::to_string(info.majorVersion) + "_" +
-               std::to_string(info.minorVersion);
+        return renderVersionedFileStem(CodegenNamingLanguage::Python,
+                                       info.shortName,
+                                       info.majorVersion,
+                                       info.minorVersion);
     }
 
     std::filesystem::path relativeFilePath(const DiscoveredDefinition& info) const
     {
-        std::filesystem::path rel;
-        const auto            nsPath = namespacePath(info);
-        if (!nsPath.empty())
-        {
-            rel /= nsPath;
-        }
-        rel /= fileStem(info) + ".py";
-        return rel;
+        return renderRelativeTypeFilePath(CodegenNamingLanguage::Python, info, "py");
     }
 
     std::filesystem::path relativeFilePath(const SemanticTypeRef& ref) const
@@ -361,14 +186,7 @@ public:
             return relativeFilePath(def->info);
         }
 
-        std::filesystem::path rel;
-        for (const auto& component : ref.namespaceComponents)
-        {
-            rel /= toSnakeCase(component);
-        }
-        rel /= toSnakeCase(ref.shortName) + "_" + std::to_string(ref.majorVersion) + "_" +
-               std::to_string(ref.minorVersion) + ".py";
-        return rel;
+        return renderRelativeTypeFilePath(CodegenNamingLanguage::Python, ref, "py");
     }
 
     std::string packageName() const
@@ -421,8 +239,8 @@ private:
         return joinDotted(parts);
     }
 
-    std::vector<std::string>                                   packageComponents_;
-    std::unordered_map<std::string, const SemanticDefinition*> byKey_;
+    std::vector<std::string> packageComponents_;
+    DefinitionIndex          index_;
 };
 
 std::string pyFieldBaseType(const SemanticFieldType& type, const EmitterContext& ctx)
@@ -489,50 +307,12 @@ std::string pyDefaultExpr(const SemanticFieldType& type, const EmitterContext& c
     return "None";
 }
 
-struct ImportSpec final
-{
-    std::string modulePath;
-    std::string typeName;
-};
-
-std::vector<ImportSpec> collectCompositeImports(const SemanticSection&      section,
-                                                const DiscoveredDefinition& owner,
-                                                const EmitterContext&       ctx)
-{
-    std::map<std::string, std::set<std::string>> importsByModule;
-    const auto                                   ownerPath = ctx.relativeFilePath(owner);
-
-    for (const auto& field : section.fields)
-    {
-        if (field.isPadding || !field.resolvedType.compositeType)
-        {
-            continue;
-        }
-        const auto& ref        = *field.resolvedType.compositeType;
-        const auto  targetPath = ctx.relativeFilePath(ref);
-        if (targetPath == ownerPath)
-        {
-            continue;
-        }
-        importsByModule[ctx.modulePath(ref)].insert(ctx.typeName(ref));
-    }
-
-    std::vector<ImportSpec> out;
-    for (const auto& [modulePath, names] : importsByModule)
-    {
-        for (const auto& name : names)
-        {
-            out.push_back({modulePath, name});
-        }
-    }
-    return out;
-}
-
 void emitSectionConstants(std::ostringstream& out, const std::string& prefix, const SemanticSection& section)
 {
     for (const auto& constant : section.constants)
     {
-        const auto constName = toUpperSnake(prefix) + "_" + toUpperSnake(constant.name);
+        const auto constName = codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Python, prefix) + "_" +
+                               codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Python, constant.name);
         emitLine(out, 0, constName + " = " + pyConstValue(constant.value));
     }
 }
@@ -573,8 +353,10 @@ void emitStructSectionType(std::ostringstream&    out,
         {
             continue;
         }
-        emittedField         = true;
-        const auto fieldName = sanitizePyIdent(toSnakeCase(field.name));
+        emittedField = true;
+        const auto fieldName =
+            codegenSanitizeIdentifier(CodegenNamingLanguage::Python,
+                                      codegenToSnakeCaseIdentifier(CodegenNamingLanguage::Python, field.name));
         emitLine(out,
                  1,
                  fieldName + ": " + pyFieldType(field.resolvedType, ctx) + " = " +
@@ -606,7 +388,9 @@ void emitUnionSectionType(std::ostringstream&    out,
         {
             continue;
         }
-        const auto fieldName = sanitizePyIdent(toSnakeCase(field.name));
+        const auto fieldName =
+            codegenSanitizeIdentifier(CodegenNamingLanguage::Python,
+                                      codegenToSnakeCaseIdentifier(CodegenNamingLanguage::Python, field.name));
         emitLine(out, 1, fieldName + ": " + pyFieldType(field.resolvedType, ctx) + " | None = None");
     }
 
@@ -636,7 +420,7 @@ std::string compositeTypeName(const RuntimeFieldPlan& field, const EmitterContex
 
 std::string helperBindingNamePy(const std::string& helperSymbol)
 {
-    return "mlir_" + sanitizePyIdent(helperSymbol);
+    return "mlir_" + codegenSanitizeIdentifier(CodegenNamingLanguage::Python, helperSymbol);
 }
 
 void emitPyRuntimeSerializeCompositeValue(std::ostringstream&     out,
@@ -1215,7 +999,16 @@ void emitPyRuntimeFunctions(std::ostringstream&        out,
     const RuntimeHelperNameResolver helperNameResolver = [](const std::string& symbol) {
         return helperBindingNamePy(symbol);
     };
-    const auto  bodyPlan           = buildScriptedSectionBodyPlan(section, plan, sectionFacts, helperNameResolver);
+    auto bodyPlan = buildScriptedSectionBodyPlan(section, plan, sectionFacts, helperNameResolver);
+    for (auto& scriptedField : bodyPlan.fields)
+    {
+        const auto& semanticName = scriptedField.field.semanticFieldName.empty()
+                                       ? scriptedField.field.fieldName
+                                       : scriptedField.field.semanticFieldName;
+        scriptedField.field.fieldName =
+            codegenSanitizeIdentifier(CodegenNamingLanguage::Python,
+                                      codegenToSnakeCaseIdentifier(CodegenNamingLanguage::Python, semanticName));
+    }
     const auto& sectionHelperNames = bodyPlan.sectionHelpers;
 
     const auto emitSerializeHelperBindings = [&]() {
@@ -1438,16 +1231,21 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     }
 
     std::map<std::string, std::set<std::string>> importsByModule;
-    for (const auto& imp : collectCompositeImports(def.request, def.info, ctx))
-    {
-        importsByModule[imp.modulePath].insert(imp.typeName);
-    }
+    const auto                                   addSectionImports = [&](const SemanticSection& section) {
+        const auto dependencies = collectCompositeDependencies(section, def.info);
+        const auto imports      = projectCompositeImports(
+            dependencies,
+            [&](const SemanticTypeRef& ref) { return ctx.modulePath(ref); },
+            [&](const SemanticTypeRef& ref) { return ctx.typeName(ref); });
+        for (const auto& importSpec : imports)
+        {
+            importsByModule[importSpec.modulePath].insert(importSpec.typeName);
+        }
+    };
+    addSectionImports(def.request);
     if (def.response)
     {
-        for (const auto& imp : collectCompositeImports(*def.response, def.info, ctx))
-        {
-            importsByModule[imp.modulePath].insert(imp.typeName);
-        }
+        addSectionImports(*def.response);
     }
 
     emitLine(out, 0, "from " + ctx.packageName() + "._runtime_loader import runtime as dsdl_runtime");
@@ -1588,9 +1386,9 @@ std::string renderPyProjectToml(llvm::StringRef packageName, llvm::StringRef roo
     return out.str();
 }
 
-llvm::Error ensureInitFile(const std::filesystem::path& dir,
-                          std::set<std::filesystem::path>& initializedPackages,
-                          const EmitWritePolicy&           writePolicy)
+llvm::Error ensureInitFile(const std::filesystem::path&     dir,
+                           std::set<std::filesystem::path>& initializedPackages,
+                           const EmitWritePolicy&           writePolicy)
 {
     if (!initializedPackages.insert(dir).second)
     {
@@ -1669,7 +1467,8 @@ llvm::Error emitPython(const SemanticModule&    semantic,
     const std::filesystem::path packageRoot = outRoot / ctx.packageRootPath();
 
     std::set<std::filesystem::path> initializedPackages;
-    if (auto err = ensurePackageInitChain(packageRoot, std::filesystem::path{}, initializedPackages, options.writePolicy))
+    if (auto err =
+            ensurePackageInitChain(packageRoot, std::filesystem::path{}, initializedPackages, options.writePolicy))
     {
         return err;
     }
@@ -1694,16 +1493,16 @@ llvm::Error emitPython(const SemanticModule&    semantic,
         return err;
     }
 
-    if (auto err =
-            writeGeneratedFile(packageRoot / "llvmdsdl_codegen.json", renderPackageMetadata(options), options.writePolicy))
+    if (auto err = writeGeneratedFile(packageRoot / "llvmdsdl_codegen.json",
+                                      renderPackageMetadata(options),
+                                      options.writePolicy))
     {
         return err;
     }
 
-    if (auto err =
-            writeGeneratedFile(outRoot / "pyproject.toml",
-                               renderPyProjectToml(ctx.packageName(), packageComponents.front()),
-                               options.writePolicy))
+    if (auto err = writeGeneratedFile(outRoot / "pyproject.toml",
+                                      renderPyProjectToml(ctx.packageName(), packageComponents.front()),
+                                      options.writePolicy))
     {
         return err;
     }
@@ -1740,7 +1539,8 @@ llvm::Error emitPython(const SemanticModule&    semantic,
         const auto relPath  = ctx.relativeFilePath(def->info);
         const auto fullPath = packageRoot / relPath;
 
-        if (auto err = ensurePackageInitChain(packageRoot, relPath.parent_path(), initializedPackages, options.writePolicy))
+        if (auto err =
+                ensurePackageInitChain(packageRoot, relPath.parent_path(), initializedPackages, options.writePolicy))
         {
             return err;
         }

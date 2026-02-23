@@ -9,6 +9,10 @@
 
 add_library(llvmdsdlCodeGen
   ArrayWirePlan.cpp
+  CompositeImportGraph.cpp
+  ConstantLiteralRender.cpp
+  DefinitionIndex.cpp
+  DefinitionPathProjection.cpp
   EmitCommon.cpp
   CEmitter.cpp
   CppEmitter.cpp
@@ -20,10 +24,12 @@ add_library(llvmdsdlCodeGen
   LoweredRenderIR.cpp
   NativeHelperContract.cpp
   NativeEmitterTraversal.cpp
+  NamingPolicy.cpp
   MlirLoweredFacts.cpp
   RuntimeHelperBindings.cpp
   RuntimeLoweredPlan.cpp
   ScriptedBodyPlan.cpp
+  StorageTypeTokens.cpp
   PythonEmitter.cpp
   RustEmitter.cpp
   SectionHelperBindingPlan.cpp

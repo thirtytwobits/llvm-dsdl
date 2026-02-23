@@ -120,6 +120,12 @@ generated from lowered MLIR contracts through shared codegen layers:
 - `NativeEmitterTraversal*` for native-backend (C++/Rust/Go) lowered-step traversal
 - `NativeHelperContract*` for native-backend section/field helper-contract validation
 - `CodegenDiagnosticText*` for cross-backend diagnostic text parity
+- `NamingPolicy*` for shared identifier keyword/sanitize/case projection
+- `ConstantLiteralRender*` for shared literal rendering across backends
+- `StorageTypeTokens*` for shared scalar storage token mapping (C/C++/Rust/Go)
+- `DefinitionIndex*` and `DefinitionPathProjection*` for shared type lookup and
+  deterministic type/file projection
+- `CompositeImportGraph*` for shared scripted-backend composite import collection/projection
 
 Low-level runtime primitives remain hand-written by design in generated/runtime
 helper modules (`dsdl_runtime.h/.hpp/.rs/.go/.ts`, `_dsdl_runtime.py`, and the

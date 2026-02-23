@@ -95,5 +95,34 @@ bool runRuntimeLoweredPlanTests()
         }
     }
 
+    {
+        llvmdsdl::SemanticSection section;
+        section.maxBitLength = 8;
+
+        llvmdsdl::SemanticField keyword;
+        keyword.name                        = "class";
+        keyword.resolvedType.scalarCategory = llvmdsdl::SemanticScalarCategory::UnsignedInt;
+        keyword.resolvedType.bitLength      = 8;
+        section.fields.push_back(keyword);
+
+        llvmdsdl::LoweredSectionFacts facts;
+        facts.fieldsByName["class"].stepIndex = 0;
+
+        auto runtimePlanOrErr = llvmdsdl::buildRuntimeSectionPlan(section, &facts);
+        if (!runtimePlanOrErr)
+        {
+            std::cerr << "runtime plan keyword-identifier case unexpectedly failed: "
+                      << llvm::toString(runtimePlanOrErr.takeError()) << "\n";
+            return false;
+        }
+        const auto& runtimePlan = *runtimePlanOrErr;
+        if (runtimePlan.fields.size() != 1U || runtimePlan.fields[0].semanticFieldName != "class" ||
+            runtimePlan.fields[0].fieldName != "class")
+        {
+            std::cerr << "runtime plan should preserve semantic field identifiers without language projection\n";
+            return false;
+        }
+    }
+
     return true;
 }

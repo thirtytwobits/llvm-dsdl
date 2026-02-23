@@ -81,7 +81,10 @@ struct RuntimeFieldPlan final
     /// @brief Original semantic field identifier used for lowered-facts lookup.
     std::string semanticFieldName;
 
-    /// @brief Sanitized runtime field identifier.
+    /// @brief Backend-neutral field identifier (semantic name by default).
+    ///
+    /// Emitters should project this identifier through a language-specific naming
+    /// policy before rendering source code.
     std::string fieldName;
 
     /// @brief Runtime field kind.

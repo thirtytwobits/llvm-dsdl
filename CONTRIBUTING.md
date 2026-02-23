@@ -597,9 +597,16 @@ When changing wire semantics for TypeScript/Python/C++/Rust/Go:
   - `NativeHelperContract*` (C++/Rust/Go section+field helper contracts)
   - `HelperBindingRender*`
   - `CodegenDiagnosticText*` (for shared diagnostic text)
+  - `NamingPolicy*` (shared identifier keyword/sanitize/case policy)
+  - `ConstantLiteralRender*` (shared literal syntax rendering)
+  - `StorageTypeTokens*` (shared scalar storage token mapping)
+  - `DefinitionIndex*` + `DefinitionPathProjection*` (shared type lookup + path/name projection)
+  - `CompositeImportGraph*` (shared scripted-backend import dependency projection)
 - Do not add backend-local fallback arithmetic for scalar cast/sign-extension,
   array prefix/length validation, union tag checks, delimiter checks, or section
   capacity checks.
+- Do not re-introduce backend-local `toSnakeCase`/`toPascalCase`/`sanitize*Ident`
+  utility forks when a shared utility exists in `lib/CodeGen`.
 - Keep backend-local runtime code focused on low-level primitives
   (bit/float/buffer operations) only.
 

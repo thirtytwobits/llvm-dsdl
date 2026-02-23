@@ -104,6 +104,12 @@ Shared generator-side convergence modules include:
 - `MlirLoweredFacts*`
 - `LoweredBodyPlan*`
 - `LoweredRenderIR*`
+- `NamingPolicy*` (shared keyword/sanitize/case projection policy)
+- `ConstantLiteralRender*` (shared literal syntax rendering)
+- `StorageTypeTokens*` (shared scalar storage token mapping for C/C++/Rust/Go)
+- `DefinitionIndex*` (shared semantic lookup index by lowered key)
+- `DefinitionPathProjection*` (shared versioned type/file path projection)
+- `CompositeImportGraph*` (shared scripted-backend composite import collection/projection)
 - `RuntimeLoweredPlan*` (backend-neutral ordered runtime field/section planning)
 - `RuntimeHelperBindings*` (shared lowered helper-symbol lookup/resolution)
 - `ScriptedBodyPlan*` (TS/Python scripted section/field helper planning)
