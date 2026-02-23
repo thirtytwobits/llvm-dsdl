@@ -9,6 +9,7 @@
 
 add_library(llvmdsdlCodeGen
   ArrayWirePlan.cpp
+  EmitCommon.cpp
   CEmitter.cpp
   CppEmitter.cpp
   GoEmitter.cpp

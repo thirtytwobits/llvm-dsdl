@@ -13,12 +13,12 @@
 
 The project currently supports:
 
-- C (`dsdlc c`)
-- C++23 (`dsdlc cpp`, with `std` and `pmr` profiles)
-- Rust (`dsdlc rust`, with `std` and `no-std-alloc` profiles, runtime specialization `portable|fast`, and memory modes `max-inline|inline-then-pool`)
-- Go (`dsdlc go`)
-- TypeScript (`dsdlc ts`, with runtime specialization `portable|fast`)
-- Python (`dsdlc python`, with runtime specialization `portable|fast` and backend selection `auto|pure|accel`)
+- C (`dsdlc --target-language c`)
+- C++23 (`dsdlc --target-language cpp`, with `std` and `pmr` profiles)
+- Rust (`dsdlc --target-language rust`, with `std` and `no-std-alloc` profiles, runtime specialization `portable|fast`, and memory modes `max-inline|inline-then-pool`)
+- Go (`dsdlc --target-language go`)
+- TypeScript (`dsdlc --target-language ts`, with runtime specialization `portable|fast`)
+- Python (`dsdlc --target-language python`, with runtime specialization `portable|fast` and backend selection `auto|pure|accel`)
 
 for arbitrary DSDL root namespaces. Full-tree integration validation is currently
 centered on the `uavcan` regulated data types.
@@ -129,9 +129,9 @@ Runtime helpers encapsulate wire-level bit operations and numeric conversions:
 - `runtime/cpp/dsdl_runtime.hpp` (C++ wrapper)
 - `runtime/rust/dsdl_runtime.rs` (Rust runtime)
 - `runtime/go/dsdl_runtime.go` (Go runtime)
-- generated `dsdl_runtime.ts` (TypeScript runtime helper emitted by `dsdlc ts`)
-- generated `_dsdl_runtime.py` + `_runtime_loader.py` (Python runtime helpers emitted by `dsdlc python`)
-- generated `pyproject.toml` + `py.typed` (Python packaging metadata emitted by `dsdlc python`)
+- generated `dsdl_runtime.ts` (TypeScript runtime helper emitted by `dsdlc --target-language ts`)
+- generated `_dsdl_runtime.py` + `_runtime_loader.py` (Python runtime helpers emitted by `dsdlc --target-language python`)
+- generated `pyproject.toml` + `py.typed` (Python packaging metadata emitted by `dsdlc --target-language python`)
 
 Generated helper bindings sourced from lowered MLIR contracts provide
 scalar/array/union/delimiter/capacity semantics in all non-C backends
@@ -327,11 +327,11 @@ Current:
   that compares generated `max-inline` and `inline-then-pool` crates across
   small/medium/large payload families, with optional threshold gating and
   embedded-profile recommendation output.
-- TypeScript generation (`dsdlc ts`) is now a first-class non-C-like target
+- TypeScript generation (`dsdlc --target-language ts`) is now a first-class non-C-like target
   track with lowered-schema validation, shared lowered render-order planning,
   generated runtime support (`dsdl_runtime.ts`), and runtime-backed per-type
   SerDes entrypoints across core semantic families.
-- Python generation (`dsdlc python`) is now a first-class non-C-like target
+- Python generation (`dsdlc --target-language python`) is now a first-class non-C-like target
   track with lowered-schema validation, shared lowered runtime planning,
   generated dataclass-based SerDes entrypoints, and runtime backend selection
   (`auto|pure|accel`) through generated loader/runtime modules.

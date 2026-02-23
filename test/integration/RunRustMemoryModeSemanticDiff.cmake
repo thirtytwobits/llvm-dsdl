@@ -50,9 +50,9 @@ set(inline_pool_out "${OUT_DIR}/rust-inline-then-pool")
 
 execute_process(
   COMMAND
-    "${DSDLC}" rust
-      --root-namespace-dir "${UAVCAN_ROOT}"
-      --out-dir "${max_inline_out}"
+    "${DSDLC}" --target-language rust
+      "${UAVCAN_ROOT}"
+      --outdir "${max_inline_out}"
       --rust-crate-name "uavcan_dsdl_generated"
       --rust-profile "${RUST_PROFILE}"
       --rust-runtime-specialization "${RUST_RUNTIME_SPECIALIZATION}"
@@ -70,9 +70,9 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" rust
-      --root-namespace-dir "${UAVCAN_ROOT}"
-      --out-dir "${inline_pool_out}"
+    "${DSDLC}" --target-language rust
+      "${UAVCAN_ROOT}"
+      --outdir "${inline_pool_out}"
       --rust-crate-name "uavcan_dsdl_generated"
       --rust-profile "${RUST_PROFILE}"
       --rust-runtime-specialization "${RUST_RUNTIME_SPECIALIZATION}"

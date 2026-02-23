@@ -51,10 +51,10 @@ file(MAKE_DIRECTORY "${build_out}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" c
-      --root-namespace-dir "${UAVCAN_ROOT}"
+    "${DSDLC}" --target-language c
+      "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
-      --out-dir "${c_out}"
+      --outdir "${c_out}"
   RESULT_VARIABLE c_result
   OUTPUT_VARIABLE c_stdout
   ERROR_VARIABLE c_stderr
@@ -67,11 +67,11 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" cpp
-      --root-namespace-dir "${UAVCAN_ROOT}"
+    "${DSDLC}" --target-language cpp
+      "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
       --cpp-profile "${CPP_PROFILE}"
-      --out-dir "${cpp_out}"
+      --outdir "${cpp_out}"
   RESULT_VARIABLE cpp_result
   OUTPUT_VARIABLE cpp_stdout
   ERROR_VARIABLE cpp_stderr

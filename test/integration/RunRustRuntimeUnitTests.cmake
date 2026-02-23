@@ -63,9 +63,9 @@ file(MAKE_DIRECTORY "${OUT_DIR}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" rust
-      --root-namespace-dir "${vendor_root}"
-      --out-dir "${OUT_DIR}"
+    "${DSDLC}" --target-language rust
+      "${vendor_root}"
+      --outdir "${OUT_DIR}"
       --rust-crate-name "llvmdsdl_runtime_unit"
       --rust-profile "${RUST_PROFILE}"
       --rust-runtime-specialization "${RUST_RUNTIME_SPECIALIZATION}"

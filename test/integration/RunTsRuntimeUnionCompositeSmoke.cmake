@@ -45,9 +45,9 @@ file(WRITE
 
 execute_process(
   COMMAND
-    "${DSDLC}" ts
-      --root-namespace-dir "${fixture_root}"
-      --out-dir "${ts_out}"
+    "${DSDLC}" --target-language ts
+      "${fixture_root}"
+      --outdir "${ts_out}"
       --ts-module "ts_runtime_union_composite_smoke"
   RESULT_VARIABLE ts_gen_result
   OUTPUT_VARIABLE ts_gen_stdout

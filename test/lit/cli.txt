@@ -1,69 +1,41 @@
 # RUN: %dsdlc --help 2>&1 | FileCheck %s --check-prefix=HELP
-# RUN: %dsdlc cpp --help 2>&1 | FileCheck %s --check-prefix=HELP_CPP
-# RUN: %dsdlc python --help 2>&1 | FileCheck %s --check-prefix=HELP_PYTHON
-# RUN: not %dsdlc unknown-command 2>&1 | FileCheck %s --check-prefix=UNKNOWN_COMMAND
-# RUN: not %dsdlc ast 2>&1 | FileCheck %s --check-prefix=MISSING_ROOT
-# RUN: not %dsdlc cpp --root-namespace-dir %S/fixtures 2>&1 | FileCheck %s --check-prefix=MISSING_OUT_DIR
-# RUN: not %dsdlc cpp --cpp-profile not-a-profile --root-namespace-dir %S/fixtures --out-dir %t 2>&1 | FileCheck %s --check-prefix=BAD_CPP_PROFILE
-# RUN: not %dsdlc rust --rust-profile not-a-profile --root-namespace-dir %S/fixtures --out-dir %t 2>&1 | FileCheck %s --check-prefix=BAD_RUST_PROFILE
-# RUN: not %dsdlc rust --rust-memory-mode not-a-mode --root-namespace-dir %S/fixtures --out-dir %t 2>&1 | FileCheck %s --check-prefix=BAD_RUST_MEMORY_MODE
-# RUN: not %dsdlc rust --rust-inline-threshold-bytes not-a-number --root-namespace-dir %S/fixtures --out-dir %t 2>&1 | FileCheck %s --check-prefix=BAD_RUST_INLINE_THRESHOLD
-# RUN: not %dsdlc rust --rust-inline-threshold-bytes 0 --root-namespace-dir %S/fixtures --out-dir %t 2>&1 | FileCheck %s --check-prefix=BAD_RUST_INLINE_THRESHOLD
-# RUN: not %dsdlc ts --ts-runtime-specialization not-a-specialization --root-namespace-dir %S/fixtures --out-dir %t 2>&1 | FileCheck %s --check-prefix=BAD_TS_SPECIALIZATION
-# RUN: not %dsdlc python --py-runtime-specialization not-a-specialization --root-namespace-dir %S/fixtures --out-dir %t 2>&1 | FileCheck %s --check-prefix=BAD_PY_SPECIALIZATION
-# RUN: not %dsdlc cpp --cpp-profile 2>&1 | FileCheck %s --check-prefix=MISSING_VALUE_CPP
-# RUN: not %dsdlc rust --rust-memory-mode 2>&1 | FileCheck %s --check-prefix=MISSING_VALUE_RUST_MEMORY_MODE
-# RUN: not %dsdlc python --py-package 2>&1 | FileCheck %s --check-prefix=MISSING_VALUE_PYTHON
-# RUN: %dsdlc ast --root-namespace-dir %S/fixtures 2>&1 | FileCheck %s --check-prefix=SUMMARY
+# RUN: not %dsdlc %S/fixtures 2>&1 | FileCheck %s --check-prefix=MISSING_LANGUAGE
+# RUN: not %dsdlc --target-language unknown %S/fixtures 2>&1 | FileCheck %s --check-prefix=BAD_LANGUAGE
+# RUN: not %dsdlc --target-language ast --unknown %S/fixtures 2>&1 | FileCheck %s --check-prefix=UNKNOWN_ARG
+# RUN: not %dsdlc --target-language ast --no-target-namespaces %S/fixtures 2>&1 | FileCheck %s --check-prefix=NO_TARGET_NAMESPACES
+# RUN: not %dsdlc --target-language ast %S/does-not-exist 2>&1 | FileCheck %s --check-prefix=BAD_TARGET
+# RUN: not %dsdlc --target-language cpp --cpp-profile not-a-profile %S/fixtures --outdir %t 2>&1 | FileCheck %s --check-prefix=BAD_CPP_PROFILE
+# RUN: not %dsdlc --target-language c --py-package bad %S/fixtures 2>&1 | FileCheck %s --check-prefix=GATED_PY
+# RUN: not %dsdlc --target-language cpp --cpp-profile 2>&1 | FileCheck %s --check-prefix=MISSING_VALUE_CPP
+# RUN: %dsdlc --target-language ast %S/fixtures 2>&1 | FileCheck %s --check-prefix=SUMMARY
 
-# HELP: NAME
-# HELP: dsdlc - DSDL frontend, MLIR lowerer, and multi-language code generator
-# HELP: python Generate Python 3.10 package layout and dataclass SerDes/runtime integration.
-# HELP: --rust-memory-mode <max-inline|inline-then-pool>
-# HELP: --rust-inline-threshold-bytes <N>
-# HELP: RUN SUMMARY
-# HELP: files generated
-# HELP: elapsed wall time
+# HELP: SYNOPSIS
+# HELP: dsdlc --target-language <lang> [options] [target_files_or_root_namespace ...]
+# HELP: --no-target-namespaces
+# HELP: --lookup-dir, -I <dir>
+# HELP: --outdir, -O <dir>
+# HELP: --allow-unregulated-fixed-port-id
+# HELP: --list-inputs
+# HELP: --list-outputs
 
-# HELP_CPP: COMMAND FOCUS (cpp)
-# HELP_CPP: Requires --out-dir. Honors --cpp-profile (std|pmr|both).
+# MISSING_LANGUAGE: --target-language is required
+# MISSING_LANGUAGE: Usage: dsdlc --target-language <ast|mlir|c|cpp|rust|go|ts|python> [options] [target_files_or_root_namespace ...]
 
-# HELP_PYTHON: COMMAND FOCUS (python)
-# HELP_PYTHON: Requires --out-dir. Honors --py-package and --py-runtime-specialization.
+# BAD_LANGUAGE: unknown --target-language value: unknown
 
-# UNKNOWN_COMMAND: Unknown command: unknown-command
-# UNKNOWN_COMMAND: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
+# UNKNOWN_ARG: unknown argument: --unknown
 
-# MISSING_ROOT: At least one --root-namespace-dir is required
+# NO_TARGET_NAMESPACES: root directory cannot be a folder (--no-target-namespaces):
 
-# MISSING_OUT_DIR: --out-dir is required for 'cpp' command
+# BAD_TARGET: error: target path does not exist:
 
-# BAD_CPP_PROFILE: Invalid --cpp-profile value: not-a-profile
-# BAD_CPP_PROFILE: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
+# BAD_CPP_PROFILE: invalid --cpp-profile value: not-a-profile
+# BAD_CPP_PROFILE: Usage: dsdlc --target-language <ast|mlir|c|cpp|rust|go|ts|python> [options] [target_files_or_root_namespace ...]
 
-# BAD_RUST_PROFILE: Invalid --rust-profile value: not-a-profile
-# BAD_RUST_PROFILE: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
+# GATED_PY: --py-* is only valid when --target-language is 'python'
 
-# BAD_RUST_MEMORY_MODE: Invalid --rust-memory-mode value: not-a-mode
-# BAD_RUST_MEMORY_MODE: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
-
-# BAD_RUST_INLINE_THRESHOLD: Invalid --rust-inline-threshold-bytes value:
-# BAD_RUST_INLINE_THRESHOLD: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
-
-# BAD_TS_SPECIALIZATION: Invalid --ts-runtime-specialization value: not-a-specialization
-# BAD_TS_SPECIALIZATION: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
-
-# BAD_PY_SPECIALIZATION: Invalid --py-runtime-specialization value: not-a-specialization
-# BAD_PY_SPECIALIZATION: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
-
-# MISSING_VALUE_CPP: Missing value for --cpp-profile
-# MISSING_VALUE_CPP: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
-
-# MISSING_VALUE_RUST_MEMORY_MODE: Missing value for --rust-memory-mode
-# MISSING_VALUE_RUST_MEMORY_MODE: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
-
-# MISSING_VALUE_PYTHON: Missing value for --py-package
-# MISSING_VALUE_PYTHON: Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python>
+# MISSING_VALUE_CPP: missing value for --cpp-profile
+# MISSING_VALUE_CPP: Usage: dsdlc --target-language <ast|mlir|c|cpp|rust|go|ts|python> [options] [target_files_or_root_namespace ...]
 
 # SUMMARY: Run summary:
 # SUMMARY: command: ast

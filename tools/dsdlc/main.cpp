@@ -8,11 +8,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Entry point for the `dsdlc` command-line compiler front-end.
-///
-/// This tool parses DSDL definitions, runs semantic analysis, lowers to MLIR,
-/// and dispatches to language backends (C, C++, Rust, Go, TypeScript) or text
-/// output modes (`ast`, `mlir`).
+/// Entry point for the `dsdlc` command-line frontend.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -28,237 +24,172 @@
 #include <cstdlib>
 #include <filesystem>
 #include <limits>
+#include <optional>
+#include <queue>
+#include <set>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <system_error>
-#include <utility>
 
 #include "llvmdsdl/CodeGen/CEmitter.h"
 #include "llvmdsdl/CodeGen/CppEmitter.h"
+#include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/GoEmitter.h"
 #include "llvmdsdl/CodeGen/PythonEmitter.h"
 #include "llvmdsdl/CodeGen/RustEmitter.h"
 #include "llvmdsdl/CodeGen/TsEmitter.h"
 #include "llvmdsdl/Frontend/ASTPrinter.h"
 #include "llvmdsdl/Frontend/Parser.h"
+#include "llvmdsdl/Frontend/SourceLocation.h"
+#include "llvmdsdl/Frontend/TargetResolution.h"
+#include "llvmdsdl/IR/DSDLDialect.h"
 #include "llvmdsdl/Lowering/LowerToMLIR.h"
 #include "llvmdsdl/Semantics/Analyzer.h"
-#include "llvmdsdl/IR/DSDLDialect.h"
+#include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/Support/Diagnostics.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvmdsdl/Frontend/SourceLocation.h"
-#include "llvmdsdl/Support/Diagnostics.h"
-#include "mlir/IR/BuiltinOps.h"
 
 namespace
 {
 
-/// @brief Checks whether a command token is implemented by `dsdlc`.
-///
-/// @param[in] command Command token from argv.
-/// @return `true` if the command is one of the supported subcommands.
-bool isKnownCommand(llvm::StringRef command)
+struct CliOptions final
 {
-    return command == "ast" || command == "mlir" || command == "c" || command == "cpp" || command == "rust" ||
-           command == "go" || command == "ts" || command == "python";
-}
+    std::vector<std::string> positionalTargets;
+    std::vector<std::string> lookupDirs;
 
-/// @brief Checks whether a token is a help switch.
-///
-/// @param[in] arg Argument token from argv.
-/// @return `true` when the argument is `--help` or `-h`.
+    std::string targetLanguage;
+    std::string outDir{"nunavut_out"};
+
+    bool helpRequested{false};
+    bool noTargetNamespaces{false};
+    bool noOverwrite{false};
+    bool allowUnregulatedFixedPortId{false};
+    bool omitDependencies{false};
+    bool optimizeLoweredSerDes{false};
+    bool dryRun{false};
+    bool listOutputs{false};
+    bool listInputs{false};
+
+    int verbose{0};
+
+    llvmdsdl::CppProfile cppProfile{llvmdsdl::CppProfile::Both};
+    std::string rustCrateName{"llvmdsdl_generated"};
+    llvmdsdl::RustProfile rustProfile{llvmdsdl::RustProfile::Std};
+    llvmdsdl::RustRuntimeSpecialization rustRuntimeSpecialization{llvmdsdl::RustRuntimeSpecialization::Portable};
+    llvmdsdl::RustMemoryMode rustMemoryMode{llvmdsdl::RustMemoryMode::MaxInline};
+    std::uint32_t rustInlineThresholdBytes{256U};
+    std::string goModuleName{"llvmdsdl_generated"};
+    std::string tsModuleName{"llvmdsdl_generated"};
+    llvmdsdl::TsRuntimeSpecialization tsRuntimeSpecialization{llvmdsdl::TsRuntimeSpecialization::Portable};
+    llvmdsdl::PythonRuntimeSpecialization pyRuntimeSpecialization{llvmdsdl::PythonRuntimeSpecialization::Portable};
+    std::string pyPackageName{"dsdl_gen"};
+
+    bool sawCppProfile{false};
+    bool sawRustCrateName{false};
+    bool sawRustProfile{false};
+    bool sawRustRuntimeSpecialization{false};
+    bool sawRustMemoryMode{false};
+    bool sawRustInlineThreshold{false};
+    bool sawGoModule{false};
+    bool sawTsModule{false};
+    bool sawTsRuntimeSpecialization{false};
+    bool sawPyPackage{false};
+    bool sawPyRuntimeSpecialization{false};
+
+    std::uint32_t fileMode{0444U};
+};
+
 bool isHelpToken(llvm::StringRef arg)
 {
     return arg == "--help" || arg == "-h";
 }
 
-/// @brief Prints compact usage guidance for invalid CLI invocations.
+bool isCodegenLanguage(llvm::StringRef language)
+{
+    return language == "c" || language == "cpp" || language == "rust" || language == "go" || language == "ts" ||
+           language == "python";
+}
+
+bool isKnownLanguage(llvm::StringRef language)
+{
+    return isCodegenLanguage(language) || language == "ast" || language == "mlir";
+}
+
 void printUsage()
 {
-    llvm::errs() << "Usage: dsdlc <ast|mlir|c|cpp|rust|go|ts|python> --root-namespace-dir <dir> [options]\n"
+    llvm::errs() << "Usage: dsdlc --target-language <ast|mlir|c|cpp|rust|go|ts|python> [options] "
+                    "[target_files_or_root_namespace ...]\n"
                  << "Try: dsdlc --help\n";
 }
 
-/// @brief Prints the full help text and optional command-focused details.
-///
-/// @param[in] selectedCommand Optional command name used for focused help.
-void printHelp(const std::string& selectedCommand = "")
+void printHelp()
 {
-    llvm::errs()
-        << "NAME\n"
-        << "  dsdlc - DSDL frontend, MLIR lowerer, and multi-language code generator\n\n"
-        << "SYNOPSIS\n"
-        << "  dsdlc <command> --root-namespace-dir <dir> [--root-namespace-dir <dir> ...] [options]\n"
-        << "  dsdlc --help\n"
-        << "  dsdlc <command> --help\n\n"
-        << "DESCRIPTION\n"
-        << "  dsdlc discovers and parses .dsdl definitions, performs semantic analysis, lowers into\n"
-        << "  a DSDL MLIR dialect, and can emit output for C, C++, Rust, Go, TypeScript, and Python. Root namespaces "
-           "are\n"
-        << "  repeatable for multi-root projects. Lookup directories are optional dependency roots.\n\n"
-        << "COMMANDS\n"
-        << "  ast   Print parsed AST for all discovered definitions.\n"
-        << "  mlir  Print lowered DSDL MLIR module.\n"
-        << "  c     Generate C headers + per-definition C implementation units.\n"
-        << "  cpp   Generate C++23 headers (std, pmr, or both profiles).\n"
-        << "  rust  Generate Rust crate layout and SerDes/runtime integration.\n"
-        << "  go    Generate Go module/package layout and SerDes/runtime integration.\n"
-        << "  ts    Generate TypeScript module layout and type declarations.\n\n"
-        << "  python Generate Python 3.10 package layout and dataclass SerDes/runtime integration.\n\n"
-        << "COMMON OPTIONS\n"
-        << "  --root-namespace-dir <dir>\n"
-        << "      Primary input root. Repeat to add more top-level namespace roots.\n"
-        << "      Required for all commands except --help.\n"
-        << "  --lookup-dir <dir>\n"
-        << "      Additional dependency lookup root. Repeat as needed.\n"
-        << "  --optimize-lowered-serdes\n"
-        << "      Enable optional semantics-preserving MLIR optimization on lowered SerDes IR\n"
-        << "      before backend code generation.\n"
-        << "  --help, -h\n"
-        << "      Print this help text. With a command, prints command-focused guidance.\n\n"
-        << "CODEGEN OPTIONS (c/cpp/rust/go/ts/python)\n"
-        << "  --out-dir <dir>\n"
-        << "      Output directory root for generated files.\n\n"
-        << "C++ OPTIONS (cpp)\n"
-        << "  --cpp-profile <std|pmr|both>\n"
-        << "      std  -> std::vector-backed variable arrays\n"
-        << "      pmr  -> std::pmr::vector-backed variable arrays\n"
-        << "      both -> emit two trees: <out>/std and <out>/pmr (default)\n\n"
-        << "RUST OPTIONS (rust)\n"
-        << "  --rust-crate-name <name>\n"
-        << "      Rust crate name to emit into Cargo.toml (default: llvmdsdl_generated).\n"
-        << "  --rust-profile <std|no-std-alloc>\n"
-        << "      std          -> Cargo default features include std (default).\n"
-        << "      no-std-alloc -> emits a no_std + alloc-ready crate (Cargo default features empty).\n\n"
-        << "  --rust-runtime-specialization <portable|fast>\n"
-        << "      portable -> use conservative runtime defaults (default).\n"
-        << "      fast     -> enable runtime-fast Cargo default feature for optimized bit-copy fast paths.\n\n"
-        << "  --rust-memory-mode <max-inline|inline-then-pool>\n"
-        << "      max-inline       -> variable-length fields use fixed-capacity inline storage sized to\n"
-        << "                          DSDL maxima (default).\n"
-        << "      inline-then-pool -> values up to --rust-inline-threshold-bytes remain inline; larger values\n"
-        << "                          use dedicated per-type pools.\n\n"
-        << "  --rust-inline-threshold-bytes <N>\n"
-        << "      Inline threshold for inline-then-pool mode (positive integer, default: 256).\n"
-        << "      The value is emitted into Cargo package metadata for auditability and runtime wiring.\n\n"
-        << "GO OPTIONS (go)\n"
-        << "  --go-module <name>\n"
-        << "      Go module name written to go.mod (default: llvmdsdl_generated).\n\n"
-        << "TS OPTIONS (ts)\n"
-        << "  --ts-module <name>\n"
-        << "      TypeScript package name written to package.json (default: llvmdsdl_generated).\n"
-        << "  --ts-runtime-specialization <portable|fast>\n"
-        << "      portable -> emit conservative bit-loop runtime helpers (default).\n"
-        << "      fast     -> emit byte-aligned fast paths in the generated runtime helpers.\n"
-        << "                  Wire semantics remain unchanged relative to portable.\n\n"
-        << "PYTHON OPTIONS (python)\n"
-        << "  --py-package <name>\n"
-        << "      Python package name (dotted path allowed) used as the generated root package\n"
-        << "      (default: dsdl_gen).\n"
-        << "  --py-runtime-specialization <portable|fast>\n"
-        << "      portable -> emit conservative pure-runtime bit helpers (default).\n"
-        << "      fast     -> emit byte-aligned copy/extract fast paths in generated pure-runtime helpers.\n"
-        << "                  Wire semantics on well-formed payloads remain unchanged relative to portable.\n"
-        << "                  Malformed/truncated payload contract:\n"
-        << "                    - portable pure runtime: tolerant reads (missing bits zero-extended).\n"
-        << "                    - fast pure runtime: byte-aligned out-of-range copy/extract raises ValueError.\n"
-        << "                    - accel runtime: follows accelerator helper behavior (currently tolerant extract,\n"
-        << "                      strict range checks for copy).\n\n"
-        << "RUN SUMMARY\n"
-        << "  On successful command execution, dsdlc prints a summary to stderr with:\n"
-        << "    - files generated\n"
-        << "    - output root\n"
-        << "    - elapsed wall time\n\n"
-        << "EXAMPLES\n"
-        << "  dsdlc ast --root-namespace-dir submodules/public_regulated_data_types/uavcan\n"
-        << "  dsdlc mlir --root-namespace-dir submodules/public_regulated_data_types/uavcan\n"
-        << "  dsdlc c --root-namespace-dir submodules/public_regulated_data_types/uavcan --out-dir build/uavcan-c\n"
-        << "  dsdlc cpp --root-namespace-dir submodules/public_regulated_data_types/uavcan --cpp-profile both "
-           "--out-dir "
-           "build/uavcan-cpp\n"
-        << "  dsdlc rust --root-namespace-dir submodules/public_regulated_data_types/uavcan --rust-profile std "
-           "--rust-crate-name "
-           "uavcan_dsdl_generated --out-dir build/uavcan-rust\n"
-        << "  dsdlc rust --root-namespace-dir submodules/public_regulated_data_types/uavcan "
-           "--rust-runtime-specialization fast "
-           "--rust-profile std --rust-crate-name uavcan_dsdl_fast --out-dir build/uavcan-rust-fast\n"
-        << "  dsdlc rust --root-namespace-dir submodules/public_regulated_data_types/uavcan --rust-profile "
-           "no-std-alloc "
-           "--rust-crate-name uavcan_dsdl_embedded --out-dir build/uavcan-rust-no-std\n"
-        << "  dsdlc rust --root-namespace-dir submodules/public_regulated_data_types/uavcan --rust-profile "
-           "no-std-alloc "
-           "--rust-memory-mode max-inline --rust-crate-name uavcan_dsdl_embedded_inline --out-dir "
-           "build/uavcan-rust-no-std-inline\n"
-        << "  dsdlc rust --root-namespace-dir submodules/public_regulated_data_types/uavcan --rust-profile "
-           "no-std-alloc "
-           "--rust-memory-mode inline-then-pool --rust-inline-threshold-bytes 512 "
-           "--rust-crate-name uavcan_dsdl_embedded_pool --out-dir build/uavcan-rust-no-std-pool\n"
-        << "  dsdlc go --root-namespace-dir submodules/public_regulated_data_types/uavcan --go-module "
-           "demo/uavcan/generated "
-           "--out-dir build/uavcan-go\n"
-        << "  dsdlc ts --root-namespace-dir submodules/public_regulated_data_types/uavcan --ts-module "
-           "demo_uavcan_generated "
-           "--out-dir build/uavcan-ts\n"
-        << "  dsdlc python --root-namespace-dir submodules/public_regulated_data_types/uavcan --py-package "
-           "demo_uavcan_generated "
-           "--out-dir build/uavcan-python\n"
-        << "  dsdlc python --root-namespace-dir submodules/public_regulated_data_types/uavcan --py-package "
-           "demo_uavcan_generated_fast "
-           "--py-runtime-specialization fast --out-dir build/uavcan-python-fast\n"
-        << "  dsdlc ts --root-namespace-dir submodules/public_regulated_data_types/uavcan --ts-module "
-           "demo_uavcan_generated_fast "
-           "--ts-runtime-specialization fast --out-dir build/uavcan-ts-fast\n\n"
-        << "EXIT STATUS\n"
-        << "  0 on success, non-zero on parse/semantic/lowering/codegen failure or invalid CLI usage.\n";
-
-    if (!selectedCommand.empty() && isKnownCommand(selectedCommand))
-    {
-        llvm::errs() << "\nCOMMAND FOCUS (" << selectedCommand << ")\n";
-        if (selectedCommand == "ast")
-        {
-            llvm::errs() << "  Emits AST text to stdout. --out-dir is not used.\n";
-        }
-        else if (selectedCommand == "mlir")
-        {
-            llvm::errs() << "  Emits DSDL MLIR to stdout. --out-dir is not used.\n";
-        }
-        else if (selectedCommand == "c")
-        {
-            llvm::errs() << "  Requires --out-dir. Emits C headers, C source files, and runtime header.\n";
-        }
-        else if (selectedCommand == "cpp")
-        {
-            llvm::errs() << "  Requires --out-dir. Honors --cpp-profile (std|pmr|both).\n";
-        }
-        else if (selectedCommand == "rust")
-        {
-            llvm::errs() << "  Requires --out-dir. Honors --rust-crate-name, --rust-profile, and "
-                            "--rust-runtime-specialization, --rust-memory-mode, and "
-                            "--rust-inline-threshold-bytes.\n";
-        }
-        else if (selectedCommand == "go")
-        {
-            llvm::errs() << "  Requires --out-dir. Honors --go-module.\n";
-        }
-        else if (selectedCommand == "ts")
-        {
-            llvm::errs() << "  Requires --out-dir. Honors --ts-module and --ts-runtime-specialization.\n";
-        }
-        else if (selectedCommand == "python")
-        {
-            llvm::errs() << "  Requires --out-dir. Honors --py-package and --py-runtime-specialization.\n";
-        }
-    }
+    llvm::errs() << "NAME\n"
+                 << "  dsdlc - DSDL frontend, MLIR lowerer, and multi-language code generator\n\n"
+                 << "SYNOPSIS\n"
+                 << "  dsdlc --target-language <lang> [options] [target_files_or_root_namespace ...]\n"
+                 << "  dsdlc --help\n\n"
+                 << "LANGUAGES\n"
+                 << "  ast | mlir | c | cpp | rust | go | ts | python\n\n"
+                 << "TARGET OPTIONS\n"
+                 << "  target_files_or_root_namespace\n"
+                 << "      One or more DSDL files or root-namespace folders.\n"
+                 << "      Folder targets expand recursively to .dsdl files unless --no-target-namespaces.\n"
+                 << "      Colon syntax is supported: <root>:<relative/path/Type.1.0.dsdl>.\n"
+                 << "  --no-target-namespaces\n"
+                 << "      Reject folder positional targets.\n"
+                 << "  --lookup-dir, -I <dir>\n"
+                 << "      Repeatable lookup roots for dependency resolution and target root inference.\n"
+                 << "      Also merges DSDL_INCLUDE_PATH and CYPHAL_PATH.\n\n"
+                 << "COMMON OPTIONS\n"
+                 << "  --target-language, -l <lang>\n"
+                 << "      Required output mode selector.\n"
+                 << "  --outdir, -O <dir>\n"
+                 << "      Output directory root for codegen languages (default: nunavut_out).\n"
+                 << "  --optimize-lowered-serdes\n"
+                 << "      Enable optional MLIR optimization for lowered serialization plans.\n"
+                 << "  --no-overwrite\n"
+                 << "      Fail if an output file already exists.\n"
+                 << "  --file-mode <mode>\n"
+                 << "      File mode for generated files using auto-base parsing (default: 0o444).\n"
+                 << "  --allow-unregulated-fixed-port-id\n"
+                 << "      Allow fixed port IDs outside regulated ranges.\n"
+                 << "  --omit-dependencies\n"
+                 << "      Emit only explicit targets; dependencies are still resolved and analyzed.\n"
+                 << "  --verbose, -v\n"
+                 << "      Increase verbosity (-v, -vv).\n"
+                 << "  --dry-run, -d\n"
+                 << "      Run full planning/validation without filesystem writes.\n"
+                 << "  --list-inputs\n"
+                 << "      Emit semicolon-separated input file list (implies --dry-run).\n"
+                 << "  --list-outputs\n"
+                 << "      Emit semicolon-separated output file list (implies --dry-run).\n"
+                 << "      When combined with --list-inputs, emits inputs first then one empty separator value.\n"
+                 << "  --help, -h\n"
+                 << "      Print this help text.\n\n"
+                 << "BACKEND OPTIONS\n"
+                 << "  C++:    --cpp-profile <std|pmr|both>\n"
+                 << "  Rust:   --rust-crate-name <name>\n"
+                 << "          --rust-profile <std|no-std-alloc>\n"
+                 << "          --rust-runtime-specialization <portable|fast>\n"
+                 << "          --rust-memory-mode <max-inline|inline-then-pool>\n"
+                 << "          --rust-inline-threshold-bytes <N>\n"
+                 << "  Go:     --go-module <name>\n"
+                 << "  TS:     --ts-module <name>\n"
+                 << "          --ts-runtime-specialization <portable|fast>\n"
+                 << "  Python: --py-package <name>\n"
+                 << "          --py-runtime-specialization <portable|fast>\n";
 }
 
-/// @brief Emits collected diagnostics to stderr.
-///
-/// @param[in] diag Diagnostic engine containing accumulated diagnostics.
-void printDiagnostics(const llvmdsdl::DiagnosticEngine& diag)
+void printDiagnostics(const llvmdsdl::DiagnosticEngine& diagnostics)
 {
-    for (const auto& d : diag.diagnostics())
+    for (const auto& d : diagnostics.diagnostics())
     {
         llvm::StringRef level = "note";
         if (d.level == llvmdsdl::DiagnosticLevel::Warning)
@@ -273,85 +204,30 @@ void printDiagnostics(const llvmdsdl::DiagnosticEngine& diag)
     }
 }
 
-/// @brief Resolves a path to an absolute output-root string when possible.
-///
-/// @param[in] root Requested output directory.
-/// @return Absolute path string when resolution succeeds; otherwise the original
-///         input string (or `"stdout"` for empty input).
-std::string resolveOutputRoot(const std::string& root)
+std::string resolveOutputRoot(const std::string& outDir)
 {
-    if (root.empty())
+    if (outDir.empty())
     {
         return "stdout";
     }
     std::error_code ec;
-    const auto      abs = std::filesystem::absolute(root, ec);
+    const auto      abs = std::filesystem::absolute(outDir, ec);
     if (!ec)
     {
         return abs.string();
     }
-    return root;
+    return outDir;
 }
 
-/// @brief Counts regular files under a generated output tree.
-///
-/// @details Traversal skips entries that trigger permission or transient
-/// filesystem errors so run-summary reporting remains best-effort.
-///
-/// @param[in] root Output root path.
-/// @return Number of regular files reachable under the output root.
-std::uint64_t countRegularFiles(const std::string& root)
-{
-    if (root.empty())
-    {
-        return 0;
-    }
-    std::error_code             ec;
-    const std::filesystem::path outputRoot(root);
-    if (!std::filesystem::exists(outputRoot, ec) || ec)
-    {
-        return 0;
-    }
-
-    std::uint64_t                                 count = 0;
-    std::filesystem::recursive_directory_iterator it(outputRoot,
-                                                     std::filesystem::directory_options::skip_permission_denied,
-                                                     ec);
-    std::filesystem::recursive_directory_iterator end;
-    if (ec)
-    {
-        return 0;
-    }
-    for (; it != end; it.increment(ec))
-    {
-        if (ec)
-        {
-            ec.clear();
-            continue;
-        }
-        if (it->is_regular_file(ec) && !ec)
-        {
-            ++count;
-        }
-        ec.clear();
-    }
-    return count;
-}
-
-/// @brief Prints the post-run command summary.
-///
-/// @param[in] command Executed top-level command.
-/// @param[in] outputRoot Resolved output root description.
-/// @param[in] generatedFiles Number of generated regular files.
-/// @param[in] elapsed Wall-clock execution duration.
 void printRunSummary(llvm::StringRef                           command,
                      llvm::StringRef                           outputRoot,
-                     const std::uint64_t                       generatedFiles,
-                     const std::chrono::steady_clock::duration elapsed)
+                     std::uint64_t                             generatedFiles,
+                     std::chrono::steady_clock::duration      elapsed)
 {
     const auto elapsedMs         = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
     const auto elapsedWholeSec   = elapsedMs / 1000;
     const auto elapsedFractionMs = elapsedMs % 1000;
+
     llvm::errs() << "Run summary:\n"
                  << "  command: " << command << "\n"
                  << "  output root: " << outputRoot << "\n"
@@ -368,258 +244,702 @@ void printRunSummary(llvm::StringRef                           command,
     llvm::errs() << elapsedFractionMs << "s\n";
 }
 
+std::string normalizePathForCompare(const std::string& path)
+{
+    std::error_code             ec;
+    const std::filesystem::path p(path);
+    auto                        n = std::filesystem::weakly_canonical(p, ec);
+    if (ec)
+    {
+        ec.clear();
+        n = std::filesystem::absolute(p, ec);
+        if (ec)
+        {
+            return p.lexically_normal().string();
+        }
+    }
+    return n.lexically_normal().string();
+}
+
+llvm::Expected<std::uint32_t> parseFileMode(llvm::StringRef text)
+{
+    llvm::StringRef body = text;
+    unsigned        base = 10U;
+
+    if (body.size() >= 2U && body[0] == '0' && (body[1] == 'o' || body[1] == 'O'))
+    {
+        base = 8U;
+        body = body.drop_front(2);
+    }
+    else if (body.size() >= 2U && body[0] == '0' && (body[1] == 'x' || body[1] == 'X'))
+    {
+        base = 16U;
+        body = body.drop_front(2);
+    }
+    else if (body.size() >= 2U && body[0] == '0' && (body[1] == 'b' || body[1] == 'B'))
+    {
+        base = 2U;
+        body = body.drop_front(2);
+    }
+
+    if (body.empty())
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(), "invalid --file-mode value: %s", text.str().c_str());
+    }
+
+    std::uint64_t parsed{};
+    if (body.getAsInteger(base, parsed) || parsed > 07777U)
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(), "invalid --file-mode value: %s", text.str().c_str());
+    }
+    return static_cast<std::uint32_t>(parsed);
+}
+
+llvm::Expected<CliOptions> parseCli(int argc, char** argv)
+{
+    CliOptions options;
+
+    auto requireValue = [&](int& i, llvm::StringRef optionName) -> llvm::Expected<std::string> {
+        if (i + 1 >= argc)
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(), "missing value for %s", optionName.str().c_str());
+        }
+        return std::string(argv[++i]);
+    };
+
+    for (int i = 1; i < argc; ++i)
+    {
+        llvm::StringRef arg(argv[i]);
+
+        if (arg == "--")
+        {
+            for (++i; i < argc; ++i)
+            {
+                options.positionalTargets.emplace_back(argv[i]);
+            }
+            break;
+        }
+
+        if (isHelpToken(arg))
+        {
+            options.helpRequested = true;
+            continue;
+        }
+
+        if (arg == "--no-target-namespaces")
+        {
+            options.noTargetNamespaces = true;
+            continue;
+        }
+        if (arg == "--lookup-dir" || arg == "-I")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.lookupDirs.push_back(*value);
+            continue;
+        }
+        if (arg == "--outdir" || arg == "-O")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.outDir = *value;
+            continue;
+        }
+        if (arg == "--target-language" || arg == "-l")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.targetLanguage = *value;
+            continue;
+        }
+
+        if (arg == "--no-overwrite")
+        {
+            options.noOverwrite = true;
+            continue;
+        }
+        if (arg == "--file-mode")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            auto mode = parseFileMode(*value);
+            if (!mode)
+            {
+                return mode.takeError();
+            }
+            options.fileMode = *mode;
+            continue;
+        }
+        if (arg == "--allow-unregulated-fixed-port-id")
+        {
+            options.allowUnregulatedFixedPortId = true;
+            continue;
+        }
+        if (arg == "--omit-dependencies")
+        {
+            options.omitDependencies = true;
+            continue;
+        }
+        if (arg == "--dry-run" || arg == "-d")
+        {
+            options.dryRun = true;
+            continue;
+        }
+        if (arg == "--list-outputs")
+        {
+            options.listOutputs = true;
+            continue;
+        }
+        if (arg == "--list-inputs")
+        {
+            options.listInputs = true;
+            continue;
+        }
+        if (arg == "--verbose")
+        {
+            ++options.verbose;
+            continue;
+        }
+        if (arg.starts_with("-") && arg.size() > 1 &&
+            arg.drop_front().find_if([](const char c) { return c != 'v'; }) ==
+                                                  llvm::StringRef::npos)
+        {
+            options.verbose += static_cast<int>(arg.size() - 1);
+            continue;
+        }
+
+        if (arg == "--optimize-lowered-serdes")
+        {
+            options.optimizeLoweredSerDes = true;
+            continue;
+        }
+        if (arg == "--cpp-profile")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.sawCppProfile = true;
+            if (*value == "std")
+            {
+                options.cppProfile = llvmdsdl::CppProfile::Std;
+            }
+            else if (*value == "pmr")
+            {
+                options.cppProfile = llvmdsdl::CppProfile::Pmr;
+            }
+            else if (*value == "both")
+            {
+                options.cppProfile = llvmdsdl::CppProfile::Both;
+            }
+            else
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(), "invalid --cpp-profile value: %s", value->c_str());
+            }
+            continue;
+        }
+        if (arg == "--rust-crate-name")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.sawRustCrateName = true;
+            options.rustCrateName    = *value;
+            continue;
+        }
+        if (arg == "--rust-profile")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.sawRustProfile = true;
+            if (*value == "std")
+            {
+                options.rustProfile = llvmdsdl::RustProfile::Std;
+            }
+            else if (*value == "no-std-alloc")
+            {
+                options.rustProfile = llvmdsdl::RustProfile::NoStdAlloc;
+            }
+            else
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(), "invalid --rust-profile value: %s", value->c_str());
+            }
+            continue;
+        }
+        if (arg == "--rust-runtime-specialization")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.sawRustRuntimeSpecialization = true;
+            if (*value == "portable")
+            {
+                options.rustRuntimeSpecialization = llvmdsdl::RustRuntimeSpecialization::Portable;
+            }
+            else if (*value == "fast")
+            {
+                options.rustRuntimeSpecialization = llvmdsdl::RustRuntimeSpecialization::Fast;
+            }
+            else
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "invalid --rust-runtime-specialization value: %s",
+                                               value->c_str());
+            }
+            continue;
+        }
+        if (arg == "--rust-memory-mode")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.sawRustMemoryMode = true;
+            if (*value == "max-inline")
+            {
+                options.rustMemoryMode = llvmdsdl::RustMemoryMode::MaxInline;
+            }
+            else if (*value == "inline-then-pool")
+            {
+                options.rustMemoryMode = llvmdsdl::RustMemoryMode::InlineThenPool;
+            }
+            else
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "invalid --rust-memory-mode value: %s",
+                                               value->c_str());
+            }
+            continue;
+        }
+        if (arg == "--rust-inline-threshold-bytes")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.sawRustInlineThreshold = true;
+            std::uint64_t parsed{};
+            if (llvm::StringRef(*value).getAsInteger(10, parsed) || parsed == 0U ||
+                parsed > std::numeric_limits<std::uint32_t>::max())
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "invalid --rust-inline-threshold-bytes value: %s",
+                                               value->c_str());
+            }
+            options.rustInlineThresholdBytes = static_cast<std::uint32_t>(parsed);
+            continue;
+        }
+        if (arg == "--go-module")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.sawGoModule = true;
+            options.goModuleName = *value;
+            continue;
+        }
+        if (arg == "--ts-module")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.sawTsModule = true;
+            options.tsModuleName = *value;
+            continue;
+        }
+        if (arg == "--ts-runtime-specialization")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.sawTsRuntimeSpecialization = true;
+            if (*value == "portable")
+            {
+                options.tsRuntimeSpecialization = llvmdsdl::TsRuntimeSpecialization::Portable;
+            }
+            else if (*value == "fast")
+            {
+                options.tsRuntimeSpecialization = llvmdsdl::TsRuntimeSpecialization::Fast;
+            }
+            else
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "invalid --ts-runtime-specialization value: %s",
+                                               value->c_str());
+            }
+            continue;
+        }
+        if (arg == "--py-package")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.sawPyPackage = true;
+            options.pyPackageName = *value;
+            continue;
+        }
+        if (arg == "--py-runtime-specialization")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.sawPyRuntimeSpecialization = true;
+            if (*value == "portable")
+            {
+                options.pyRuntimeSpecialization = llvmdsdl::PythonRuntimeSpecialization::Portable;
+            }
+            else if (*value == "fast")
+            {
+                options.pyRuntimeSpecialization = llvmdsdl::PythonRuntimeSpecialization::Fast;
+            }
+            else
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "invalid --py-runtime-specialization value: %s",
+                                               value->c_str());
+            }
+            continue;
+        }
+
+        if (arg.starts_with('-'))
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(), "unknown argument: %s", arg.str().c_str());
+        }
+
+        options.positionalTargets.emplace_back(arg.str());
+    }
+
+    return options;
+}
+
+llvm::Expected<int> validateLanguageGatedOptions(const CliOptions& options)
+{
+    llvm::StringRef language(options.targetLanguage);
+
+    auto failIf = [&](bool condition, llvm::StringRef optionName, llvm::StringRef expectedLang) -> llvm::Expected<int> {
+        if (!condition)
+        {
+            return 0;
+        }
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "%s is only valid when --target-language is '%s'",
+                                       optionName.data(),
+                                       expectedLang.data());
+    };
+
+    if (auto r = failIf(options.sawCppProfile && language != "cpp", "--cpp-profile", "cpp"); !r)
+    {
+        return r.takeError();
+    }
+    if (auto r = failIf((options.sawRustCrateName || options.sawRustProfile || options.sawRustRuntimeSpecialization ||
+                         options.sawRustMemoryMode || options.sawRustInlineThreshold) &&
+                            language != "rust",
+                        "--rust-*",
+                        "rust");
+        !r)
+    {
+        return r.takeError();
+    }
+    if (auto r = failIf(options.sawGoModule && language != "go", "--go-module", "go"); !r)
+    {
+        return r.takeError();
+    }
+    if (auto r = failIf((options.sawTsModule || options.sawTsRuntimeSpecialization) && language != "ts",
+                        "--ts-*",
+                        "ts");
+        !r)
+    {
+        return r.takeError();
+    }
+    if (auto r = failIf((options.sawPyPackage || options.sawPyRuntimeSpecialization) && language != "python",
+                        "--py-*",
+                        "python");
+        !r)
+    {
+        return r.takeError();
+    }
+
+    return 0;
+}
+
+std::unordered_set<std::string> collectExplicitKeys(const llvmdsdl::SemanticModule& semantic)
+{
+    std::unordered_set<std::string> out;
+    for (const auto& def : semantic.definitions)
+    {
+        if (def.info.isExplicitTarget)
+        {
+            out.insert(llvmdsdl::definitionTypeKey(def.info));
+        }
+    }
+    return out;
+}
+
+std::string typeKeyFromRef(const llvmdsdl::SemanticTypeRef& ref)
+{
+    return ref.fullName + ":" + std::to_string(ref.majorVersion) + ":" + std::to_string(ref.minorVersion);
+}
+
+std::unordered_set<std::string> computeDependencyClosure(const llvmdsdl::SemanticModule& semantic,
+                                                         const std::unordered_set<std::string>& explicitKeys)
+{
+    std::unordered_map<std::string, const llvmdsdl::SemanticDefinition*> byKey;
+    byKey.reserve(semantic.definitions.size());
+    for (const auto& def : semantic.definitions)
+    {
+        byKey.emplace(llvmdsdl::definitionTypeKey(def.info), &def);
+    }
+
+    std::unordered_set<std::string> closure;
+    std::queue<std::string>         queue;
+
+    for (const auto& key : explicitKeys)
+    {
+        if (byKey.contains(key) && closure.insert(key).second)
+        {
+            queue.push(key);
+        }
+    }
+
+    auto enqueueSectionDependencies = [&](const llvmdsdl::SemanticSection& section) {
+        for (const auto& field : section.fields)
+        {
+            if (!field.resolvedType.compositeType)
+            {
+                continue;
+            }
+            const auto depKey = typeKeyFromRef(*field.resolvedType.compositeType);
+            if (byKey.contains(depKey) && closure.insert(depKey).second)
+            {
+                queue.push(depKey);
+            }
+        }
+    };
+
+    while (!queue.empty())
+    {
+        const auto key = queue.front();
+        queue.pop();
+
+        const auto it = byKey.find(key);
+        if (it == byKey.end())
+        {
+            continue;
+        }
+
+        enqueueSectionDependencies(it->second->request);
+        if (it->second->response)
+        {
+            enqueueSectionDependencies(*it->second->response);
+        }
+    }
+
+    return closure;
+}
+
+llvmdsdl::SemanticModule filterSemanticModule(const llvmdsdl::SemanticModule& semantic,
+                                              const std::unordered_set<std::string>& selectedKeys)
+{
+    llvmdsdl::SemanticModule out;
+    out.definitions.reserve(semantic.definitions.size());
+
+    for (const auto& def : semantic.definitions)
+    {
+        if (selectedKeys.contains(llvmdsdl::definitionTypeKey(def.info)))
+        {
+            out.definitions.push_back(def);
+        }
+    }
+
+    return out;
+}
+
+llvmdsdl::ASTModule filterAstModule(const llvmdsdl::ASTModule& ast, const std::unordered_set<std::string>& selectedKeys)
+{
+    llvmdsdl::ASTModule out;
+    out.definitions.reserve(ast.definitions.size());
+
+    for (const auto& def : ast.definitions)
+    {
+        if (selectedKeys.contains(llvmdsdl::definitionTypeKey(def.info)))
+        {
+            out.definitions.push_back(def);
+        }
+    }
+
+    return out;
+}
+
+std::vector<std::string> collectInputFilesForClosure(const llvmdsdl::SemanticModule& semantic,
+                                                     const std::unordered_set<std::string>& closureKeys)
+{
+    std::vector<std::string> out;
+    out.reserve(closureKeys.size());
+
+    for (const auto& def : semantic.definitions)
+    {
+        if (!closureKeys.contains(llvmdsdl::definitionTypeKey(def.info)))
+        {
+            continue;
+        }
+        out.push_back(normalizePathForCompare(def.info.filePath));
+    }
+
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
+}
+
+std::vector<std::string> dedupSorted(std::vector<std::string> values)
+{
+    std::sort(values.begin(), values.end());
+    values.erase(std::unique(values.begin(), values.end()), values.end());
+    return values;
+}
+
+void emitScsvLists(const std::vector<std::string>& inputs,
+                   const std::vector<std::string>& outputs,
+                   const bool                      listInputs,
+                   const bool                      listOutputs)
+{
+    std::vector<std::string> cells;
+    if (listInputs)
+    {
+        cells.insert(cells.end(), inputs.begin(), inputs.end());
+    }
+    if (listInputs && listOutputs)
+    {
+        cells.push_back("");
+    }
+    if (listOutputs)
+    {
+        cells.insert(cells.end(), outputs.begin(), outputs.end());
+    }
+
+    for (std::size_t i = 0; i < cells.size(); ++i)
+    {
+        if (i > 0)
+        {
+            llvm::outs() << ';';
+        }
+        llvm::outs() << cells[i];
+    }
+}
+
 }  // namespace
 
-/// @brief Program entry point for `dsdlc`.
-///
-/// @param[in] argc Argument count.
-/// @param[in] argv Argument vector.
-/// @return Zero on success, non-zero on CLI, parse, semantic, lowering, or
-///         code-generation failure.
 int main(int argc, char** argv)
 {
     llvm::InitLLVM y(argc, argv);
 
-    if (argc < 2)
+    const auto startTime = std::chrono::steady_clock::now();
+
+    auto parsed = parseCli(argc, argv);
+    if (!parsed)
     {
+        llvm::errs() << llvm::toString(parsed.takeError()) << "\n";
         printUsage();
         return 1;
     }
+    CliOptions options = *parsed;
 
-    const std::string command = argv[1];
-    if (isHelpToken(command) || command == "help")
+    if (argc == 1 || options.helpRequested)
     {
         printHelp();
-        return 0;
+        return argc == 1 ? 1 : 0;
     }
-    if (!isKnownCommand(command))
+
+    if (options.targetLanguage.empty())
     {
-        llvm::errs() << "Unknown command: " << command << "\n";
+        llvm::errs() << "--target-language is required\n";
+        printUsage();
+        return 1;
+    }
+    if (!isKnownLanguage(options.targetLanguage))
+    {
+        llvm::errs() << "unknown --target-language value: " << options.targetLanguage << "\n";
         printUsage();
         return 1;
     }
 
-    std::vector<std::string>              roots;
-    std::vector<std::string>              lookups;
-    std::string                           outDir;
-    bool                                  helpRequested             = false;
-    bool                                  optimizeLoweredSerDes     = false;
-    llvmdsdl::CppProfile                  cppProfile                = llvmdsdl::CppProfile::Both;
-    std::string                           rustCrateName             = "llvmdsdl_generated";
-    llvmdsdl::RustProfile                 rustProfile               = llvmdsdl::RustProfile::Std;
-    llvmdsdl::RustRuntimeSpecialization   rustRuntimeSpecialization = llvmdsdl::RustRuntimeSpecialization::Portable;
-    llvmdsdl::RustMemoryMode              rustMemoryMode            = llvmdsdl::RustMemoryMode::MaxInline;
-    std::uint32_t                         rustInlineThresholdBytes  = 256U;
-    std::string                           goModuleName              = "llvmdsdl_generated";
-    std::string                           tsModuleName              = "llvmdsdl_generated";
-    llvmdsdl::TsRuntimeSpecialization     tsRuntimeSpecialization   = llvmdsdl::TsRuntimeSpecialization::Portable;
-    llvmdsdl::PythonRuntimeSpecialization pyRuntimeSpecialization   = llvmdsdl::PythonRuntimeSpecialization::Portable;
-    std::string                           pyPackageName             = "dsdl_gen";
-
-    for (int i = 2; i < argc; ++i)
+    if (auto gated = validateLanguageGatedOptions(options); !gated)
     {
-        const std::string arg          = argv[i];
-        auto              requireValue = [&](const std::string& name) -> std::string {
-            if (i + 1 >= argc)
-            {
-                llvm::errs() << "Missing value for " << name << "\n";
-                printUsage();
-                std::exit(1);
-            }
-            return argv[++i];
-        };
-
-        if (arg == "--root-namespace-dir")
-        {
-            roots.push_back(requireValue(arg));
-        }
-        else if (arg == "--lookup-dir")
-        {
-            lookups.push_back(requireValue(arg));
-        }
-        else if (isHelpToken(arg))
-        {
-            helpRequested = true;
-        }
-        else if (arg == "--out-dir")
-        {
-            outDir = requireValue(arg);
-        }
-        else if (arg == "--optimize-lowered-serdes")
-        {
-            optimizeLoweredSerDes = true;
-        }
-        else if (arg == "--cpp-profile")
-        {
-            const auto value = requireValue(arg);
-            if (value == "std")
-            {
-                cppProfile = llvmdsdl::CppProfile::Std;
-            }
-            else if (value == "pmr")
-            {
-                cppProfile = llvmdsdl::CppProfile::Pmr;
-            }
-            else if (value == "both")
-            {
-                cppProfile = llvmdsdl::CppProfile::Both;
-            }
-            else
-            {
-                llvm::errs() << "Invalid --cpp-profile value: " << value << "\n";
-                printUsage();
-                return 1;
-            }
-        }
-        else if (arg == "--rust-crate-name")
-        {
-            rustCrateName = requireValue(arg);
-        }
-        else if (arg == "--rust-profile")
-        {
-            const auto value = requireValue(arg);
-            if (value == "std")
-            {
-                rustProfile = llvmdsdl::RustProfile::Std;
-            }
-            else if (value == "no-std-alloc")
-            {
-                rustProfile = llvmdsdl::RustProfile::NoStdAlloc;
-            }
-            else
-            {
-                llvm::errs() << "Invalid --rust-profile value: " << value << "\n";
-                printUsage();
-                return 1;
-            }
-        }
-        else if (arg == "--rust-runtime-specialization")
-        {
-            const auto value = requireValue(arg);
-            if (value == "portable")
-            {
-                rustRuntimeSpecialization = llvmdsdl::RustRuntimeSpecialization::Portable;
-            }
-            else if (value == "fast")
-            {
-                rustRuntimeSpecialization = llvmdsdl::RustRuntimeSpecialization::Fast;
-            }
-            else
-            {
-                llvm::errs() << "Invalid --rust-runtime-specialization value: " << value << "\n";
-                printUsage();
-                return 1;
-            }
-        }
-        else if (arg == "--rust-memory-mode")
-        {
-            const auto value = requireValue(arg);
-            if (value == "max-inline")
-            {
-                rustMemoryMode = llvmdsdl::RustMemoryMode::MaxInline;
-            }
-            else if (value == "inline-then-pool")
-            {
-                rustMemoryMode = llvmdsdl::RustMemoryMode::InlineThenPool;
-            }
-            else
-            {
-                llvm::errs() << "Invalid --rust-memory-mode value: " << value << "\n";
-                printUsage();
-                return 1;
-            }
-        }
-        else if (arg == "--rust-inline-threshold-bytes")
-        {
-            const auto            value = requireValue(arg);
-            std::uint64_t         parsedThreshold{};
-            const llvm::StringRef valueRef(value);
-            if (valueRef.getAsInteger(10, parsedThreshold) || parsedThreshold == 0U ||
-                parsedThreshold > std::numeric_limits<std::uint32_t>::max())
-            {
-                llvm::errs() << "Invalid --rust-inline-threshold-bytes value: " << value << "\n";
-                printUsage();
-                return 1;
-            }
-            rustInlineThresholdBytes = static_cast<std::uint32_t>(parsedThreshold);
-        }
-        else if (arg == "--go-module")
-        {
-            goModuleName = requireValue(arg);
-        }
-        else if (arg == "--ts-module")
-        {
-            tsModuleName = requireValue(arg);
-        }
-        else if (arg == "--ts-runtime-specialization")
-        {
-            const auto value = requireValue(arg);
-            if (value == "portable")
-            {
-                tsRuntimeSpecialization = llvmdsdl::TsRuntimeSpecialization::Portable;
-            }
-            else if (value == "fast")
-            {
-                tsRuntimeSpecialization = llvmdsdl::TsRuntimeSpecialization::Fast;
-            }
-            else
-            {
-                llvm::errs() << "Invalid --ts-runtime-specialization value: " << value << "\n";
-                printUsage();
-                return 1;
-            }
-        }
-        else if (arg == "--py-package")
-        {
-            pyPackageName = requireValue(arg);
-        }
-        else if (arg == "--py-runtime-specialization")
-        {
-            const auto value = requireValue(arg);
-            if (value == "portable")
-            {
-                pyRuntimeSpecialization = llvmdsdl::PythonRuntimeSpecialization::Portable;
-            }
-            else if (value == "fast")
-            {
-                pyRuntimeSpecialization = llvmdsdl::PythonRuntimeSpecialization::Fast;
-            }
-            else
-            {
-                llvm::errs() << "Invalid --py-runtime-specialization value: " << value << "\n";
-                printUsage();
-                return 1;
-            }
-        }
-        else
-        {
-            llvm::errs() << "Unknown argument: " << arg << "\n";
-            printUsage();
-            return 1;
-        }
-    }
-
-    if (helpRequested)
-    {
-        printHelp(command);
-        return 0;
-    }
-
-    if (roots.empty())
-    {
-        llvm::errs() << "At least one --root-namespace-dir is required\n";
+        llvm::errs() << llvm::toString(gated.takeError()) << "\n";
         return 1;
     }
 
-    const auto                 startTime = std::chrono::steady_clock::now();
+    if (options.listInputs || options.listOutputs)
+    {
+        options.dryRun = true;
+    }
+
     llvmdsdl::DiagnosticEngine diagnostics;
-    auto                       finish = [&](const std::string& outputRoot, const std::uint64_t generatedFiles) -> int {
-        printDiagnostics(diagnostics);
-        printRunSummary(command, outputRoot, generatedFiles, std::chrono::steady_clock::now() - startTime);
-        return diagnostics.hasErrors() ? 1 : 0;
+
+    const auto logVerbose = [&](int level, llvm::StringRef message) {
+        if (options.verbose >= level)
+        {
+            llvm::errs() << "[dsdlc] " << message << "\n";
+        }
     };
 
-    auto ast = llvmdsdl::parseDefinitions(roots, lookups, diagnostics);
+    logVerbose(1, "resolving target paths");
+    llvmdsdl::TargetResolveOptions resolveOptions;
+    resolveOptions.noTargetNamespaces = options.noTargetNamespaces;
+    resolveOptions.lookupDirs         = options.lookupDirs;
+
+    auto resolved = llvmdsdl::resolveTargets(options.positionalTargets, resolveOptions, diagnostics);
+    if (!resolved)
+    {
+        printDiagnostics(diagnostics);
+        llvm::consumeError(resolved.takeError());
+        return 1;
+    }
+
+    if (resolved->explicitTargetFiles.empty())
+    {
+        const auto outputRoot = isCodegenLanguage(options.targetLanguage) ? resolveOutputRoot(options.outDir) : "stdout";
+        if (options.listInputs || options.listOutputs)
+        {
+            emitScsvLists({}, {}, options.listInputs, options.listOutputs);
+        }
+        printRunSummary(options.targetLanguage, outputRoot, 0U, std::chrono::steady_clock::now() - startTime);
+        return 0;
+    }
+
+    logVerbose(1, "discovering and parsing definitions");
+    auto ast = llvmdsdl::parseDefinitions(resolved->rootNamespaceDirs, resolved->lookupDirs, diagnostics);
     if (!ast)
     {
         llvm::consumeError(ast.takeError());
@@ -627,18 +947,66 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    if (command == "ast")
     {
-        llvm::outs() << llvmdsdl::printAST(*ast);
-        return finish("stdout", 0);
+        std::unordered_set<std::string> explicitFileSet;
+        explicitFileSet.reserve(resolved->explicitTargetFiles.size());
+        for (const auto& file : resolved->explicitTargetFiles)
+        {
+            explicitFileSet.insert(normalizePathForCompare(file));
+        }
+        for (auto& def : ast->definitions)
+        {
+            def.info.isExplicitTarget = explicitFileSet.contains(normalizePathForCompare(def.info.filePath));
+        }
     }
 
-    auto semantic = llvmdsdl::analyze(*ast, diagnostics);
+    logVerbose(1, "running semantic analysis");
+    llvmdsdl::AnalyzeOptions analyzeOptions;
+    analyzeOptions.allowUnregulatedFixedPortId = options.allowUnregulatedFixedPortId;
+    auto semantic = llvmdsdl::analyze(*ast, diagnostics, analyzeOptions);
     if (!semantic)
     {
         llvm::consumeError(semantic.takeError());
         printDiagnostics(diagnostics);
         return 1;
+    }
+
+    const auto explicitKeys = collectExplicitKeys(*semantic);
+    if (explicitKeys.empty())
+    {
+        diagnostics.error({"<cli>", 1, 1}, "no explicit targets were resolved in the analyzed semantic graph");
+        printDiagnostics(diagnostics);
+        return 1;
+    }
+
+    const auto closureKeys = computeDependencyClosure(*semantic, explicitKeys);
+    const auto selectedKeys = options.omitDependencies ? explicitKeys : closureKeys;
+
+    const auto closureSemantic = filterSemanticModule(*semantic, closureKeys);
+    const auto inputsForListing = collectInputFilesForClosure(*semantic, closureKeys);
+
+    auto finish = [&](llvm::StringRef outputRoot, std::vector<std::string> generatedOutputs, const bool forceFailure = false) {
+        generatedOutputs = dedupSorted(std::move(generatedOutputs));
+        if (options.listInputs || options.listOutputs)
+        {
+            emitScsvLists(inputsForListing, generatedOutputs, options.listInputs, options.listOutputs);
+        }
+        printDiagnostics(diagnostics);
+        printRunSummary(options.targetLanguage,
+                        outputRoot,
+                        static_cast<std::uint64_t>(generatedOutputs.size()),
+                        std::chrono::steady_clock::now() - startTime);
+        return (forceFailure || diagnostics.hasErrors()) ? 1 : 0;
+    };
+
+    if (options.targetLanguage == "ast")
+    {
+        const auto filteredAst = filterAstModule(*ast, selectedKeys);
+        if (!options.listInputs && !options.listOutputs)
+        {
+            llvm::outs() << llvmdsdl::printAST(filteredAst);
+        }
+        return finish("stdout", {});
     }
 
     mlir::DialectRegistry registry;
@@ -654,157 +1022,150 @@ int main(int argc, char** argv)
     context.getOrLoadDialect<mlir::scf::SCFDialect>();
     context.getOrLoadDialect<mlir::emitc::EmitCDialect>();
 
-    auto mlirModule = llvmdsdl::lowerToMLIR(*semantic, context, diagnostics);
+    if (options.targetLanguage == "mlir")
+    {
+        const auto selectedSemantic = filterSemanticModule(closureSemantic, selectedKeys);
+        auto       mlirModule       = llvmdsdl::lowerToMLIR(selectedSemantic, context, diagnostics);
+        if (!mlirModule)
+        {
+            printDiagnostics(diagnostics);
+            return 1;
+        }
+        if (!options.listInputs && !options.listOutputs)
+        {
+            mlirModule->print(llvm::outs());
+            llvm::outs() << "\n";
+        }
+        return finish("stdout", {});
+    }
+
+    logVerbose(1, "lowering semantic model to MLIR");
+    auto mlirModule = llvmdsdl::lowerToMLIR(closureSemantic, context, diagnostics);
     if (!mlirModule)
     {
         printDiagnostics(diagnostics);
         return 1;
     }
 
-    if (command == "mlir")
-    {
-        mlirModule->print(llvm::outs());
-        llvm::outs() << "\n";
-        return finish("stdout", 0);
-    }
+    std::vector<std::string> selectedTypeKeys(selectedKeys.begin(), selectedKeys.end());
+    std::sort(selectedTypeKeys.begin(), selectedTypeKeys.end());
 
-    if (command == "c")
-    {
-        if (outDir.empty())
-        {
-            llvm::errs() << "--out-dir is required for 'c' command\n";
-            return 1;
-        }
-        llvmdsdl::CEmitOptions options;
-        options.outDir                = outDir;
-        options.optimizeLoweredSerDes = optimizeLoweredSerDes;
+    std::vector<std::string> generatedOutputs;
+    llvmdsdl::EmitWritePolicy writePolicy;
+    writePolicy.dryRun         = options.dryRun;
+    writePolicy.noOverwrite    = options.noOverwrite;
+    writePolicy.fileMode       = options.fileMode;
+    writePolicy.recordedOutputs = &generatedOutputs;
 
-        if (llvm::Error err = llvmdsdl::emitC(*semantic, *mlirModule, options, diagnostics))
+    logVerbose(1, "running backend emission");
+
+    if (options.targetLanguage == "c")
+    {
+        llvmdsdl::CEmitOptions emitOptions;
+        emitOptions.outDir                = options.outDir;
+        emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
+        emitOptions.selectedTypeKeys      = selectedTypeKeys;
+        emitOptions.writePolicy           = writePolicy;
+
+        if (auto err = llvmdsdl::emitC(closureSemantic, *mlirModule, emitOptions, diagnostics))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
-            printDiagnostics(diagnostics);
-            return 1;
+            return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
         }
-
-        return finish(resolveOutputRoot(outDir), countRegularFiles(outDir));
+        return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs));
     }
 
-    if (command == "cpp")
+    if (options.targetLanguage == "cpp")
     {
-        if (outDir.empty())
-        {
-            llvm::errs() << "--out-dir is required for 'cpp' command\n";
-            return 1;
-        }
-        llvmdsdl::CppEmitOptions options;
-        options.outDir                = outDir;
-        options.profile               = cppProfile;
-        options.optimizeLoweredSerDes = optimizeLoweredSerDes;
+        llvmdsdl::CppEmitOptions emitOptions;
+        emitOptions.outDir                = options.outDir;
+        emitOptions.profile               = options.cppProfile;
+        emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
+        emitOptions.selectedTypeKeys      = selectedTypeKeys;
+        emitOptions.writePolicy           = writePolicy;
 
-        if (llvm::Error err = llvmdsdl::emitCpp(*semantic, *mlirModule, options, diagnostics))
+        if (auto err = llvmdsdl::emitCpp(closureSemantic, *mlirModule, emitOptions, diagnostics))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
-            printDiagnostics(diagnostics);
-            return 1;
+            return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
         }
-
-        return finish(resolveOutputRoot(outDir), countRegularFiles(outDir));
+        return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs));
     }
 
-    if (command == "rust")
+    if (options.targetLanguage == "rust")
     {
-        if (outDir.empty())
-        {
-            llvm::errs() << "--out-dir is required for 'rust' command\n";
-            return 1;
-        }
-        llvmdsdl::RustEmitOptions options;
-        options.outDir                = outDir;
-        options.crateName             = rustCrateName;
-        options.profile               = rustProfile;
-        options.runtimeSpecialization = rustRuntimeSpecialization;
-        options.memoryMode            = rustMemoryMode;
-        options.inlineThresholdBytes  = rustInlineThresholdBytes;
-        options.optimizeLoweredSerDes = optimizeLoweredSerDes;
+        llvmdsdl::RustEmitOptions emitOptions;
+        emitOptions.outDir                = options.outDir;
+        emitOptions.crateName             = options.rustCrateName;
+        emitOptions.profile               = options.rustProfile;
+        emitOptions.runtimeSpecialization = options.rustRuntimeSpecialization;
+        emitOptions.memoryMode            = options.rustMemoryMode;
+        emitOptions.inlineThresholdBytes  = options.rustInlineThresholdBytes;
+        emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
+        emitOptions.selectedTypeKeys      = selectedTypeKeys;
+        emitOptions.writePolicy           = writePolicy;
 
-        if (llvm::Error err = llvmdsdl::emitRust(*semantic, *mlirModule, options, diagnostics))
+        if (auto err = llvmdsdl::emitRust(closureSemantic, *mlirModule, emitOptions, diagnostics))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
-            printDiagnostics(diagnostics);
-            return 1;
+            return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
         }
-
-        return finish(resolveOutputRoot(outDir), countRegularFiles(outDir));
+        return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs));
     }
 
-    if (command == "go")
+    if (options.targetLanguage == "go")
     {
-        if (outDir.empty())
-        {
-            llvm::errs() << "--out-dir is required for 'go' command\n";
-            return 1;
-        }
-        llvmdsdl::GoEmitOptions options;
-        options.outDir                = outDir;
-        options.moduleName            = goModuleName;
-        options.optimizeLoweredSerDes = optimizeLoweredSerDes;
+        llvmdsdl::GoEmitOptions emitOptions;
+        emitOptions.outDir                = options.outDir;
+        emitOptions.moduleName            = options.goModuleName;
+        emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
+        emitOptions.selectedTypeKeys      = selectedTypeKeys;
+        emitOptions.writePolicy           = writePolicy;
 
-        if (llvm::Error err = llvmdsdl::emitGo(*semantic, *mlirModule, options, diagnostics))
+        if (auto err = llvmdsdl::emitGo(closureSemantic, *mlirModule, emitOptions, diagnostics))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
-            printDiagnostics(diagnostics);
-            return 1;
+            return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
         }
-
-        return finish(resolveOutputRoot(outDir), countRegularFiles(outDir));
+        return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs));
     }
 
-    if (command == "ts")
+    if (options.targetLanguage == "ts")
     {
-        if (outDir.empty())
-        {
-            llvm::errs() << "--out-dir is required for 'ts' command\n";
-            return 1;
-        }
-        llvmdsdl::TsEmitOptions options;
-        options.outDir                = outDir;
-        options.moduleName            = tsModuleName;
-        options.runtimeSpecialization = tsRuntimeSpecialization;
-        options.optimizeLoweredSerDes = optimizeLoweredSerDes;
+        llvmdsdl::TsEmitOptions emitOptions;
+        emitOptions.outDir                = options.outDir;
+        emitOptions.moduleName            = options.tsModuleName;
+        emitOptions.runtimeSpecialization = options.tsRuntimeSpecialization;
+        emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
+        emitOptions.selectedTypeKeys      = selectedTypeKeys;
+        emitOptions.writePolicy           = writePolicy;
 
-        if (llvm::Error err = llvmdsdl::emitTs(*semantic, *mlirModule, options, diagnostics))
+        if (auto err = llvmdsdl::emitTs(closureSemantic, *mlirModule, emitOptions, diagnostics))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
-            printDiagnostics(diagnostics);
-            return 1;
+            return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
         }
-
-        return finish(resolveOutputRoot(outDir), countRegularFiles(outDir));
+        return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs));
     }
 
-    if (command == "python")
+    if (options.targetLanguage == "python")
     {
-        if (outDir.empty())
-        {
-            llvm::errs() << "--out-dir is required for 'python' command\n";
-            return 1;
-        }
-        llvmdsdl::PythonEmitOptions options;
-        options.outDir                = outDir;
-        options.packageName           = pyPackageName;
-        options.runtimeSpecialization = pyRuntimeSpecialization;
-        options.optimizeLoweredSerDes = optimizeLoweredSerDes;
+        llvmdsdl::PythonEmitOptions emitOptions;
+        emitOptions.outDir                = options.outDir;
+        emitOptions.packageName           = options.pyPackageName;
+        emitOptions.runtimeSpecialization = options.pyRuntimeSpecialization;
+        emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
+        emitOptions.selectedTypeKeys      = selectedTypeKeys;
+        emitOptions.writePolicy           = writePolicy;
 
-        if (llvm::Error err = llvmdsdl::emitPython(*semantic, *mlirModule, options, diagnostics))
+        if (auto err = llvmdsdl::emitPython(closureSemantic, *mlirModule, emitOptions, diagnostics))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
-            printDiagnostics(diagnostics);
-            return 1;
+            return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
         }
-
-        return finish(resolveOutputRoot(outDir), countRegularFiles(outDir));
+        return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs));
     }
 
-    llvm::errs() << "Unhandled command path: " << command << "\n";
+    llvm::errs() << "Unhandled language path: " << options.targetLanguage << "\n";
     return 1;
 }

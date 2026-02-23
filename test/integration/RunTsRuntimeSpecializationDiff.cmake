@@ -27,10 +27,10 @@ set(fast_out "${OUT_DIR}/ts-fast")
 
 execute_process(
   COMMAND
-    "${DSDLC}" ts
-      --root-namespace-dir "${UAVCAN_ROOT}"
+    "${DSDLC}" --target-language ts
+      "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
-      --out-dir "${portable_out}"
+      --outdir "${portable_out}"
       --ts-module "uavcan_dsdl_generated_ts"
       --ts-runtime-specialization "portable"
   RESULT_VARIABLE portable_result
@@ -45,10 +45,10 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" ts
-      --root-namespace-dir "${UAVCAN_ROOT}"
+    "${DSDLC}" --target-language ts
+      "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
-      --out-dir "${fast_out}"
+      --outdir "${fast_out}"
       --ts-module "uavcan_dsdl_generated_ts"
       --ts-runtime-specialization "fast"
   RESULT_VARIABLE fast_result

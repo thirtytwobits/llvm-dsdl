@@ -14,7 +14,10 @@
 #ifndef LLVMDSDL_CODEGEN_PYTHON_EMITTER_H
 #define LLVMDSDL_CODEGEN_PYTHON_EMITTER_H
 
+#include "llvmdsdl/CodeGen/EmitCommon.h"
+
 #include <string>
+#include <vector>
 
 #include "llvm/Support/Error.h"
 
@@ -52,6 +55,12 @@ struct PythonEmitOptions final
 
     /// @brief Enables optional lowered-serdes optimization before emission.
     bool optimizeLoweredSerDes{false};
+
+    /// @brief Optional list of selected type keys to emit.
+    std::vector<std::string> selectedTypeKeys;
+
+    /// @brief Output write policy.
+    EmitWritePolicy writePolicy;
 };
 
 /// @brief Emits Python artifacts from semantic and lowered MLIR inputs.

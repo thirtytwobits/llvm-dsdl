@@ -998,10 +998,10 @@ set(PY_PACKAGE "${py_package}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" c
-      --root-namespace-dir "${fixture_root}"
+    "${DSDLC}" --target-language c
+      "${fixture_root}"
       ${dsdlc_extra_args}
-      --out-dir "${c_out}"
+      --outdir "${c_out}"
   RESULT_VARIABLE c_gen_result
   OUTPUT_VARIABLE c_gen_stdout
   ERROR_VARIABLE c_gen_stderr
@@ -1014,10 +1014,10 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" python
-      --root-namespace-dir "${fixture_root}"
+    "${DSDLC}" --target-language python
+      "${fixture_root}"
       ${dsdlc_extra_args}
-      --out-dir "${py_out}"
+      --outdir "${py_out}"
       --py-package "${py_package}"
       ${py_runtime_specialization_arg}
   RESULT_VARIABLE py_gen_result

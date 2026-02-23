@@ -25,14 +25,14 @@ file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
 set(dsdlc_args
-  python
-  --root-namespace-dir "${FIXTURES_ROOT}"
-  --out-dir "${OUT_DIR}"
+  --target-language python
+  "${FIXTURES_ROOT}"
+  --outdir "${OUT_DIR}"
   --py-package "${PY_PACKAGE}"
 )
 if(DEFINED DSDLC_EXTRA_ARGS AND NOT "${DSDLC_EXTRA_ARGS}" STREQUAL "")
   separate_arguments(extra_args NATIVE_COMMAND "${DSDLC_EXTRA_ARGS}")
-  list(INSERT dsdlc_args 1 ${extra_args})
+  list(INSERT dsdlc_args 2 ${extra_args})
 endif()
 
 execute_process(

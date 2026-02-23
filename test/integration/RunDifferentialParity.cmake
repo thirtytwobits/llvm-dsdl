@@ -73,10 +73,10 @@ file(MAKE_DIRECTORY "${build_out}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" c
-      --root-namespace-dir "${UAVCAN_ROOT}"
+    "${DSDLC}" --target-language c
+      "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
-      --out-dir "${ours_out}"
+      --outdir "${ours_out}"
   RESULT_VARIABLE ours_result
   OUTPUT_VARIABLE ours_stdout
   ERROR_VARIABLE ours_stderr

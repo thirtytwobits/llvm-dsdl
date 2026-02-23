@@ -29,10 +29,10 @@ string(REPLACE "." "/" py_package_path "${py_package_path}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" python
-      --root-namespace-dir "${UAVCAN_ROOT}"
+    "${DSDLC}" --target-language python
+      "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
-      --out-dir "${portable_out}"
+      --outdir "${portable_out}"
       --py-package "${py_package}"
       --py-runtime-specialization "portable"
   RESULT_VARIABLE portable_result
@@ -47,10 +47,10 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" python
-      --root-namespace-dir "${UAVCAN_ROOT}"
+    "${DSDLC}" --target-language python
+      "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
-      --out-dir "${fast_out}"
+      --outdir "${fast_out}"
       --py-package "${py_package}"
       --py-runtime-specialization "fast"
   RESULT_VARIABLE fast_result

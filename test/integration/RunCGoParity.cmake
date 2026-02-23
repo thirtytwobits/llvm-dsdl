@@ -69,10 +69,10 @@ file(MAKE_DIRECTORY "${harness_out}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" c
-      --root-namespace-dir "${UAVCAN_ROOT}"
+    "${DSDLC}" --target-language c
+      "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
-      --out-dir "${c_out}"
+      --outdir "${c_out}"
   RESULT_VARIABLE c_result
   OUTPUT_VARIABLE c_stdout
   ERROR_VARIABLE c_stderr
@@ -85,10 +85,10 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" go
-      --root-namespace-dir "${UAVCAN_ROOT}"
+    "${DSDLC}" --target-language go
+      "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
-      --out-dir "${go_out}"
+      --outdir "${go_out}"
       --go-module "uavcan_dsdl_generated"
   RESULT_VARIABLE go_result
   OUTPUT_VARIABLE go_stdout

@@ -56,10 +56,10 @@ file(MAKE_DIRECTORY "${work_dir}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" c
-      --root-namespace-dir "${FIXTURE_ROOT}"
+    "${DSDLC}" --target-language c
+      "${FIXTURE_ROOT}"
       ${dsdlc_extra_args}
-      --out-dir "${c_out}"
+      --outdir "${c_out}"
   RESULT_VARIABLE c_gen_result
   OUTPUT_VARIABLE c_gen_stdout
   ERROR_VARIABLE c_gen_stderr
@@ -73,10 +73,10 @@ endif()
 set(py_package "signed_narrow_c_python_parity")
 execute_process(
   COMMAND
-    "${DSDLC}" python
-      --root-namespace-dir "${FIXTURE_ROOT}"
+    "${DSDLC}" --target-language python
+      "${FIXTURE_ROOT}"
       ${dsdlc_extra_args}
-      --out-dir "${py_out}"
+      --outdir "${py_out}"
       --py-package "${py_package}"
       ${py_runtime_specialization_arg}
   RESULT_VARIABLE py_gen_result

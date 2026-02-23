@@ -24,16 +24,16 @@ It currently provides:
 
 - A DSDL frontend (`.dsdl` discovery, parse, semantic analysis).
 - A custom MLIR DSDL dialect and lowering pipeline hooks.
-- C11 code generation (`dsdlc c`) with:
+- C11 code generation (`dsdlc --target-language c`) with:
   - Per-type headers mirroring namespace directories.
   - Declarations/wrappers in headers plus per-definition `.c` SerDes implementations generated via MLIR/EmitC lowering.
   - A local header-only runtime (`dsdl_runtime.h`) with bit-level primitives.
-- C++23 code generation (`dsdlc cpp`) with:
+- C++23 code generation (`dsdlc --target-language cpp`) with:
   - Per-type headers (`.hpp`) mirroring namespace directories.
   - Header-only inline SerDes for both `std` and allocator-oriented `pmr` profiles.
   - A C++ runtime wrapper (`dsdl_runtime.hpp`) over the core bit-level runtime.
   - MLIR schema/plan metadata validation before emission (fail-fast on malformed IR facts).
-- Rust code generation (`dsdlc rust`) with:
+- Rust code generation (`dsdlc --target-language rust`) with:
   - A generated crate layout (`Cargo.toml`, `src/lib.rs`, `src/**`).
   - Per-type Rust data types and inline SerDes methods.
   - A local Rust runtime module (`src/dsdl_runtime.rs`) with bit-level primitives.
@@ -42,18 +42,18 @@ It currently provides:
   - Rust memory-mode contract options (`max-inline|inline-then-pool`) with
     configurable inline threshold metadata.
   - MLIR schema/plan metadata validation before emission (matching C++ structural checks).
-- Go code generation (`dsdlc go`) with:
+- Go code generation (`dsdlc --target-language go`) with:
   - A generated module layout (`go.mod`, `uavcan/**`, `dsdlruntime/**`).
   - Per-type Go data types and inline SerDes methods.
   - A local Go runtime module (`dsdlruntime/dsdl_runtime.go`) with bit-level primitives.
   - Deterministic output and full-`uavcan` generation/build gates.
-- TypeScript code generation (`dsdlc ts`) with:
+- TypeScript code generation (`dsdlc --target-language ts`) with:
   - A generated package/module layout (`package.json`, `index.ts`, namespace `*.ts` files).
   - Per-type TypeScript interface/type declarations, DSDL metadata constants, and generated runtime SerDes entrypoints.
   - A generated TypeScript runtime helper module (`dsdl_runtime.ts`) for bit-level read/write primitives.
   - Runtime specialization (`portable|fast`) for generated runtime helper implementation strategy.
   - MLIR schema/plan metadata validation before emission.
-- Python 3.10 code generation (`dsdlc python`) with:
+- Python 3.10 code generation (`dsdlc --target-language python`) with:
   - A generated package/module layout (package root + namespace `*.py` files).
   - Per-type Python dataclasses, DSDL metadata constants, and generated runtime-backed SerDes methods.
   - A generated pure-Python runtime helper (`_dsdl_runtime.py`) and runtime loader (`_runtime_loader.py`).
@@ -348,30 +348,30 @@ DSDLC=./build/matrix/dev-homebrew/tools/dsdlc/RelWithDebInfo/dsdlc
 ### AST dump
 
 ```bash
-"${DSDLC}" ast \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan
+"${DSDLC}" --target-language ast \
+  submodules/public_regulated_data_types/uavcan
 ```
 
 ### MLIR output
 
 ```bash
-"${DSDLC}" mlir \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan
+"${DSDLC}" --target-language mlir \
+  submodules/public_regulated_data_types/uavcan
 ```
 
 ### C header generation
 
 ```bash
-"${DSDLC}" c \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
-  --out-dir build/uavcan-out
+"${DSDLC}" --target-language c \
+  submodules/public_regulated_data_types/uavcan \
+  --outdir build/uavcan-out
 ```
 
 Optional:
 
 - `--optimize-lowered-serdes`: enable optional semantics-preserving MLIR
   optimization on lowered SerDes IR before backend emission.
-- No additional C mode flags are required: `dsdlc c` always emits headers and
+- No additional C mode flags are required: `dsdlc --target-language c` always emits headers and
   per-definition implementation translation units.
 
 ### C++23 header generation (`std`/`pmr`)
@@ -379,26 +379,26 @@ Optional:
 Generate both profiles:
 
 ```bash
-"${DSDLC}" cpp \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
+"${DSDLC}" --target-language cpp \
+  submodules/public_regulated_data_types/uavcan \
   --cpp-profile both \
-  --out-dir build/uavcan-cpp-out
+  --outdir build/uavcan-cpp-out
 ```
 
 Generate only one profile:
 
 ```bash
-"${DSDLC}" cpp \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
+"${DSDLC}" --target-language cpp \
+  submodules/public_regulated_data_types/uavcan \
   --cpp-profile std \
-  --out-dir build/uavcan-cpp-std-out
+  --outdir build/uavcan-cpp-std-out
 ```
 
 ```bash
-"${DSDLC}" cpp \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
+"${DSDLC}" --target-language cpp \
+  submodules/public_regulated_data_types/uavcan \
   --cpp-profile pmr \
-  --out-dir build/uavcan-cpp-pmr-out
+  --outdir build/uavcan-cpp-pmr-out
 ```
 
 Profile behavior:
@@ -422,9 +422,9 @@ Naming style:
 ### Rust crate generation (`std`/`no-std-alloc` + runtime specialization + memory mode)
 
 ```bash
-"${DSDLC}" rust \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
-  --out-dir build/uavcan-rust-out \
+"${DSDLC}" --target-language rust \
+  submodules/public_regulated_data_types/uavcan \
+  --outdir build/uavcan-rust-out \
   --rust-crate-name uavcan_dsdl_generated \
   --rust-profile std
 ```
@@ -432,9 +432,9 @@ Naming style:
 No-std+alloc profile:
 
 ```bash
-"${DSDLC}" rust \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
-  --out-dir build/uavcan-rust-no-std-out \
+"${DSDLC}" --target-language rust \
+  submodules/public_regulated_data_types/uavcan \
+  --outdir build/uavcan-rust-no-std-out \
   --rust-crate-name uavcan_dsdl_generated_no_std \
   --rust-profile no-std-alloc
 ```
@@ -442,9 +442,9 @@ No-std+alloc profile:
 Runtime-specialized std profile:
 
 ```bash
-"${DSDLC}" rust \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
-  --out-dir build/uavcan-rust-fast-out \
+"${DSDLC}" --target-language rust \
+  submodules/public_regulated_data_types/uavcan \
+  --outdir build/uavcan-rust-fast-out \
   --rust-crate-name uavcan_dsdl_generated_fast \
   --rust-profile std \
   --rust-runtime-specialization fast
@@ -453,18 +453,18 @@ Runtime-specialized std profile:
 No-std+alloc profile with explicit memory mode contracts:
 
 ```bash
-"${DSDLC}" rust \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
-  --out-dir build/uavcan-rust-no-std-inline-out \
+"${DSDLC}" --target-language rust \
+  submodules/public_regulated_data_types/uavcan \
+  --outdir build/uavcan-rust-no-std-inline-out \
   --rust-crate-name uavcan_dsdl_generated_no_std_inline \
   --rust-profile no-std-alloc \
   --rust-memory-mode max-inline
 ```
 
 ```bash
-"${DSDLC}" rust \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
-  --out-dir build/uavcan-rust-no-std-pool-out \
+"${DSDLC}" --target-language rust \
+  submodules/public_regulated_data_types/uavcan \
+  --outdir build/uavcan-rust-no-std-pool-out \
   --rust-crate-name uavcan_dsdl_generated_no_std_pool \
   --rust-profile no-std-alloc \
   --rust-memory-mode inline-then-pool \
@@ -550,18 +550,18 @@ Embedded deployment guidance from the benchmark lane:
 ### TypeScript module generation (non-C-like target)
 
 ```bash
-"${DSDLC}" ts \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
-  --out-dir build/uavcan-ts-out \
+"${DSDLC}" --target-language ts \
+  submodules/public_regulated_data_types/uavcan \
+  --outdir build/uavcan-ts-out \
   --ts-module uavcan_dsdl_generated_ts
 ```
 
 Runtime-specialized fast profile:
 
 ```bash
-"${DSDLC}" ts \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
-  --out-dir build/uavcan-ts-fast-out \
+"${DSDLC}" --target-language ts \
+  submodules/public_regulated_data_types/uavcan \
+  --outdir build/uavcan-ts-fast-out \
   --ts-module uavcan_dsdl_generated_ts_fast \
   --ts-runtime-specialization fast
 ```
@@ -600,9 +600,9 @@ Current behavior:
 ### Python module generation (`python3.10` + optional accelerator)
 
 ```bash
-"${DSDLC}" python \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
-  --out-dir build/uavcan-python-out \
+"${DSDLC}" --target-language python \
+  submodules/public_regulated_data_types/uavcan \
+  --outdir build/uavcan-python-out \
   --py-package uavcan_dsdl_generated_py
 ```
 
@@ -638,9 +638,9 @@ Pure-only install/run workflow:
 
 ```bash
 OUT_PY="build/uavcan-python-out"
-"${DSDLC}" python \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
-  --out-dir "${OUT_PY}" \
+"${DSDLC}" --target-language python \
+  submodules/public_regulated_data_types/uavcan \
+  --outdir "${OUT_PY}" \
   --py-package uavcan_dsdl_generated_py
 
 python3 -m venv "${OUT_PY}/.venv"
@@ -742,7 +742,7 @@ Python troubleshooting matrix:
 | --- | --- | --- |
 | `LLVMDSDL_PY_RUNTIME_MODE=accel` fails with `_dsdl_runtime_accel` import error | Accelerator not built or not staged beside generated package | Configure with `-DLLVMDSDL_ENABLE_PYTHON_ACCELERATOR=ON`, build, then run `stage-uavcan-python-runtime-accelerator-required` |
 | `LLVMDSDL_PY_RUNTIME_MODE=auto` reports `pure` backend unexpectedly | Auto mode falls back when accelerator is unavailable | Check `_runtime_loader.py` backend printout and stage accelerator if accel is required |
-| `pip install -e <out-dir>` fails | Missing generated `pyproject.toml` due to stale output or wrong `--out-dir` | Regenerate with `dsdlc python` and confirm `<out-dir>/pyproject.toml` exists |
+| `pip install -e <out-dir>` fails | Missing generated `pyproject.toml` due to stale output or wrong `--outdir` | Regenerate with `dsdlc --target-language python` and confirm `<out-dir>/pyproject.toml` exists |
 | Specialization diff lane fails | Unexpected semantic drift between `portable` and `fast` runtime specializations | Run `llvmdsdl-uavcan-python-runtime-specialization-diff` and inspect generated `_dsdl_runtime.py` differences only |
 | Bench lane fails when thresholds enabled | Missing or overly strict thresholds file | Start from `test/integration/python_runtime_bench_thresholds.json`, calibrate on reference hardware, then enable thresholds |
 
@@ -752,9 +752,9 @@ Python troubleshooting matrix:
 OUT="build/uavcan-out"
 mkdir -p "${OUT}"
 
-"${DSDLC}" c \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
-  --out-dir "${OUT}"
+"${DSDLC}" --target-language c \
+  submodules/public_regulated_data_types/uavcan \
+  --outdir "${OUT}"
 
 find submodules/public_regulated_data_types/uavcan -name '*.dsdl' | wc -l
 find "${OUT}" -name '*.h' ! -name 'dsdl_runtime.h' | wc -l

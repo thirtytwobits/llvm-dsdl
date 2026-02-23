@@ -37,10 +37,10 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_PING_PONG_GEN_DIR}"
   COMMAND
     $<TARGET_FILE:dsdlc>
-      cpp
-      --root-namespace-dir "${LLVMDSDL_PING_PONG_DSDL_ROOT}"
+      --target-language cpp
+      "${LLVMDSDL_PING_PONG_DSDL_ROOT}"
       --cpp-profile std
-      --out-dir "${LLVMDSDL_PING_PONG_GEN_DIR}"
+      --outdir "${LLVMDSDL_PING_PONG_GEN_DIR}"
   DEPENDS
     dsdlc
     "${LLVMDSDL_PING_PONG_DSDL_ROOT}/demo/ping/PingPong.1.0.dsdl"

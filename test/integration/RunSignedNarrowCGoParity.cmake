@@ -69,10 +69,10 @@ file(MAKE_DIRECTORY "${harness_out}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" c
-      --root-namespace-dir "${FIXTURE_ROOT}"
+    "${DSDLC}" --target-language c
+      "${FIXTURE_ROOT}"
       ${dsdlc_extra_args}
-      --out-dir "${c_out}"
+      --outdir "${c_out}"
   RESULT_VARIABLE c_result
   OUTPUT_VARIABLE c_stdout
   ERROR_VARIABLE c_stderr
@@ -85,11 +85,11 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" go
-      --root-namespace-dir "${FIXTURE_ROOT}"
+    "${DSDLC}" --target-language go
+      "${FIXTURE_ROOT}"
       ${dsdlc_extra_args}
       --go-module "signed_narrow_generated"
-      --out-dir "${go_out}"
+      --outdir "${go_out}"
   RESULT_VARIABLE go_result
   OUTPUT_VARIABLE go_stdout
   ERROR_VARIABLE go_stderr

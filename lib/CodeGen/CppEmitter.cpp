@@ -44,7 +44,6 @@
 #include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/CodeGen/WireLayoutFacts.h"
-#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
@@ -436,19 +435,6 @@ private:
     std::unordered_map<std::string, const SemanticDefinition*> byKey_;
     std::unordered_map<std::string, std::size_t>               versionCountByFullName_;
 };
-
-llvm::Error writeFile(const std::filesystem::path& p, llvm::StringRef content)
-{
-    std::error_code      ec;
-    llvm::raw_fd_ostream os(p.string(), ec, llvm::sys::fs::OF_Text);
-    if (ec)
-    {
-        return llvm::createStringError(ec, "failed to open %s", p.string().c_str());
-    }
-    os << content;
-    os.close();
-    return llvm::Error::success();
-}
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
 {
@@ -1898,16 +1884,16 @@ std::string renderHeader(const SemanticDefinition& def,
 llvm::Error emitProfile(const SemanticModule&        semantic,
                         const std::filesystem::path& outRoot,
                         const bool                   pmrMode,
-                        const LoweredFactsMap&       loweredFacts)
+                        const LoweredFactsMap&       loweredFacts,
+                        const CppEmitOptions&        options,
+                        const std::unordered_set<std::string>& selectedTypeKeys)
 {
-    std::filesystem::create_directories(outRoot);
-
     auto cRuntime = loadCRuntimeHeader();
     if (!cRuntime)
     {
         return cRuntime.takeError();
     }
-    if (auto err = writeFile(outRoot / "dsdl_runtime.h", *cRuntime))
+    if (auto err = writeGeneratedFile(outRoot / "dsdl_runtime.h", *cRuntime, options.writePolicy))
     {
         return err;
     }
@@ -1917,7 +1903,7 @@ llvm::Error emitProfile(const SemanticModule&        semantic,
     {
         return cppRuntime.takeError();
     }
-    if (auto err = writeFile(outRoot / "dsdl_runtime.hpp", *cppRuntime))
+    if (auto err = writeGeneratedFile(outRoot / "dsdl_runtime.hpp", *cppRuntime, options.writePolicy))
     {
         return err;
     }
@@ -1925,14 +1911,18 @@ llvm::Error emitProfile(const SemanticModule&        semantic,
     EmitterContext ctx(semantic);
     for (const auto& def : semantic.definitions)
     {
+        if (!shouldEmitDefinition(def.info, selectedTypeKeys))
+        {
+            continue;
+        }
+
         std::filesystem::path dir = outRoot;
         for (const auto& ns : def.info.namespaceComponents)
         {
             dir /= ns;
         }
-        std::filesystem::create_directories(dir);
-
-        if (auto err = writeFile(dir / headerFileName(def.info), renderHeader(def, ctx, pmrMode, loweredFacts)))
+        if (auto err =
+                writeGeneratedFile(dir / headerFileName(def.info), renderHeader(def, ctx, pmrMode, loweredFacts), options.writePolicy))
         {
             return err;
         }
@@ -1965,22 +1955,22 @@ llvm::Error emitCpp(const SemanticModule& semantic,
     }
 
     std::filesystem::path outRoot(options.outDir);
-    std::filesystem::create_directories(outRoot);
+    const auto            selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
     if (options.profile == CppProfile::Std)
     {
-        return emitProfile(semantic, outRoot, false, loweredFacts);
+        return emitProfile(semantic, outRoot, false, loweredFacts, options, selectedTypeKeys);
     }
     if (options.profile == CppProfile::Pmr)
     {
-        return emitProfile(semantic, outRoot, true, loweredFacts);
+        return emitProfile(semantic, outRoot, true, loweredFacts, options, selectedTypeKeys);
     }
 
-    if (auto err = emitProfile(semantic, outRoot / "std", false, loweredFacts))
+    if (auto err = emitProfile(semantic, outRoot / "std", false, loweredFacts, options, selectedTypeKeys))
     {
         return err;
     }
-    return emitProfile(semantic, outRoot / "pmr", true, loweredFacts);
+    return emitProfile(semantic, outRoot / "pmr", true, loweredFacts, options, selectedTypeKeys);
 }
 
 }  // namespace llvmdsdl

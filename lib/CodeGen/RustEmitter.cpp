@@ -45,7 +45,6 @@
 #include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/CodeGen/WireLayoutFacts.h"
-#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
 #include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
@@ -235,19 +234,6 @@ std::string rustConstValue(const Value& value)
         return escaped;
     }
     return value.str();
-}
-
-llvm::Error writeFile(const std::filesystem::path& p, llvm::StringRef content)
-{
-    std::error_code      ec;
-    llvm::raw_fd_ostream os(p.string(), ec, llvm::sys::fs::OF_Text);
-    if (ec)
-    {
-        return llvm::createStringError(ec, "failed to open %s", p.string().c_str());
-    }
-    os << content;
-    os.close();
-    return llvm::Error::success();
 }
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
@@ -1602,11 +1588,11 @@ llvm::Error emitRust(const SemanticModule&  semantic,
     }
     std::filesystem::path outRoot(options.outDir);
     std::filesystem::path srcRoot = outRoot / "src";
-    std::filesystem::create_directories(srcRoot);
+    const auto            selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
     if (options.emitCargoToml)
     {
-        if (auto err = writeFile(outRoot / "Cargo.toml", renderCargoToml(options)))
+        if (auto err = writeGeneratedFile(outRoot / "Cargo.toml", renderCargoToml(options), options.writePolicy))
         {
             return err;
         }
@@ -1617,7 +1603,7 @@ llvm::Error emitRust(const SemanticModule&  semantic,
     {
         return runtime.takeError();
     }
-    if (auto err = writeFile(srcRoot / "dsdl_runtime.rs", *runtime))
+    if (auto err = writeGeneratedFile(srcRoot / "dsdl_runtime.rs", *runtime, options.writePolicy))
     {
         return err;
     }
@@ -1629,6 +1615,11 @@ llvm::Error emitRust(const SemanticModule&  semantic,
 
     for (const auto& def : semantic.definitions)
     {
+        if (!shouldEmitDefinition(def.info, selectedTypeKeys))
+        {
+            continue;
+        }
+
         std::vector<std::string> ns;
         ns.reserve(def.info.namespaceComponents.size());
         for (const auto& c : def.info.namespaceComponents)
@@ -1657,9 +1648,8 @@ llvm::Error emitRust(const SemanticModule&  semantic,
         {
             dir /= dirRel;
         }
-        std::filesystem::create_directories(dir);
-
-        if (auto err = writeFile(dir / (modName + ".rs"), renderDefinitionFile(def, ctx, loweredFacts, options)))
+        if (auto err =
+                writeGeneratedFile(dir / (modName + ".rs"), renderDefinitionFile(def, ctx, loweredFacts, options), options.writePolicy))
         {
             return err;
         }
@@ -1689,7 +1679,7 @@ llvm::Error emitRust(const SemanticModule&  semantic,
         }
     }
 
-    if (auto err = writeFile(srcRoot / "lib.rs", lib.str()))
+    if (auto err = writeGeneratedFile(srcRoot / "lib.rs", lib.str(), options.writePolicy))
     {
         return err;
     }
@@ -1729,8 +1719,7 @@ llvm::Error emitRust(const SemanticModule&  semantic,
         }
 
         std::filesystem::path dir = srcRoot / dirRel;
-        std::filesystem::create_directories(dir);
-        if (auto err = writeFile(dir / "mod.rs", mod.str()))
+        if (auto err = writeGeneratedFile(dir / "mod.rs", mod.str(), options.writePolicy))
         {
             return err;
         }

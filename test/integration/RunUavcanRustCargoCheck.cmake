@@ -55,9 +55,9 @@ file(MAKE_DIRECTORY "${OUT_DIR}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" rust
-      --root-namespace-dir "${UAVCAN_ROOT}"
-      --out-dir "${OUT_DIR}"
+    "${DSDLC}" --target-language rust
+      "${UAVCAN_ROOT}"
+      --outdir "${OUT_DIR}"
       --rust-crate-name "uavcan_dsdl_generated"
       --rust-profile "${RUST_PROFILE}"
       --rust-runtime-specialization "${RUST_RUNTIME_SPECIALIZATION}"

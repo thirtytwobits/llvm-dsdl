@@ -219,9 +219,9 @@ DSDLC=./build/matrix/dev-llvm-env/tools/dsdlc/RelWithDebInfo/dsdlc
 OUT="build/uavcan-out-verify"
 mkdir -p "${OUT}"
 
-"${DSDLC}" c \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
-  --out-dir "${OUT}"
+"${DSDLC}" --target-language c \
+  submodules/public_regulated_data_types/uavcan \
+  --outdir "${OUT}"
 ```
 
 Expected result:
@@ -239,10 +239,10 @@ Expected result:
 OUT_CPP="build/uavcan-cpp-out-verify"
 mkdir -p "${OUT_CPP}"
 
-"${DSDLC}" cpp \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
+"${DSDLC}" --target-language cpp \
+  submodules/public_regulated_data_types/uavcan \
   --cpp-profile both \
-  --out-dir "${OUT_CPP}"
+  --outdir "${OUT_CPP}"
 ```
 
 Expected result:
@@ -259,17 +259,17 @@ Expected result:
 Single-profile generation:
 
 ```bash
-"${DSDLC}" cpp \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
+"${DSDLC}" --target-language cpp \
+  submodules/public_regulated_data_types/uavcan \
   --cpp-profile std \
-  --out-dir build/uavcan-cpp-std-out
+  --outdir build/uavcan-cpp-std-out
 ```
 
 ```bash
-"${DSDLC}" cpp \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
+"${DSDLC}" --target-language cpp \
+  submodules/public_regulated_data_types/uavcan \
   --cpp-profile pmr \
-  --out-dir build/uavcan-cpp-pmr-out
+  --outdir build/uavcan-cpp-pmr-out
 ```
 
 ## 10. Reproduce `uavcan` Rust Generation (`std`)
@@ -278,9 +278,9 @@ Single-profile generation:
 OUT_RUST="build/uavcan-rust-out-verify"
 mkdir -p "${OUT_RUST}"
 
-"${DSDLC}" rust \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
-  --out-dir "${OUT_RUST}" \
+"${DSDLC}" --target-language rust \
+  submodules/public_regulated_data_types/uavcan \
+  --outdir "${OUT_RUST}" \
   --rust-crate-name uavcan_dsdl_generated \
   --rust-profile std
 ```
@@ -306,18 +306,18 @@ Additional profile:
 No-std + explicit memory mode examples:
 
 ```bash
-"${DSDLC}" rust \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
-  --out-dir build/uavcan-rust-no-std-inline-out \
+"${DSDLC}" --target-language rust \
+  submodules/public_regulated_data_types/uavcan \
+  --outdir build/uavcan-rust-no-std-inline-out \
   --rust-crate-name uavcan_dsdl_generated_no_std_inline \
   --rust-profile no-std-alloc \
   --rust-memory-mode max-inline
 ```
 
 ```bash
-"${DSDLC}" rust \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
-  --out-dir build/uavcan-rust-no-std-pool-out \
+"${DSDLC}" --target-language rust \
+  submodules/public_regulated_data_types/uavcan \
+  --outdir build/uavcan-rust-no-std-pool-out \
   --rust-crate-name uavcan_dsdl_generated_no_std_pool \
   --rust-profile no-std-alloc \
   --rust-memory-mode inline-then-pool \
@@ -330,9 +330,9 @@ No-std + explicit memory mode examples:
 OUT_PY="build/uavcan-python-out-verify"
 mkdir -p "${OUT_PY}"
 
-"${DSDLC}" python \
-  --root-namespace-dir submodules/public_regulated_data_types/uavcan \
-  --out-dir "${OUT_PY}" \
+"${DSDLC}" --target-language python \
+  submodules/public_regulated_data_types/uavcan \
+  --outdir "${OUT_PY}" \
   --py-package uavcan_dsdl_generated_py \
   --py-runtime-specialization portable
 ```
@@ -659,7 +659,7 @@ Checklist:
 - Submodule initialized:
   - `git submodule update --init --recursive`
 - Command points at the root namespace:
-  - `--root-namespace-dir submodules/public_regulated_data_types/uavcan`
+  - `submodules/public_regulated_data_types/uavcan`
 
 ### 13.4 Header compile-check failures
 
@@ -844,8 +844,8 @@ Verify the canonical demo flow is runnable:
 
 ```bash
 cmake --build --preset build-dev-homebrew-relwithdebinfo --target dsdlc dsdl-opt -j
-bash -lc 'source /dev/null; DSDLC=build/matrix/dev-homebrew/tools/dsdlc/RelWithDebInfo/dsdlc DSDLOPT=build/matrix/dev-homebrew/tools/dsdl-opt/RelWithDebInfo/dsdl-opt ROOT_NS=test/lit/fixtures/vendor OUT=build/matrix/dev-homebrew/demo-smoke; rm -rf "$OUT"; mkdir -p "$OUT"; "$DSDLC" mlir --root-namespace-dir "$ROOT_NS" > "$OUT/module.mlir"; "$DSDLOPT" --pass-pipeline=builtin.module\\(lower-dsdl-serialization,convert-dsdl-to-emitc\\) "$OUT/module.mlir" > "$OUT/module.emitc.mlir"; "$DSDLC" c --root-namespace-dir "$ROOT_NS" --out-dir "$OUT/c"; "$DSDLC" cpp --root-namespace-dir "$ROOT_NS" --cpp-profile both --out-dir "$OUT/cpp"; "$DSDLC" rust --root-namespace-dir "$ROOT_NS" --rust-profile std --rust-crate-name demo_vendor_generated --out-dir "$OUT/rust"; "$DSDLC" go --root-namespace-dir "$ROOT_NS" --go-module demo/vendor/generated --out-dir "$OUT/go"; "$DSDLC" ts --root-namespace-dir "$ROOT_NS" --ts-module demo_vendor_generated_ts --out-dir "$OUT/ts"'
-bash -lc 'source /dev/null; DSDLC=build/matrix/dev-homebrew/tools/dsdlc/RelWithDebInfo/dsdlc DSDLOPT=build/matrix/dev-homebrew/tools/dsdl-opt/RelWithDebInfo/dsdl-opt ROOT_NS=test/lit/fixtures/vendor OUT=build/matrix/dev-homebrew/demo-smoke; rm -rf "$OUT"; mkdir -p "$OUT"; "$DSDLC" mlir --root-namespace-dir "$ROOT_NS" > "$OUT/module.mlir"; "$DSDLOPT" --pass-pipeline=builtin.module\\(lower-dsdl-serialization,convert-dsdl-to-emitc\\) "$OUT/module.mlir" > "$OUT/module.emitc.mlir"; "$DSDLC" c --root-namespace-dir "$ROOT_NS" --out-dir "$OUT/c"; "$DSDLC" cpp --root-namespace-dir "$ROOT_NS" --cpp-profile both --out-dir "$OUT/cpp"; "$DSDLC" rust --root-namespace-dir "$ROOT_NS" --rust-profile std --rust-crate-name demo_vendor_generated --out-dir "$OUT/rust"; "$DSDLC" go --root-namespace-dir "$ROOT_NS" --go-module demo/vendor/generated --out-dir "$OUT/go"; "$DSDLC" ts --root-namespace-dir "$ROOT_NS" --ts-module demo_vendor_generated_ts --out-dir "$OUT/ts"; "$DSDLC" python --root-namespace-dir "$ROOT_NS" --py-package demo_vendor_generated_py --out-dir "$OUT/python"'
+bash -lc 'source /dev/null; DSDLC=build/matrix/dev-homebrew/tools/dsdlc/RelWithDebInfo/dsdlc DSDLOPT=build/matrix/dev-homebrew/tools/dsdl-opt/RelWithDebInfo/dsdl-opt ROOT_NS=test/lit/fixtures/vendor OUT=build/matrix/dev-homebrew/demo-smoke; rm -rf "$OUT"; mkdir -p "$OUT"; "$DSDLC" --target-language mlir "$ROOT_NS" > "$OUT/module.mlir"; "$DSDLOPT" --pass-pipeline=builtin.module\\(lower-dsdl-serialization,convert-dsdl-to-emitc\\) "$OUT/module.mlir" > "$OUT/module.emitc.mlir"; "$DSDLC" --target-language c "$ROOT_NS" --outdir "$OUT/c"; "$DSDLC" --target-language cpp "$ROOT_NS" --cpp-profile both --outdir "$OUT/cpp"; "$DSDLC" --target-language rust "$ROOT_NS" --rust-profile std --rust-crate-name demo_vendor_generated --outdir "$OUT/rust"; "$DSDLC" --target-language go "$ROOT_NS" --go-module demo/vendor/generated --outdir "$OUT/go"; "$DSDLC" --target-language ts "$ROOT_NS" --ts-module demo_vendor_generated_ts --outdir "$OUT/ts"'
+bash -lc 'source /dev/null; DSDLC=build/matrix/dev-homebrew/tools/dsdlc/RelWithDebInfo/dsdlc DSDLOPT=build/matrix/dev-homebrew/tools/dsdl-opt/RelWithDebInfo/dsdl-opt ROOT_NS=test/lit/fixtures/vendor OUT=build/matrix/dev-homebrew/demo-smoke; rm -rf "$OUT"; mkdir -p "$OUT"; "$DSDLC" --target-language mlir "$ROOT_NS" > "$OUT/module.mlir"; "$DSDLOPT" --pass-pipeline=builtin.module\\(lower-dsdl-serialization,convert-dsdl-to-emitc\\) "$OUT/module.mlir" > "$OUT/module.emitc.mlir"; "$DSDLC" --target-language c "$ROOT_NS" --outdir "$OUT/c"; "$DSDLC" --target-language cpp "$ROOT_NS" --cpp-profile both --outdir "$OUT/cpp"; "$DSDLC" --target-language rust "$ROOT_NS" --rust-profile std --rust-crate-name demo_vendor_generated --outdir "$OUT/rust"; "$DSDLC" --target-language go "$ROOT_NS" --go-module demo/vendor/generated --outdir "$OUT/go"; "$DSDLC" --target-language ts "$ROOT_NS" --ts-module demo_vendor_generated_ts --outdir "$OUT/ts"; "$DSDLC" --target-language python "$ROOT_NS" --py-package demo_vendor_generated_py --outdir "$OUT/python"'
 ```
 
 ### 15.5 Release artifact expectations

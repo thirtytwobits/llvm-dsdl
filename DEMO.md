@@ -56,8 +56,8 @@ set -euo pipefail
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
-"$DSDLC" ast  --root-namespace-dir "$ROOT_NS" > "$OUT/ast.txt"
-"$DSDLC" mlir --root-namespace-dir "$ROOT_NS" > "$OUT/module.mlir"
+"$DSDLC" --target-language ast  "$ROOT_NS" > "$OUT/ast.txt"
+"$DSDLC" --target-language mlir "$ROOT_NS" > "$OUT/module.mlir"
 
 "$DSDLOPT" --pass-pipeline=builtin.module\(lower-dsdl-serialization\) \
   "$OUT/module.mlir" > "$OUT/module.lowered.mlir"
@@ -65,42 +65,42 @@ mkdir -p "$OUT"
 "$DSDLOPT" --pass-pipeline=builtin.module\(lower-dsdl-serialization,convert-dsdl-to-emitc\) \
   "$OUT/module.mlir" > "$OUT/module.emitc.mlir"
 
-"$DSDLC" c \
-  --root-namespace-dir "$ROOT_NS" \
-  --out-dir "$OUT/c"
+"$DSDLC" --target-language c \
+  "$ROOT_NS" \
+  --outdir "$OUT/c"
 
-"$DSDLC" cpp \
-  --root-namespace-dir "$ROOT_NS" \
+"$DSDLC" --target-language cpp \
+  "$ROOT_NS" \
   --cpp-profile both \
-  --out-dir "$OUT/cpp"
+  --outdir "$OUT/cpp"
 
-"$DSDLC" rust \
-  --root-namespace-dir "$ROOT_NS" \
+"$DSDLC" --target-language rust \
+  "$ROOT_NS" \
   --rust-profile std \
   --rust-crate-name demo_vendor_generated \
-  --out-dir "$OUT/rust"
+  --outdir "$OUT/rust"
 
-"$DSDLC" rust \
-  --root-namespace-dir "$ROOT_NS" \
+"$DSDLC" --target-language rust \
+  "$ROOT_NS" \
   --rust-profile std \
   --rust-runtime-specialization fast \
   --rust-crate-name demo_vendor_generated_fast \
-  --out-dir "$OUT/rust-fast"
+  --outdir "$OUT/rust-fast"
 
-"$DSDLC" go \
-  --root-namespace-dir "$ROOT_NS" \
+"$DSDLC" --target-language go \
+  "$ROOT_NS" \
   --go-module demo/vendor/generated \
-  --out-dir "$OUT/go"
+  --outdir "$OUT/go"
 
-"$DSDLC" ts \
-  --root-namespace-dir "$ROOT_NS" \
+"$DSDLC" --target-language ts \
+  "$ROOT_NS" \
   --ts-module demo_vendor_generated_ts \
-  --out-dir "$OUT/ts"
+  --outdir "$OUT/ts"
 
-"$DSDLC" python \
-  --root-namespace-dir "$ROOT_NS" \
+"$DSDLC" --target-language python \
+  "$ROOT_NS" \
   --py-package demo_vendor_generated_py \
-  --out-dir "$OUT/python"
+  --outdir "$OUT/python"
 ```
 
 ### 1.3 Show proof on screen (60 seconds)
@@ -141,11 +141,11 @@ sed -n '1,80p' "$OUT/python/demo_vendor_generated_py/vendor/type_1_0.py"
 Show runtime specialization and backend-selection model live:
 
 ```bash
-"$DSDLC" python \
-  --root-namespace-dir "$ROOT_NS" \
+"$DSDLC" --target-language python \
+  "$ROOT_NS" \
   --py-package demo_vendor_generated_py_fast \
   --py-runtime-specialization fast \
-  --out-dir "$OUT/python-fast"
+  --outdir "$OUT/python-fast"
 
 python3 -m venv "$OUT/python/.venv"
 "$OUT/python/.venv/bin/pip" install -e "$OUT/python"
@@ -233,34 +233,34 @@ OUT_FULL="build/dev-homebrew/demo-uavcan"
 rm -rf "$OUT_FULL"
 mkdir -p "$OUT_FULL"
 
-"$DSDLC" mlir --root-namespace-dir "$ROOT_NS_FULL" > "$OUT_FULL/module.mlir"
+"$DSDLC" --target-language mlir "$ROOT_NS_FULL" > "$OUT_FULL/module.mlir"
 "$DSDLOPT" --pass-pipeline=builtin.module\(lower-dsdl-serialization,convert-dsdl-to-emitc\) \
   "$OUT_FULL/module.mlir" > "$OUT_FULL/module.emitc.mlir"
 
-"$DSDLC" c \
-  --root-namespace-dir "$ROOT_NS_FULL" \
-  --out-dir "$OUT_FULL/c"
-"$DSDLC" cpp \
-  --root-namespace-dir "$ROOT_NS_FULL" \
+"$DSDLC" --target-language c \
+  "$ROOT_NS_FULL" \
+  --outdir "$OUT_FULL/c"
+"$DSDLC" --target-language cpp \
+  "$ROOT_NS_FULL" \
   --cpp-profile both \
-  --out-dir "$OUT_FULL/cpp"
-"$DSDLC" rust \
-  --root-namespace-dir "$ROOT_NS_FULL" \
+  --outdir "$OUT_FULL/cpp"
+"$DSDLC" --target-language rust \
+  "$ROOT_NS_FULL" \
   --rust-profile std \
   --rust-crate-name uavcan_dsdl_generated \
-  --out-dir "$OUT_FULL/rust"
-"$DSDLC" go \
-  --root-namespace-dir "$ROOT_NS_FULL" \
+  --outdir "$OUT_FULL/rust"
+"$DSDLC" --target-language go \
+  "$ROOT_NS_FULL" \
   --go-module demo/uavcan/generated \
-  --out-dir "$OUT_FULL/go"
-"$DSDLC" ts \
-  --root-namespace-dir "$ROOT_NS_FULL" \
+  --outdir "$OUT_FULL/go"
+"$DSDLC" --target-language ts \
+  "$ROOT_NS_FULL" \
   --ts-module demo_uavcan_generated_ts \
-  --out-dir "$OUT_FULL/ts"
-"$DSDLC" python \
-  --root-namespace-dir "$ROOT_NS_FULL" \
+  --outdir "$OUT_FULL/ts"
+"$DSDLC" --target-language python \
+  "$ROOT_NS_FULL" \
   --py-package demo_uavcan_generated_py \
-  --out-dir "$OUT_FULL/python"
+  --outdir "$OUT_FULL/python"
 ```
 
 Scale counts:
@@ -300,6 +300,6 @@ What this project delivers now:
 | --- | --- | --- |
 | `LLVMDSDL_PY_RUNTIME_MODE=accel` import error | accelerator module is missing beside generated package | build with `-DLLVMDSDL_ENABLE_PYTHON_ACCELERATOR=ON` and stage with `stage-uavcan-python-runtime-accelerator-required` |
 | `auto backend=pure` when accel expected | fallback is active because accel was unavailable | verify staged `_dsdl_runtime_accel.*` and rerun |
-| `pip install -e` fails in generated output | missing or stale `pyproject.toml` | regenerate with `dsdlc python` and reinstall from fresh output dir |
+| `pip install -e` fails in generated output | missing or stale `pyproject.toml` | regenerate with `dsdlc --target-language python` and reinstall from fresh output dir |
 | specialization parity concern (`portable` vs `fast`) | helper implementation changed unexpectedly | run `llvmdsdl-uavcan-python-runtime-specialization-diff` and parity lanes before demo |
 | benchmark gate failures | threshold config not calibrated for this host | run artifact-only benchmark first, calibrate thresholds, then enable gating |

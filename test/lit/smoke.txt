@@ -1,6 +1,6 @@
-# RUN: %dsdlc ast --root-namespace-dir %S/fixtures | FileCheck %s --check-prefix=AST
-# RUN: %dsdlc mlir --root-namespace-dir %S/fixtures | FileCheck %s --check-prefix=MLIR
-# RUN: rm -rf %t && mkdir -p %t && %dsdlc c --root-namespace-dir %S/fixtures --out-dir %t
+# RUN: %dsdlc --target-language ast %S/fixtures | FileCheck %s --check-prefix=AST
+# RUN: %dsdlc --target-language mlir %S/fixtures | FileCheck %s --check-prefix=MLIR
+# RUN: rm -rf %t && mkdir -p %t && %dsdlc --target-language c %S/fixtures --outdir %t
 # RUN: test -f %t/fixtures/vendor/Type_1_0.h
 # RUN: test -f %t/fixtures/vendor/Type_1_0.c
 

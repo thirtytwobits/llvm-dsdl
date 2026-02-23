@@ -44,7 +44,6 @@
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
@@ -291,19 +290,6 @@ std::string goConstValue(const Value& value)
         return escaped;
     }
     return value.str();
-}
-
-llvm::Error writeFile(const std::filesystem::path& p, llvm::StringRef content)
-{
-    std::error_code      ec;
-    llvm::raw_fd_ostream os(p.string(), ec, llvm::sys::fs::OF_Text);
-    if (ec)
-    {
-        return llvm::createStringError(ec, "failed to open %s", p.string().c_str());
-    }
-    os << content;
-    os.close();
-    return llvm::Error::success();
 }
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
@@ -1414,11 +1400,11 @@ llvm::Error emitGo(const SemanticModule& semantic,
     }
 
     std::filesystem::path outRoot(options.outDir);
-    std::filesystem::create_directories(outRoot);
+    const auto            selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
     if (options.emitGoMod)
     {
-        if (auto err = writeFile(outRoot / "go.mod", renderGoMod(options)))
+        if (auto err = writeGeneratedFile(outRoot / "go.mod", renderGoMod(options), options.writePolicy))
         {
             return err;
         }
@@ -1429,8 +1415,7 @@ llvm::Error emitGo(const SemanticModule& semantic,
     {
         return runtime.takeError();
     }
-    std::filesystem::create_directories(outRoot / "dsdlruntime");
-    if (auto err = writeFile(outRoot / "dsdlruntime" / "dsdl_runtime.go", *runtime))
+    if (auto err = writeGeneratedFile(outRoot / "dsdlruntime" / "dsdl_runtime.go", *runtime, options.writePolicy))
     {
         return err;
     }
@@ -1439,15 +1424,20 @@ llvm::Error emitGo(const SemanticModule& semantic,
 
     for (const auto& def : semantic.definitions)
     {
+        if (!shouldEmitDefinition(def.info, selectedTypeKeys))
+        {
+            continue;
+        }
+
         const auto            dirRel = ctx.packagePath(def.info);
         std::filesystem::path dir    = outRoot;
         if (!dirRel.empty())
         {
             dir /= dirRel;
         }
-        std::filesystem::create_directories(dir);
-        if (auto err = writeFile(dir / ctx.goFileName(def.info),
-                                 renderDefinitionFile(def, ctx, options.moduleName, loweredFacts)))
+        if (auto err = writeGeneratedFile(dir / ctx.goFileName(def.info),
+                                          renderDefinitionFile(def, ctx, options.moduleName, loweredFacts),
+                                          options.writePolicy))
         {
             return err;
         }

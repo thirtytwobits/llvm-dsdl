@@ -89,10 +89,10 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_YAKUT_DEMO_GEN_DIR}"
   COMMAND
     $<TARGET_FILE:dsdlc>
-      cpp
-      --root-namespace-dir "${LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT}"
+      --target-language cpp
+      "${LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT}"
       --cpp-profile std
-      --out-dir "${LLVMDSDL_YAKUT_DEMO_GEN_DIR}"
+      --outdir "${LLVMDSDL_YAKUT_DEMO_GEN_DIR}"
   DEPENDS
     dsdlc
     "${LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT}/node/7509.Heartbeat.1.0.dsdl"
@@ -142,10 +142,10 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_YAKUT_DEMO_GEN_GO_DIR}"
   COMMAND
     $<TARGET_FILE:dsdlc>
-      go
-      --root-namespace-dir "${LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT}"
+      --target-language go
+      "${LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT}"
       --go-module cyphal_yakut_demo_generated
-      --out-dir "${LLVMDSDL_YAKUT_DEMO_GEN_GO_DIR}"
+      --outdir "${LLVMDSDL_YAKUT_DEMO_GEN_GO_DIR}"
   DEPENDS
     dsdlc
     "${LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT}/node/7509.Heartbeat.1.0.dsdl"
@@ -175,11 +175,11 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_YAKUT_DEMO_GEN_RUST_DIR}"
   COMMAND
     $<TARGET_FILE:dsdlc>
-      rust
-      --root-namespace-dir "${LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT}"
+      --target-language rust
+      "${LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT}"
       --rust-profile std
       --rust-crate-name cyphal_yakut_demo_generated_rust
-      --out-dir "${LLVMDSDL_YAKUT_DEMO_GEN_RUST_DIR}"
+      --outdir "${LLVMDSDL_YAKUT_DEMO_GEN_RUST_DIR}"
   DEPENDS
     dsdlc
     "${LLVMDSDL_YAKUT_DEMO_UAVCAN_ROOT}/node/7509.Heartbeat.1.0.dsdl"

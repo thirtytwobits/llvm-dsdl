@@ -64,8 +64,8 @@ set(converted_optimized_again_mlir "${OUT_DIR}/converted.optimized-again.mlir")
 
 execute_process(
   COMMAND
-    "${DSDLC}" mlir
-      --root-namespace-dir "${FIXTURES_ROOT}"
+    "${DSDLC}" --target-language mlir
+      "${FIXTURES_ROOT}"
   RESULT_VARIABLE mlir_result
   OUTPUT_FILE "${input_mlir}"
   ERROR_VARIABLE mlir_stderr

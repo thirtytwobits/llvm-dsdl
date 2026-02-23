@@ -80,9 +80,9 @@ foreach(mode IN LISTS mode_list)
 
   execute_process(
     COMMAND
-      "${DSDLC}" rust
-        --root-namespace-dir "${RUST_BENCH_ROOT}"
-        --out-dir "${mode_out}"
+      "${DSDLC}" --target-language rust
+        "${RUST_BENCH_ROOT}"
+        --outdir "${mode_out}"
         --rust-crate-name "llvmdsdl_runtime_bench"
         --rust-profile "std"
         --rust-runtime-specialization "portable"

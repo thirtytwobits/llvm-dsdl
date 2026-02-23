@@ -19,9 +19,9 @@ file(MAKE_DIRECTORY "${OUT_DIR}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" ts
-      --root-namespace-dir "${FIXTURES_ROOT}"
-      --out-dir "${OUT_DIR}"
+    "${DSDLC}" --target-language ts
+      "${FIXTURES_ROOT}"
+      --outdir "${OUT_DIR}"
       --ts-module "fixtures_dsdl_generated_ts"
   RESULT_VARIABLE gen_result
   OUTPUT_VARIABLE gen_stdout

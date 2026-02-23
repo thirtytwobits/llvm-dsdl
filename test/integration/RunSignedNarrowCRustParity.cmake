@@ -98,10 +98,10 @@ file(MAKE_DIRECTORY "${harness_out}/src")
 
 execute_process(
   COMMAND
-    "${DSDLC}" c
-      --root-namespace-dir "${FIXTURE_ROOT}"
+    "${DSDLC}" --target-language c
+      "${FIXTURE_ROOT}"
       ${dsdlc_extra_args}
-      --out-dir "${c_out}"
+      --outdir "${c_out}"
   RESULT_VARIABLE c_result
   OUTPUT_VARIABLE c_stdout
   ERROR_VARIABLE c_stderr
@@ -114,15 +114,15 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" rust
-      --root-namespace-dir "${FIXTURE_ROOT}"
+    "${DSDLC}" --target-language rust
+      "${FIXTURE_ROOT}"
       ${dsdlc_extra_args}
       --rust-profile "${RUST_PROFILE}"
       --rust-runtime-specialization "${RUST_RUNTIME_SPECIALIZATION}"
       --rust-memory-mode "${RUST_MEMORY_MODE}"
       --rust-inline-threshold-bytes "${RUST_INLINE_THRESHOLD_BYTES}"
       --rust-crate-name signed_narrow_generated
-      --out-dir "${rust_out}"
+      --outdir "${rust_out}"
   RESULT_VARIABLE rust_result
   OUTPUT_VARIABLE rust_stdout
   ERROR_VARIABLE rust_stderr

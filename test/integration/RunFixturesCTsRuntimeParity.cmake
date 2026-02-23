@@ -41,9 +41,9 @@ file(MAKE_DIRECTORY "${work_dir}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" c
-      --root-namespace-dir "${FIXTURE_ROOT}"
-      --out-dir "${c_out}"
+    "${DSDLC}" --target-language c
+      "${FIXTURE_ROOT}"
+      --outdir "${c_out}"
   RESULT_VARIABLE c_gen_result
   OUTPUT_VARIABLE c_gen_stdout
   ERROR_VARIABLE c_gen_stderr
@@ -56,9 +56,9 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" ts
-      --root-namespace-dir "${FIXTURE_ROOT}"
-      --out-dir "${ts_out}"
+    "${DSDLC}" --target-language ts
+      "${FIXTURE_ROOT}"
+      --outdir "${ts_out}"
       --ts-module "fixture_ts_runtime_parity"
   RESULT_VARIABLE ts_gen_result
   OUTPUT_VARIABLE ts_gen_stdout

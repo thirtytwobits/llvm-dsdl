@@ -403,6 +403,9 @@ struct DiscoveredDefinition
     /// @brief Optional fixed port-id.
     std::optional<std::uint32_t> fixedPortId;
 
+    /// @brief True if this definition was explicitly targeted by the CLI.
+    bool isExplicitTarget{false};
+
     /// @brief Full source text.
     std::string text;
 };

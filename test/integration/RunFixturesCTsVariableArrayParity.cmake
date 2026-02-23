@@ -43,9 +43,9 @@ file(WRITE
 
 execute_process(
   COMMAND
-    "${DSDLC}" c
-      --root-namespace-dir "${fixture_root}"
-      --out-dir "${c_out}"
+    "${DSDLC}" --target-language c
+      "${fixture_root}"
+      --outdir "${c_out}"
   RESULT_VARIABLE c_gen_result
   OUTPUT_VARIABLE c_gen_stdout
   ERROR_VARIABLE c_gen_stderr
@@ -58,9 +58,9 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" ts
-      --root-namespace-dir "${fixture_root}"
-      --out-dir "${ts_out}"
+    "${DSDLC}" --target-language ts
+      "${fixture_root}"
+      --outdir "${ts_out}"
       --ts-module "fixture_ts_variable_array_parity"
   RESULT_VARIABLE ts_gen_result
   OUTPUT_VARIABLE ts_gen_stdout

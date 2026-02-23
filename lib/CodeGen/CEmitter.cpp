@@ -48,7 +48,6 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Target/Cpp/CppEmitter.h"
 #include "mlir/Transforms/Passes.h"
-#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvmdsdl/Frontend/AST.h"
@@ -360,19 +359,6 @@ public:
 private:
     std::unordered_map<std::string, const SemanticDefinition*> byKey_;
 };
-
-llvm::Error writeFile(const std::filesystem::path& p, llvm::StringRef content)
-{
-    std::error_code      ec;
-    llvm::raw_fd_ostream os(p.string(), ec, llvm::sys::fs::OF_Text);
-    if (ec)
-    {
-        return llvm::createStringError(ec, "failed to open %s", p.string().c_str());
-    }
-    os << content;
-    os.close();
-    return llvm::Error::success();
-}
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
 {
@@ -747,10 +733,9 @@ llvm::Error emitC(const SemanticModule& semantic,
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "output directory is required");
     }
 
-    std::error_code ec;
-    llvm::sys::fs::create_directories(options.outDir, true);
     std::filesystem::path outRoot(options.outDir);
     EmitterContext        ctx(semantic);
+    const auto            selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
     if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "C", nullptr, options.optimizeLoweredSerDes))
     {
@@ -776,6 +761,11 @@ llvm::Error emitC(const SemanticModule& semantic,
 
     for (const auto& def : semantic.definitions)
     {
+        if (!shouldEmitDefinition(def.info, selectedTypeKeys))
+        {
+            continue;
+        }
+
         auto perDefModuleRef = mlir::OwningOpRef<mlir::ModuleOp>(mlir::ModuleOp::create(module.getLoc()));
         auto perDefModule    = *perDefModuleRef;
         perDefModule->setAttr("llvmdsdl.headers_available", mlir::UnitAttr::get(perDefModule.getContext()));
@@ -823,8 +813,7 @@ llvm::Error emitC(const SemanticModule& semantic,
         {
             implDir /= ns;
         }
-        std::filesystem::create_directories(implDir);
-        if (auto err = writeFile(implDir / implFileName(def.info), emitted))
+        if (auto err = writeGeneratedFile(implDir / implFileName(def.info), emitted, options.writePolicy))
         {
             return err;
         }
@@ -835,21 +824,24 @@ llvm::Error emitC(const SemanticModule& semantic,
     {
         return runtimeHeader.takeError();
     }
-    if (auto err = writeFile(outRoot / "dsdl_runtime.h", *runtimeHeader))
+    if (auto err = writeGeneratedFile(outRoot / "dsdl_runtime.h", *runtimeHeader, options.writePolicy))
     {
         return err;
     }
 
     for (const auto& def : semantic.definitions)
     {
+        if (!shouldEmitDefinition(def.info, selectedTypeKeys))
+        {
+            continue;
+        }
+
         std::filesystem::path dir = outRoot;
         for (const auto& ns : def.info.namespaceComponents)
         {
             dir /= ns;
         }
-        std::filesystem::create_directories(dir);
-
-        if (auto err = writeFile(dir / headerFileName(def.info), renderHeader(def, ctx)))
+        if (auto err = writeGeneratedFile(dir / headerFileName(def.info), renderHeader(def, ctx), options.writePolicy))
         {
             return err;
         }

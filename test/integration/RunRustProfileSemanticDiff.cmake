@@ -27,10 +27,10 @@ set(no_std_out "${OUT_DIR}/rust-no-std-alloc")
 
 execute_process(
   COMMAND
-    "${DSDLC}" rust
-      --root-namespace-dir "${UAVCAN_ROOT}"
+    "${DSDLC}" --target-language rust
+      "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
-      --out-dir "${std_out}"
+      --outdir "${std_out}"
       --rust-crate-name "uavcan_dsdl_generated"
       --rust-profile "std"
   RESULT_VARIABLE std_result
@@ -45,10 +45,10 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" rust
-      --root-namespace-dir "${UAVCAN_ROOT}"
+    "${DSDLC}" --target-language rust
+      "${UAVCAN_ROOT}"
       ${dsdlc_extra_args}
-      --out-dir "${no_std_out}"
+      --outdir "${no_std_out}"
       --rust-crate-name "uavcan_dsdl_generated"
       --rust-profile "no-std-alloc"
   RESULT_VARIABLE no_std_result

@@ -88,7 +88,7 @@ Direct harness usage (example: Python only):
 ```bash
 python3 test/benchmark/benchmark_codegen.py record \
   --dsdlc build/matrix/dev-homebrew/tools/dsdlc/RelWithDebInfo/dsdlc \
-  --root-namespace-dir test/benchmark/complex/civildrone \
+  test/benchmark/complex/civildrone \
   --lookup-dir test/benchmark/complex/uavcan \
   --out-base-dir build/matrix/dev-homebrew/test/benchmark/complex-codegen/generated \
   --report-json build/matrix/dev-homebrew/test/benchmark/complex-codegen/python-only-record.json \

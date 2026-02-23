@@ -14,7 +14,11 @@
 #ifndef LLVMDSDL_CODEGEN_CEMITTER_H
 #define LLVMDSDL_CODEGEN_CEMITTER_H
 
+#include "llvmdsdl/CodeGen/EmitCommon.h"
+
+#include <cstdint>
 #include <string>
+#include <vector>
 
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/Support/Error.h"
@@ -38,6 +42,12 @@ struct CEmitOptions final
 
     /// @brief Enables optional lowered-serdes optimization before emission.
     bool optimizeLoweredSerDes{false};
+
+    /// @brief Optional list of selected type keys to emit.
+    std::vector<std::string> selectedTypeKeys;
+
+    /// @brief Output write policy.
+    EmitWritePolicy writePolicy;
 };
 
 /// @brief Emits C artifacts from semantic and lowered MLIR inputs.

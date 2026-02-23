@@ -27,9 +27,9 @@ file(MAKE_DIRECTORY "${OUT_DIR}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" ts
-      --root-namespace-dir "${UAVCAN_ROOT}"
-      --out-dir "${OUT_DIR}"
+    "${DSDLC}" --target-language ts
+      "${UAVCAN_ROOT}"
+      --outdir "${OUT_DIR}"
       --ts-module "uavcan_dsdl_generated_ts"
       --ts-runtime-specialization "${TS_RUNTIME_SPECIALIZATION}"
   RESULT_VARIABLE gen_result

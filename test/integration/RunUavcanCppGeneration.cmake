@@ -19,10 +19,10 @@ file(MAKE_DIRECTORY "${OUT_DIR}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" cpp
-      --root-namespace-dir "${UAVCAN_ROOT}"
+    "${DSDLC}" --target-language cpp
+      "${UAVCAN_ROOT}"
       --cpp-profile both
-      --out-dir "${OUT_DIR}"
+      --outdir "${OUT_DIR}"
   RESULT_VARIABLE gen_result
   OUTPUT_VARIABLE gen_stdout
   ERROR_VARIABLE gen_stderr

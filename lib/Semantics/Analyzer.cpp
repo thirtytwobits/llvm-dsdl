@@ -16,7 +16,9 @@
 
 #include "llvmdsdl/Semantics/Analyzer.h"
 
+#include <llvm/ADT/StringRef.h>
 #include <algorithm>
+#include <array>
 #include <map>
 #include <optional>
 #include <set>
@@ -83,6 +85,26 @@ std::int64_t pow2ceil(std::int64_t x)
         out <<= 1;
     }
     return out;
+}
+
+bool isStandardRootNamespace(llvm::StringRef root)
+{
+    return root == "uavcan" || root == "cyphal";
+}
+
+bool isValidRegulatedPortId(const std::uint32_t portId, const bool isService, llvm::StringRef rootNamespace)
+{
+    const bool standard = isStandardRootNamespace(rootNamespace.trim());
+    if (isService)
+    {
+        const std::uint32_t lo = standard ? 384U : 256U;
+        const std::uint32_t hi = standard ? 511U : 383U;
+        return portId >= lo && portId <= hi;
+    }
+
+    const std::uint32_t lo = standard ? 7168U : 6144U;
+    const std::uint32_t hi = standard ? 8191U : 7167U;
+    return portId >= lo && portId <= hi;
 }
 
 bool exprContainsOffset(const std::shared_ptr<ExprAST>& expr)
@@ -191,9 +213,10 @@ Value::Set bitLengthSetToValueSet(const BitLengthSet& bls)
 class AnalyzerImpl final
 {
 public:
-    AnalyzerImpl(const ASTModule& module, DiagnosticEngine& diagnostics)
+    AnalyzerImpl(const ASTModule& module, DiagnosticEngine& diagnostics, AnalyzeOptions options)
         : module_(module)
         , diagnostics_(diagnostics)
+        , options_(options)
     {
         state_.resize(module_.definitions.size(), State::Unvisited);
         results_.resize(module_.definitions.size());
@@ -240,6 +263,7 @@ private:
 
     const ASTModule&                               module_;
     DiagnosticEngine&                              diagnostics_;
+    AnalyzeOptions                                 options_;
     std::vector<State>                             state_;
     std::vector<std::optional<SemanticDefinition>> results_;
     std::unordered_map<std::string, std::size_t>   indexByKey_;
@@ -1206,6 +1230,37 @@ private:
                 }
             }
         }
+
+        if (!options_.allowUnregulatedFixedPortId)
+        {
+            for (const auto& result : results_)
+            {
+                if (!result || !result->info.fixedPortId)
+                {
+                    continue;
+                }
+                const auto& sem = *result;
+                llvm::StringRef rootNamespace;
+                if (!sem.info.namespaceComponents.empty())
+                {
+                    rootNamespace = sem.info.namespaceComponents.front();
+                }
+                else
+                {
+                    const auto pos = sem.info.fullName.find('.');
+                    rootNamespace  = pos == std::string::npos ? llvm::StringRef(sem.info.fullName)
+                                                               : llvm::StringRef(sem.info.fullName.data(), pos);
+                }
+
+                if (!isValidRegulatedPortId(*sem.info.fixedPortId, sem.isService, rootNamespace))
+                {
+                    diagnostics_.error({sem.info.filePath, 1, 1},
+                                       "regulated port-ID " + std::to_string(*sem.info.fixedPortId) + " for " +
+                                           (sem.isService ? "service" : "message") + " type " + sem.info.fullName +
+                                           " is not valid; use --allow-unregulated-fixed-port-id to override");
+                }
+            }
+        }
     }
 };
 
@@ -1213,7 +1268,14 @@ private:
 
 llvm::Expected<SemanticModule> analyze(const ASTModule& module, DiagnosticEngine& diagnostics)
 {
-    AnalyzerImpl impl(module, diagnostics);
+    return analyze(module, diagnostics, AnalyzeOptions{});
+}
+
+llvm::Expected<SemanticModule> analyze(const ASTModule& module,
+                                       DiagnosticEngine& diagnostics,
+                                       const AnalyzeOptions& options)
+{
+    AnalyzerImpl impl(module, diagnostics, options);
     return impl.run();
 }
 

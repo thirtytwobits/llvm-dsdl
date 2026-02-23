@@ -115,7 +115,7 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
         ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
         record
         --dsdlc $<TARGET_FILE:dsdlc>
-        --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+        ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
         ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
         --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}
         --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_REPORT_RECORD}
@@ -156,7 +156,7 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
           ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
           check
           --dsdlc $<TARGET_FILE:dsdlc>
-          --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+          ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
           ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
           --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}
           --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_REPORT_CHECK_CI}
@@ -181,7 +181,7 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
           ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
           check
           --dsdlc $<TARGET_FILE:dsdlc>
-          --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+          ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
           ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
           --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}
           --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_REPORT_CHECK_DEV}
@@ -206,7 +206,7 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
             ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
             check
             --dsdlc $<TARGET_FILE:dsdlc>
-            --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+            ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
             ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
             --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}/ctest-ci-oom
             --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/ctest-check-ci-oom-report.json
@@ -232,7 +232,7 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
               ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
               check
               --dsdlc $<TARGET_FILE:dsdlc>
-              --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+              ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
               ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
               --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}/ctest-ci-oom-${lang}
               --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/ctest-check-ci-oom-${lang}-report.json
@@ -272,7 +272,7 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
         ${LLVMDSDL_LSP_BENCHMARK_SCRIPT}
         replay
         --dsdld $<TARGET_FILE:dsdld>
-        --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+        ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
         ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
         --index-cache-dir ${LLVMDSDL_LSP_BENCHMARK_INDEX_CACHE_DIR}
         --report-json ${LLVMDSDL_LSP_BENCHMARK_REPLAY_REPORT}
@@ -294,7 +294,7 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
         ${LLVMDSDL_LSP_BENCHMARK_SCRIPT}
         index-bench
         --dsdld $<TARGET_FILE:dsdld>
-        --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+        ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
         ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
         --index-cache-dir ${LLVMDSDL_LSP_BENCHMARK_INDEX_CACHE_DIR}
         --report-json ${LLVMDSDL_LSP_BENCHMARK_INDEX_REPORT}
@@ -316,7 +316,7 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
           ${LLVMDSDL_LSP_BENCHMARK_SCRIPT}
           replay
           --dsdld $<TARGET_FILE:dsdld>
-          --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+          ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
           ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
           --index-cache-dir ${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}/ctest-replay-index-cache
           --report-json ${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}/ctest-replay-report.json
@@ -338,7 +338,7 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
           ${LLVMDSDL_LSP_BENCHMARK_SCRIPT}
           index-bench
           --dsdld $<TARGET_FILE:dsdld>
-          --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+          ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
           ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
           --index-cache-dir ${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}/ctest-index-cache
           --report-json ${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}/ctest-index-report.json

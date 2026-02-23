@@ -11,6 +11,7 @@ add_library(llvmdsdlFrontend
   Discovery.cpp
   Lexer.cpp
   Parser.cpp
+  TargetResolution.cpp
   ASTPrinter.cpp
 )
 

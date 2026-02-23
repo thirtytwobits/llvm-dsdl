@@ -32,9 +32,9 @@ file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
 execute_process(
-  COMMAND "${DSDLC}" python
-    --root-namespace-dir "${FIXTURES_ROOT}"
-    --out-dir "${OUT_DIR}"
+  COMMAND "${DSDLC}" --target-language python
+    "${FIXTURES_ROOT}"
+    --outdir "${OUT_DIR}"
     --py-package "${PY_PACKAGE}"
     --py-runtime-specialization "${PY_RUNTIME_SPECIALIZATION}"
   RESULT_VARIABLE gen_result

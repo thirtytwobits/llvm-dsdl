@@ -25,11 +25,25 @@ struct ASTModule;
 /// @file
 /// @brief Semantic analysis entry points.
 
+/// @brief Options that control semantic-analysis policy checks.
+struct AnalyzeOptions final
+{
+    /// @brief Allow fixed port IDs outside regulated ranges.
+    bool allowUnregulatedFixedPortId{false};
+};
+
 /// @brief Converts parsed AST into the resolved semantic model.
 /// @param[in] module Parsed AST module.
 /// @param[in,out] diagnostics Diagnostic sink for semantic issues.
 /// @return Resolved semantic module on success.
 llvm::Expected<SemanticModule> analyze(const ASTModule& module, DiagnosticEngine& diagnostics);
+
+/// @brief Converts parsed AST into the resolved semantic model with options.
+/// @param[in] module Parsed AST module.
+/// @param[in,out] diagnostics Diagnostic sink for semantic issues.
+/// @param[in] options Semantic policy options.
+/// @return Resolved semantic module on success.
+llvm::Expected<SemanticModule> analyze(const ASTModule& module, DiagnosticEngine& diagnostics, const AnalyzeOptions& options);
 
 }  // namespace llvmdsdl
 

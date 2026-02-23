@@ -23,9 +23,9 @@ file(MAKE_DIRECTORY "${OUT_DIR}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" go
-      --root-namespace-dir "${UAVCAN_ROOT}"
-      --out-dir "${OUT_DIR}"
+    "${DSDLC}" --target-language go
+      "${UAVCAN_ROOT}"
+      --outdir "${OUT_DIR}"
       --go-module "uavcan_dsdl_generated"
   RESULT_VARIABLE gen_result
   OUTPUT_VARIABLE gen_stdout

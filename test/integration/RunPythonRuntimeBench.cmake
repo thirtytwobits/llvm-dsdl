@@ -79,9 +79,9 @@ foreach(spec IN LISTS BENCH_SPECIALIZATIONS)
   set(package_root "${spec_out}/${py_package_path}")
 
   execute_process(
-    COMMAND "${DSDLC}" python
-      --root-namespace-dir "${source_root}"
-      --out-dir "${spec_out}"
+    COMMAND "${DSDLC}" --target-language python
+      "${source_root}"
+      --outdir "${spec_out}"
       --py-package "${py_package}"
       --py-runtime-specialization "${spec}"
     RESULT_VARIABLE gen_result

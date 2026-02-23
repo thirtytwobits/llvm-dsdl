@@ -19,9 +19,9 @@ file(MAKE_DIRECTORY "${OUT_DIR}")
 
 execute_process(
   COMMAND
-    "${DSDLC}" c
-      --root-namespace-dir "${UAVCAN_ROOT}"
-      --out-dir "${OUT_DIR}"
+    "${DSDLC}" --target-language c
+      "${UAVCAN_ROOT}"
+      --outdir "${OUT_DIR}"
   RESULT_VARIABLE gen_result
   OUTPUT_VARIABLE gen_stdout
   ERROR_VARIABLE gen_stderr

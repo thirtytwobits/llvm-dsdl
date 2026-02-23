@@ -105,10 +105,10 @@ file(WRITE
 
 execute_process(
   COMMAND
-    "${DSDLC}" c
-      --root-namespace-dir "${fixture_root}"
+    "${DSDLC}" --target-language c
+      "${fixture_root}"
       ${dsdlc_extra_args}
-      --out-dir "${c_out}"
+      --outdir "${c_out}"
   RESULT_VARIABLE c_gen_result
   OUTPUT_VARIABLE c_gen_stdout
   ERROR_VARIABLE c_gen_stderr
@@ -121,10 +121,10 @@ endif()
 
 execute_process(
   COMMAND
-    "${DSDLC}" ts
-      --root-namespace-dir "${fixture_root}"
+    "${DSDLC}" --target-language ts
+      "${fixture_root}"
       ${dsdlc_extra_args}
-      --out-dir "${ts_out}"
+      --outdir "${ts_out}"
       --ts-module "c_ts_parity"
       --ts-runtime-specialization "${TS_RUNTIME_SPECIALIZATION}"
   RESULT_VARIABLE ts_gen_result

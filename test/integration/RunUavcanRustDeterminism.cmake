@@ -65,9 +65,9 @@ file(WRITE
   "${parallel_script}"
   "#!/bin/sh\n"
   "set -eu\n"
-  "\"${DSDLC}\" rust --root-namespace-dir \"${UAVCAN_ROOT}\" --out-dir \"${out_a}\" --rust-crate-name \"uavcan_dsdl_generated\" --rust-profile \"${RUST_PROFILE}\" --rust-runtime-specialization \"${RUST_RUNTIME_SPECIALIZATION}\" --rust-memory-mode \"${RUST_MEMORY_MODE}\" --rust-inline-threshold-bytes \"${RUST_INLINE_THRESHOLD_BYTES}\" >\"${OUT_DIR}/run-a.stdout\" 2>\"${OUT_DIR}/run-a.stderr\" &\n"
+  "\"${DSDLC}\" --target-language rust \"${UAVCAN_ROOT}\" --outdir \"${out_a}\" --rust-crate-name \"uavcan_dsdl_generated\" --rust-profile \"${RUST_PROFILE}\" --rust-runtime-specialization \"${RUST_RUNTIME_SPECIALIZATION}\" --rust-memory-mode \"${RUST_MEMORY_MODE}\" --rust-inline-threshold-bytes \"${RUST_INLINE_THRESHOLD_BYTES}\" >\"${OUT_DIR}/run-a.stdout\" 2>\"${OUT_DIR}/run-a.stderr\" &\n"
   "pid_a=$!\n"
-  "\"${DSDLC}\" rust --root-namespace-dir \"${UAVCAN_ROOT}\" --out-dir \"${out_b}\" --rust-crate-name \"uavcan_dsdl_generated\" --rust-profile \"${RUST_PROFILE}\" --rust-runtime-specialization \"${RUST_RUNTIME_SPECIALIZATION}\" --rust-memory-mode \"${RUST_MEMORY_MODE}\" --rust-inline-threshold-bytes \"${RUST_INLINE_THRESHOLD_BYTES}\" >\"${OUT_DIR}/run-b.stdout\" 2>\"${OUT_DIR}/run-b.stderr\" &\n"
+  "\"${DSDLC}\" --target-language rust \"${UAVCAN_ROOT}\" --outdir \"${out_b}\" --rust-crate-name \"uavcan_dsdl_generated\" --rust-profile \"${RUST_PROFILE}\" --rust-runtime-specialization \"${RUST_RUNTIME_SPECIALIZATION}\" --rust-memory-mode \"${RUST_MEMORY_MODE}\" --rust-inline-threshold-bytes \"${RUST_INLINE_THRESHOLD_BYTES}\" >\"${OUT_DIR}/run-b.stdout\" 2>\"${OUT_DIR}/run-b.stderr\" &\n"
   "pid_b=$!\n"
   "wait \"$pid_a\"\n"
   "wait \"$pid_b\"\n")

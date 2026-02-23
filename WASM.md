@@ -41,7 +41,7 @@ It still performs compiler code generation to machine-independent binary form:
 
 Add:
 
-`dsdlc wasm --root-namespace-dir <dir> --out-dir <dir> [options]`
+`dsdlc wasm <dir> --outdir <dir> [options]`
 
 Proposed options:
 
@@ -52,7 +52,7 @@ Proposed options:
 - `--emit-wat` (optional textual disassembly if tool is available)
 - `--optimize-lowered-serdes` (existing semantics-preserving pass pipeline)
 
-Outputs under `--out-dir`:
+Outputs under `--outdir`:
 
 - `<module>.wasm` (required)
 - `<module>.manifest.json` (required)

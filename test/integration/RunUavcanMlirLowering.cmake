@@ -30,8 +30,8 @@ set(converted_optimized_again_mlir "${OUT_DIR}/uavcan.converted.optimized-again.
 
 execute_process(
   COMMAND
-    "${DSDLC}" mlir
-      --root-namespace-dir "${UAVCAN_ROOT}"
+    "${DSDLC}" --target-language mlir
+      "${UAVCAN_ROOT}"
   RESULT_VARIABLE mlir_result
   OUTPUT_FILE "${input_mlir}"
   ERROR_VARIABLE mlir_stderr

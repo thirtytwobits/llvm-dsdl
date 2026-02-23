@@ -53,9 +53,9 @@ file(REMOVE_RECURSE "${OUT_DIR}")
 file(MAKE_DIRECTORY "${OUT_DIR}")
 
 execute_process(
-  COMMAND "${DSDLC}" python
-    --root-namespace-dir "${FIXTURES_ROOT}"
-    --out-dir "${portable_out}"
+  COMMAND "${DSDLC}" --target-language python
+    "${FIXTURES_ROOT}"
+    --outdir "${portable_out}"
     --py-package "${portable_pkg}"
     --py-runtime-specialization portable
   RESULT_VARIABLE portable_result
@@ -69,9 +69,9 @@ if(NOT portable_result EQUAL 0)
 endif()
 
 execute_process(
-  COMMAND "${DSDLC}" python
-    --root-namespace-dir "${FIXTURES_ROOT}"
-    --out-dir "${fast_out}"
+  COMMAND "${DSDLC}" --target-language python
+    "${FIXTURES_ROOT}"
+    --outdir "${fast_out}"
     --py-package "${fast_pkg}"
     --py-runtime-specialization fast
   RESULT_VARIABLE fast_result

@@ -35,12 +35,15 @@ class LanguageSpec:
 
 
 LANGUAGE_SPECS: list[LanguageSpec] = [
-    LanguageSpec("c", ["c"]),
-    LanguageSpec("cpp", ["cpp", "--cpp-profile", "both"]),
-    LanguageSpec("rust", ["rust", "--rust-profile", "std", "--rust-crate-name", "civildrone_bench"]),
-    LanguageSpec("go", ["go", "--go-module", "civildrone/bench"]),
-    LanguageSpec("ts", ["ts", "--ts-module", "civildrone_bench_ts"]),
-    LanguageSpec("python", ["python", "--py-package", "civildrone_bench_py"]),
+    LanguageSpec("c", ["--target-language", "c"]),
+    LanguageSpec("cpp", ["--target-language", "cpp", "--cpp-profile", "both"]),
+    LanguageSpec(
+        "rust",
+        ["--target-language", "rust", "--rust-profile", "std", "--rust-crate-name", "civildrone_bench"],
+    ),
+    LanguageSpec("go", ["--target-language", "go", "--go-module", "civildrone/bench"]),
+    LanguageSpec("ts", ["--target-language", "ts", "--ts-module", "civildrone_bench_ts"]),
+    LanguageSpec("python", ["--target-language", "python", "--py-package", "civildrone_bench_py"]),
 ]
 
 
@@ -128,15 +131,9 @@ def run_language(
         if optimize_lowered_serdes:
             command.append("--optimize-lowered-serdes")
         command.extend(spec.args)
-        command.extend(
-            [
-                "--root-namespace-dir",
-                str(root_namespace_dir),
-            ]
-        )
         for lookup_dir in lookup_dirs:
             command.extend(["--lookup-dir", str(lookup_dir)])
-        command.extend(["--out-dir", str(run_out_dir)])
+        command.extend(["--outdir", str(run_out_dir), str(root_namespace_dir)])
 
         print(
             f"[benchmark] {spec.key} iter {idx + 1}/{iterations}: start",

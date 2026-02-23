@@ -40,7 +40,6 @@
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
 #include "llvmdsdl/CodeGen/RuntimeLoweredPlan.h"
 #include "llvm/Support/Error.h"
-#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Evaluator.h"
@@ -221,19 +220,6 @@ std::string tsConstValue(const Value& value)
         return escaped;
     }
     return value.str();
-}
-
-llvm::Error writeFile(const std::filesystem::path& p, llvm::StringRef content)
-{
-    std::error_code      ec;
-    llvm::raw_fd_ostream os(p.string(), ec, llvm::sys::fs::OF_Text);
-    if (ec)
-    {
-        return llvm::createStringError(ec, "failed to open %s", p.string().c_str());
-    }
-    os << content;
-    os.close();
-    return llvm::Error::success();
 }
 
 void emitLine(std::ostringstream& out, const int indent, const std::string& line)
@@ -2196,16 +2182,17 @@ llvm::Error emitTs(const SemanticModule& semantic,
     }
 
     std::filesystem::path outRoot(options.outDir);
-    std::filesystem::create_directories(outRoot);
+    const auto            selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
 
     if (options.emitPackageJson)
     {
-        if (auto err = writeFile(outRoot / "package.json", renderPackageJson(options)))
+        if (auto err = writeGeneratedFile(outRoot / "package.json", renderPackageJson(options), options.writePolicy))
         {
             return err;
         }
     }
-    if (auto err = writeFile(outRoot / "dsdl_runtime.ts", renderTsRuntimeModule(options.runtimeSpecialization)))
+    if (auto err =
+            writeGeneratedFile(outRoot / "dsdl_runtime.ts", renderTsRuntimeModule(options.runtimeSpecialization), options.writePolicy))
     {
         return err;
     }
@@ -2216,6 +2203,10 @@ llvm::Error emitTs(const SemanticModule& semantic,
     ordered.reserve(semantic.definitions.size());
     for (const auto& def : semantic.definitions)
     {
+        if (!shouldEmitDefinition(def.info, selectedTypeKeys))
+        {
+            continue;
+        }
         ordered.push_back(&def);
     }
     std::sort(ordered.begin(), ordered.end(), [](const auto* lhs, const auto* rhs) {
@@ -2239,14 +2230,13 @@ llvm::Error emitTs(const SemanticModule& semantic,
         generatedRelativePaths.push_back(relPath);
 
         const auto fullPath = outRoot / relPath;
-        std::filesystem::create_directories(fullPath.parent_path());
         auto rendered = renderDefinitionFile(*def, ctx, loweredFacts);
         if (!rendered)
         {
             return rendered.takeError();
         }
 
-        if (auto err = writeFile(fullPath, *rendered))
+        if (auto err = writeGeneratedFile(fullPath, *rendered, options.writePolicy))
         {
             return err;
         }
@@ -2273,7 +2263,7 @@ llvm::Error emitTs(const SemanticModule& semantic,
         emitLine(index, 0, "export * as " + alias + " from \"./" + modulePath + "\";");
     }
 
-    if (auto err = writeFile(outRoot / "index.ts", index.str()))
+    if (auto err = writeGeneratedFile(outRoot / "index.ts", index.str(), options.writePolicy))
     {
         return err;
     }
