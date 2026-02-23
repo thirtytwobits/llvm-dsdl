@@ -12,17 +12,21 @@ add_library(llvmdsdlCodeGen
   CEmitter.cpp
   CppEmitter.cpp
   GoEmitter.cpp
+  CodegenDiagnosticText.cpp
   HelperBindingRender.cpp
   HelperSymbolResolver.cpp
   LoweredBodyPlan.cpp
   LoweredRenderIR.cpp
+  NativeEmitterTraversal.cpp
   MlirLoweredFacts.cpp
+  RuntimeHelperBindings.cpp
+  RuntimeLoweredPlan.cpp
+  ScriptedBodyPlan.cpp
   PythonEmitter.cpp
   RustEmitter.cpp
   SectionHelperBindingPlan.cpp
   SerDesStatementPlan.cpp
   SerDesHelperDescriptors.cpp
-  TsLoweredPlan.cpp
   TsEmitter.cpp
   TypeStorage.cpp
   WireLayoutFacts.cpp

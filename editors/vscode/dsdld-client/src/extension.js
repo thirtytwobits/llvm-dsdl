@@ -19,13 +19,12 @@ function getConfigValue(name, fallback) {
 }
 
 function buildSettings() {
-  const aiEnabled = getConfigValue("aiEnabled", false);
-  const aiMode = getConfigValue("aiMode", aiEnabled ? "suggest" : "off");
+  const aiMode = getConfigValue("aiMode", "off");
   return {
     roots: getConfigValue("rootNamespaceDirs", []),
     lookupDirs: getConfigValue("lookupDirs", []),
     lint: { enabled: getConfigValue("lintEnabled", true) },
-    ai: { enabled: aiEnabled, mode: aiMode },
+    ai: { mode: aiMode },
     trace: getConfigValue("trace", "basic"),
   };
 }

@@ -106,6 +106,21 @@ Known-good local setup:
 - Non-conformant definitions are rejected with diagnostics.
 - There is no compatibility fallback mode.
 
+## Backend Semantic Boundaries (Maintainer Note)
+
+Semantics shared across non-C backends (C++/Rust/Go/TypeScript/Python) are
+generated from lowered MLIR contracts through shared codegen layers:
+
+- `RuntimeLoweredPlan*` for ordered runtime field/section planning
+- `RuntimeHelperBindings*` for lowered helper-symbol lookup/resolution
+- `ScriptedBodyPlan*` for scripted-backend (TypeScript/Python) helper planning
+- `NativeEmitterTraversal*` for native-backend (C++/Rust/Go) lowered-step traversal
+- `CodegenDiagnosticText*` for cross-backend diagnostic text parity
+
+Low-level runtime primitives remain hand-written by design in generated/runtime
+helper modules (`dsdl_runtime.h/.hpp/.rs/.go/.ts`, `_dsdl_runtime.py`, and the
+optional Python accelerator).
+
 ## Maintenance Utility Targets
 
 These are manual utility targets and are not part of normal generation workflows.
@@ -552,8 +567,9 @@ Current behavior:
   `dsdl_runtime.ts` while preserving semantic generated type files.
 - Runtime-specialization integration gates include generation, typecheck,
   C<->TS parity, and semantic-diff checks between portable and fast outputs.
-- Uses lowered-contract validation (`collectLoweredFactsFromMlir`) and shared
-  lowered render-order planning for runtime section emission.
+- Uses lowered-contract validation (`collectLoweredFactsFromMlir`) plus shared
+  runtime planning/binding layers (`RuntimeLoweredPlan`, `RuntimeHelperBindings`,
+  `ScriptedBodyPlan`) for runtime section emission.
 - Emits lowered-helper bindings (`mlir_*`) and helper-driven call sites for
   scalar normalization/sign-extension, array prefix/length validation, union
   tag normalization/validation, delimiter checks, and section capacity checks.
@@ -589,7 +605,9 @@ Current behavior:
 - Emits packaging metadata:
   - `pyproject.toml` (minimal local installability)
   - `py.typed` (typing marker)
-- Uses lowered-contract validation (`collectLoweredFactsFromMlir`) and shared lowered runtime planning for SerDes emission.
+- Uses lowered-contract validation (`collectLoweredFactsFromMlir`) plus shared
+  runtime planning/binding layers (`RuntimeLoweredPlan`, `RuntimeHelperBindings`,
+  `ScriptedBodyPlan`) for SerDes emission.
 - Emits lowered-helper bindings (`mlir_*`) and helper-driven call sites for
   scalar normalization/sign-extension, array prefix/length validation, union
   tag normalization/validation, delimiter checks, and section capacity checks.

@@ -153,36 +153,12 @@ void applyAiConfig(const llvm::json::Object& settings, ServerConfig& config)
         return;
     }
 
-    bool                hadEnabledField = false;
-    std::optional<bool> enabled;
-    if (const std::optional<bool> parsedEnabled = ai->getBoolean("enabled"))
-    {
-        hadEnabledField = true;
-        enabled         = parsedEnabled;
-    }
-
-    bool                  hadModeField = false;
-    std::optional<AiMode> parsedMode;
     if (const auto rawMode = ai->getString("mode"))
     {
-        hadModeField = true;
-        parsedMode   = parseAiModeString(*rawMode);
-    }
-
-    // Backward compatibility: legacy `ai.enabled=true` defaults to suggest mode.
-    if (hadEnabledField && !*enabled)
-    {
-        config.aiMode = AiMode::Off;
-        return;
-    }
-    if (hadModeField && parsedMode.has_value())
-    {
-        config.aiMode = *parsedMode;
-        return;
-    }
-    if (hadEnabledField && *enabled)
-    {
-        config.aiMode = AiMode::Suggest;
+        if (const std::optional<AiMode> parsedMode = parseAiModeString(*rawMode))
+        {
+            config.aiMode = *parsedMode;
+        }
     }
 }
 

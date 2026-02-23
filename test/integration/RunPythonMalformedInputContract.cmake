@@ -105,6 +105,16 @@ def load_runtime(out_dir: Path, package: str, mode: str):
     return loader.BACKEND, loader.runtime
 
 
+def expect_value_error(context: str, action: str, needle: str, fn) -> None:
+    try:
+        fn()
+    except ValueError as ex:
+        text = str(ex)
+        assert needle in text, (context, action, text, needle)
+    else:
+        assert False, (context, action, "expected ValueError")
+
+
 def assert_zero_extend_extract(backend: str, runtime_module, context: str) -> None:
     payload = runtime_module.extract_bits(bytes([0xAA]), 0, 16)
     assert payload == bytes([0xAA, 0x00]), (context, backend, payload)
@@ -119,15 +129,64 @@ def assert_reject_extract(backend: str, runtime_module, context: str) -> None:
     assert rejected, (context, backend)
 
 
+def assert_semantic_malformed_contract(package: str, runtime_module, context: str) -> None:
+    union_type = importlib.import_module(
+        f"{package}.fixtures.vendor.union_tag_1_0"
+    ).UnionTag_1_0
+    helpers_type = importlib.import_module(
+        f"{package}.fixtures.vendor.helpers_1_0"
+    ).Helpers_1_0
+    delimited_type = importlib.import_module(
+        f"{package}.fixtures.vendor.delimited_1_0"
+    ).Delimited_1_0
+    uses_delimited_type = importlib.import_module(
+        f"{package}.fixtures.vendor.uses_delimited_1_0"
+    ).UsesDelimited_1_0
+
+    union_payload = bytearray(union_type(_tag=1, second=1027).serialize())
+    union_payload[0] = 3
+    expect_value_error(
+        context,
+        "union-invalid-tag",
+        "decoded invalid union tag",
+        lambda: union_type.deserialize(bytes(union_payload)),
+    )
+
+    helpers_payload = bytearray(helpers_type(a=0, b=0.0, c=[1]).serialize())
+    runtime_module.write_unsigned(helpers_payload, 29, 8, 6, False)
+    expect_value_error(
+        context,
+        "helpers-array-length",
+        "decoded length for field 'c' exceeds max length 5",
+        lambda: helpers_type.deserialize(bytes(helpers_payload)),
+    )
+
+    delimited_payload = bytearray(
+        uses_delimited_type(nested=delimited_type(value=42)).serialize()
+    )
+    delimited_payload[0] = 6
+    delimited_payload[1] = 0
+    delimited_payload[2] = 0
+    delimited_payload[3] = 0
+    expect_value_error(
+        context,
+        "uses-delimited-invalid-header",
+        "decoded payload size for composite field 'nested' exceeds remaining buffer space",
+        lambda: uses_delimited_type.deserialize(bytes(delimited_payload)),
+    )
+
+
 # portable + pure contract: tolerant malformed reads (zero-extend).
 backend, runtime_module = load_runtime(PORTABLE_OUT, PORTABLE_PKG, "pure")
 assert backend == "pure", backend
 assert_zero_extend_extract(backend, runtime_module, "portable/pure")
+assert_semantic_malformed_contract(PORTABLE_PKG, runtime_module, "portable/pure")
 
 # fast + pure contract: strict byte-aligned out-of-range extract (ValueError).
 backend, runtime_module = load_runtime(FAST_OUT, FAST_PKG, "pure")
 assert backend == "pure", backend
 assert_reject_extract(backend, runtime_module, "fast/pure")
+assert_semantic_malformed_contract(FAST_PKG, runtime_module, "fast/pure")
 
 if HAS_ACCEL:
     # accel contract currently uses accelerator runtime behavior:
@@ -135,10 +194,12 @@ if HAS_ACCEL:
     backend, runtime_module = load_runtime(PORTABLE_OUT, PORTABLE_PKG, "accel")
     assert backend == "accel", backend
     assert_zero_extend_extract(backend, runtime_module, "portable/accel")
+    assert_semantic_malformed_contract(PORTABLE_PKG, runtime_module, "portable/accel")
 
     backend, runtime_module = load_runtime(FAST_OUT, FAST_PKG, "accel")
     assert backend == "accel", backend
     assert_zero_extend_extract(backend, runtime_module, "fast/accel")
+    assert_semantic_malformed_contract(FAST_PKG, runtime_module, "fast/accel")
 else:
     accel_failed = False
     try:

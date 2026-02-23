@@ -39,6 +39,7 @@
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/NativeEmitterTraversal.h"
 #include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/CodeGen/WireLayoutFacts.h"
@@ -412,7 +413,7 @@ std::string defaultExpr(const SemanticFieldType& type, const EmitterContext& ctx
 class FunctionBodyEmitter final
 {
 public:
-    explicit FunctionBodyEmitter(const EmitterContext&                            ctx,
+    explicit FunctionBodyEmitter(const EmitterContext&                               ctx,
                                  const std::unordered_map<std::string, std::string>& poolClassConstExprByField)
         : ctx_(ctx)
         , poolClassConstExprByField_(poolClassConstExprByField)
@@ -446,15 +447,17 @@ public:
             emitLine(out, 2, "}");
         }
 
-        LoweredRenderStepCallbacks callbacks;
+        NativeEmitterTraversalCallbacks callbacks;
         callbacks.onUnionDispatch =
             [this, &out, &section, sectionFacts, &renderIR](const std::vector<PlannedFieldStep>& unionBranches) {
                 emitSerializeUnion(out, section, unionBranches, 2, sectionFacts, renderIR.helperBindings);
             };
+        callbacks.onFieldAlignment = [this, &out](const std::int64_t alignmentBits) {
+            emitAlignSerialize(out, alignmentBits, 2);
+        };
         callbacks.onField = [this, &out](const PlannedFieldStep& fieldStep) {
-            const auto* const field = fieldStep.field;
-            emitAlignSerialize(out, field->resolvedType.alignmentBits, 2);
-            const auto fieldRef = "self." + sanitizeRustIdent(field->name);
+            const auto* const field    = fieldStep.field;
+            const auto        fieldRef = "self." + sanitizeRustIdent(field->name);
             emitSerializeAny(out,
                              field->resolvedType,
                              fieldRef,
@@ -462,12 +465,14 @@ public:
                              fieldStep.arrayLengthPrefixBits,
                              fieldStep.fieldFacts);
         };
+        callbacks.onPaddingAlignment = [this, &out](const std::int64_t alignmentBits) {
+            emitAlignSerialize(out, alignmentBits, 2);
+        };
         callbacks.onPadding = [this, &out](const PlannedFieldStep& fieldStep) {
             const auto* const field = fieldStep.field;
-            emitAlignSerialize(out, field->resolvedType.alignmentBits, 2);
             emitSerializePadding(out, field->resolvedType, 2);
         };
-        forEachLoweredRenderStep(renderIR, callbacks);
+        forEachNativeEmitterRenderStep(renderIR, callbacks);
 
         emitAlignSerialize(out, 8, 2);
         emitLine(out, 2, "Ok(offset_bits / 8)");
@@ -487,15 +492,17 @@ public:
         const auto renderIR = buildLoweredBodyRenderIR(section, sectionFacts, HelperBindingDirection::Deserialize);
         emitDeserializeMlirHelperBindings(out, renderIR.helperBindings, 2);
 
-        LoweredRenderStepCallbacks callbacks;
+        NativeEmitterTraversalCallbacks callbacks;
         callbacks.onUnionDispatch =
             [this, &out, &section, sectionFacts, &renderIR](const std::vector<PlannedFieldStep>& unionBranches) {
                 emitDeserializeUnion(out, section, unionBranches, 2, sectionFacts, renderIR.helperBindings);
             };
+        callbacks.onFieldAlignment = [this, &out](const std::int64_t alignmentBits) {
+            emitAlignDeserialize(out, alignmentBits, 2);
+        };
         callbacks.onField = [this, &out](const PlannedFieldStep& fieldStep) {
-            const auto* const field = fieldStep.field;
-            emitAlignDeserialize(out, field->resolvedType.alignmentBits, 2);
-            const auto fieldRef = "self." + sanitizeRustIdent(field->name);
+            const auto* const field    = fieldStep.field;
+            const auto        fieldRef = "self." + sanitizeRustIdent(field->name);
             emitDeserializeAny(out,
                                field->resolvedType,
                                fieldRef,
@@ -504,12 +511,14 @@ public:
                                fieldStep.fieldFacts,
                                poolClassConstExprForField(field->name));
         };
+        callbacks.onPaddingAlignment = [this, &out](const std::int64_t alignmentBits) {
+            emitAlignDeserialize(out, alignmentBits, 2);
+        };
         callbacks.onPadding = [this, &out](const PlannedFieldStep& fieldStep) {
             const auto* const field = fieldStep.field;
-            emitAlignDeserialize(out, field->resolvedType.alignmentBits, 2);
             emitDeserializePadding(out, field->resolvedType, 2);
         };
-        forEachLoweredRenderStep(renderIR, callbacks);
+        forEachNativeEmitterRenderStep(renderIR, callbacks);
 
         emitAlignDeserialize(out, 8, 2);
         emitLine(out, 2, "Ok(crate::dsdl_runtime::choose_min(offset_bits, capacity_bits) / 8)");
@@ -524,9 +533,9 @@ public:
     }
 
 private:
-    const EmitterContext&                            ctx_;
+    const EmitterContext&                               ctx_;
     const std::unordered_map<std::string, std::string>& poolClassConstExprByField_;
-    std::size_t                                      id_{0};
+    std::size_t                                         id_{0};
 
     std::string poolClassConstExprForField(const std::string& fieldName) const
     {
@@ -761,8 +770,13 @@ private:
     {
         if (type.arrayKind != ArrayKind::None)
         {
-            emitDeserializeArray(
-                out, type, expr, indent, arrayLengthPrefixBitsOverride, fieldFacts, poolClassConstExpr);
+            emitDeserializeArray(out,
+                                 type,
+                                 expr,
+                                 indent,
+                                 arrayLengthPrefixBitsOverride,
+                                 fieldFacts,
+                                 poolClassConstExpr);
             return;
         }
         emitDeserializeScalar(out, type, expr, indent, fieldFacts);
@@ -1043,7 +1057,8 @@ private:
         {
             emitLine(out,
                      indent,
-                     expr + ".set_memory_contract(crate::dsdl_runtime::VarArrayMemoryContract::new("
+                     expr +
+                         ".set_memory_contract(crate::dsdl_runtime::VarArrayMemoryContract::new("
                          "Self::__LLVMDSDL_MEMORY_MODE, "
                          "Self::__LLVMDSDL_INLINE_THRESHOLD_BYTES, " +
                          poolClassConstExpr + "));");
@@ -1100,11 +1115,12 @@ private:
                  "if Self::__LLVMDSDL_MEMORY_MODE == "
                  "crate::dsdl_runtime::DsdlMemoryMode::InlineThenPool {");
         emitLine(out, indent + 1, "let mut _pool = crate::dsdl_runtime::PassthroughPoolProvider::default();");
-        emitLine(out, indent + 1, "if let Err(_alloc_err) = " + expr + ".reserve_with_pool(" + count + ", &mut _pool)"
-                                      " {");
         emitLine(out,
-                 indent + 2,
-                 "return Err(-crate::dsdl_runtime::allocation_error_to_runtime_code(_alloc_err));");
+                 indent + 1,
+                 "if let Err(_alloc_err) = " + expr + ".reserve_with_pool(" + count +
+                     ", &mut _pool)"
+                     " {");
+        emitLine(out, indent + 2, "return Err(-crate::dsdl_runtime::allocation_error_to_runtime_code(_alloc_err));");
         emitLine(out, indent + 1, "}");
         emitLine(out, indent, "} else {");
         emitLine(out, indent + 1, expr + ".reserve(" + count + ");");
@@ -1283,17 +1299,17 @@ void emitSectionType(std::ostringstream&              out,
                      std::uint32_t                    minorVersion,
                      const LoweredSectionFacts* const sectionFacts)
 {
-    std::unordered_map<std::string, std::string> poolClassConstExprByField;
+    std::unordered_map<std::string, std::string>       poolClassConstExprByField;
     std::vector<std::pair<std::string, std::uint32_t>> poolClassConstants;
-    std::set<std::string>                             usedPoolConstNames;
-    std::uint32_t                                     nextPoolClassId = 1U;
+    std::set<std::string>                              usedPoolConstNames;
+    std::uint32_t                                      nextPoolClassId = 1U;
     for (const auto& field : section.fields)
     {
         if (field.isPadding || field.resolvedType.arrayKind == ArrayKind::None)
         {
             continue;
         }
-        const std::string baseName = "__LLVMDSDL_POOL_CLASS_" + toUpperSnake(field.name);
+        const std::string baseName  = "__LLVMDSDL_POOL_CLASS_" + toUpperSnake(field.name);
         std::string       constName = baseName;
         for (std::uint32_t suffix = 1U; !usedPoolConstNames.insert(constName).second; ++suffix)
         {

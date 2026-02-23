@@ -38,6 +38,7 @@
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/NativeEmitterTraversal.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/CodeGen/WireLayoutFacts.h"
 #include "llvm/ADT/StringExtras.h"
@@ -557,14 +558,16 @@ public:
             emitLine(out, 1, "}");
         }
 
-        LoweredRenderStepCallbacks callbacks;
+        NativeEmitterTraversalCallbacks callbacks;
         callbacks.onUnionDispatch =
             [this, &out, &section, sectionFacts, &renderIR](const std::vector<PlannedFieldStep>& unionBranches) {
                 emitSerializeUnion(out, section, unionBranches, 1, sectionFacts, renderIR.helperBindings);
             };
+        callbacks.onFieldAlignment = [this, &out](const std::int64_t alignmentBits) {
+            emitAlignSerialize(out, alignmentBits, 1);
+        };
         callbacks.onField = [this, &out](const PlannedFieldStep& fieldStep) {
             const auto* const field = fieldStep.field;
-            emitAlignSerialize(out, field->resolvedType.alignmentBits, 1);
             emitSerializeAny(out,
                              field->resolvedType,
                              "obj." + toExportedIdent(field->name),
@@ -572,12 +575,14 @@ public:
                              fieldStep.arrayLengthPrefixBits,
                              fieldStep.fieldFacts);
         };
+        callbacks.onPaddingAlignment = [this, &out](const std::int64_t alignmentBits) {
+            emitAlignSerialize(out, alignmentBits, 1);
+        };
         callbacks.onPadding = [this, &out](const PlannedFieldStep& fieldStep) {
             const auto* const field = fieldStep.field;
-            emitAlignSerialize(out, field->resolvedType.alignmentBits, 1);
             emitSerializePadding(out, field->resolvedType, 1);
         };
-        forEachLoweredRenderStep(renderIR, callbacks);
+        forEachNativeEmitterRenderStep(renderIR, callbacks);
 
         emitAlignSerialize(out, 8, 1);
         emitLine(out, 1, "return dsdlruntime.DSDL_RUNTIME_SUCCESS, offsetBits / 8");
@@ -599,14 +604,16 @@ public:
         const auto renderIR = buildLoweredBodyRenderIR(section, sectionFacts, HelperBindingDirection::Deserialize);
         emitDeserializeMlirHelperBindings(out, renderIR.helperBindings, 1);
 
-        LoweredRenderStepCallbacks callbacks;
+        NativeEmitterTraversalCallbacks callbacks;
         callbacks.onUnionDispatch =
             [this, &out, &section, sectionFacts, &renderIR](const std::vector<PlannedFieldStep>& unionBranches) {
                 emitDeserializeUnion(out, section, unionBranches, 1, sectionFacts, renderIR.helperBindings);
             };
+        callbacks.onFieldAlignment = [this, &out](const std::int64_t alignmentBits) {
+            emitAlignDeserialize(out, alignmentBits, 1);
+        };
         callbacks.onField = [this, &out](const PlannedFieldStep& fieldStep) {
             const auto* const field = fieldStep.field;
-            emitAlignDeserialize(out, field->resolvedType.alignmentBits, 1);
             emitDeserializeAny(out,
                                field->resolvedType,
                                "obj." + toExportedIdent(field->name),
@@ -614,12 +621,14 @@ public:
                                fieldStep.arrayLengthPrefixBits,
                                fieldStep.fieldFacts);
         };
+        callbacks.onPaddingAlignment = [this, &out](const std::int64_t alignmentBits) {
+            emitAlignDeserialize(out, alignmentBits, 1);
+        };
         callbacks.onPadding = [this, &out](const PlannedFieldStep& fieldStep) {
             const auto* const field = fieldStep.field;
-            emitAlignDeserialize(out, field->resolvedType.alignmentBits, 1);
             emitDeserializePadding(out, field->resolvedType, 1);
         };
-        forEachLoweredRenderStep(renderIR, callbacks);
+        forEachNativeEmitterRenderStep(renderIR, callbacks);
 
         emitAlignDeserialize(out, 8, 1);
         emitLine(out, 1, "consumedBits := dsdlruntime.ChooseMin(offsetBits, capacityBits)");

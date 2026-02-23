@@ -38,6 +38,7 @@
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/NativeEmitterTraversal.h"
 #include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/CodeGen/WireLayoutFacts.h"
@@ -509,14 +510,16 @@ public:
             emitLine(out, 1, "}");
         }
 
-        LoweredRenderStepCallbacks callbacks;
+        NativeEmitterTraversalCallbacks callbacks;
         callbacks.onUnionDispatch =
             [this, &out, &section, sectionFacts, &renderIR](const std::vector<PlannedFieldStep>& unionBranches) {
                 emitSerializeUnion(out, section, unionBranches, "obj", 1, sectionFacts, renderIR.helperBindings);
             };
+        callbacks.onFieldAlignment = [this, &out](const std::int64_t alignmentBits) {
+            emitAlignSerialize(out, alignmentBits, 1);
+        };
         callbacks.onField = [this, &out](const PlannedFieldStep& fieldStep) {
             const auto* const field = fieldStep.field;
-            emitAlignSerialize(out, field->resolvedType.alignmentBits, 1);
             emitSerializeValue(out,
                                field->resolvedType,
                                "obj->" + sanitizeIdentifier(field->name),
@@ -524,12 +527,14 @@ public:
                                fieldStep.arrayLengthPrefixBits,
                                fieldStep.fieldFacts);
         };
+        callbacks.onPaddingAlignment = [this, &out](const std::int64_t alignmentBits) {
+            emitAlignSerialize(out, alignmentBits, 1);
+        };
         callbacks.onPadding = [this, &out](const PlannedFieldStep& fieldStep) {
             const auto* const field = fieldStep.field;
-            emitAlignSerialize(out, field->resolvedType.alignmentBits, 1);
             emitSerializePadding(out, field->resolvedType, 1);
         };
-        forEachLoweredRenderStep(renderIR, callbacks);
+        forEachNativeEmitterRenderStep(renderIR, callbacks);
 
         emitAlignSerialize(out, 8, 1);
         emitLine(out, 1, "*inout_buffer_size_bytes = static_cast<std::size_t>(offset_bits / 8U);");
@@ -577,14 +582,16 @@ public:
         const auto renderIR = buildLoweredBodyRenderIR(section, sectionFacts, HelperBindingDirection::Deserialize);
         emitDeserializeMlirHelperBindings(out, renderIR.helperBindings, 1);
 
-        LoweredRenderStepCallbacks callbacks;
+        NativeEmitterTraversalCallbacks callbacks;
         callbacks.onUnionDispatch =
             [this, &out, &section, sectionFacts, &renderIR](const std::vector<PlannedFieldStep>& unionBranches) {
                 emitDeserializeUnion(out, section, unionBranches, "out_obj", 1, sectionFacts, renderIR.helperBindings);
             };
+        callbacks.onFieldAlignment = [this, &out](const std::int64_t alignmentBits) {
+            emitAlignDeserialize(out, alignmentBits, 1);
+        };
         callbacks.onField = [this, &out](const PlannedFieldStep& fieldStep) {
             const auto* const field = fieldStep.field;
-            emitAlignDeserialize(out, field->resolvedType.alignmentBits, 1);
             emitDeserializeValue(out,
                                  field->resolvedType,
                                  "out_obj->" + sanitizeIdentifier(field->name),
@@ -592,12 +599,14 @@ public:
                                  fieldStep.arrayLengthPrefixBits,
                                  fieldStep.fieldFacts);
         };
+        callbacks.onPaddingAlignment = [this, &out](const std::int64_t alignmentBits) {
+            emitAlignDeserialize(out, alignmentBits, 1);
+        };
         callbacks.onPadding = [this, &out](const PlannedFieldStep& fieldStep) {
             const auto* const field = fieldStep.field;
-            emitAlignDeserialize(out, field->resolvedType.alignmentBits, 1);
             emitDeserializePadding(out, field->resolvedType, 1);
         };
-        forEachLoweredRenderStep(renderIR, callbacks);
+        forEachNativeEmitterRenderStep(renderIR, callbacks);
 
         emitAlignDeserialize(out, 8, 1);
         emitLine(out,

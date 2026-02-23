@@ -589,9 +589,13 @@ Coverage artifacts:
 
 When changing wire semantics for TypeScript/Python/C++/Rust/Go:
 
-- Update lowered helper contracts/plans first (`*Plan*`, `*Resolver*`,
-  `HelperBindingRender*`), then wire emitters to invoke generated helper
-  bindings.
+- Update shared planning/binding layers first, then wire emitters:
+  - `RuntimeLoweredPlan*`
+  - `RuntimeHelperBindings*`
+  - `ScriptedBodyPlan*` (TypeScript/Python)
+  - `NativeEmitterTraversal*` (C++/Rust/Go traversal callbacks)
+  - `HelperBindingRender*`
+  - `CodegenDiagnosticText*` (for shared diagnostic text)
 - Do not add backend-local fallback arithmetic for scalar cast/sign-extension,
   array prefix/length validation, union tag checks, delimiter checks, or section
   capacity checks.

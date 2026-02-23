@@ -34,7 +34,7 @@ flowchart LR
   E --> F["MLIR DSDL lowering"]
   F --> G["MLIR module"]
   G --> H["C path: EmitC lowering + C output (per-definition impl TUs)"]
-  E --> K["Shared lowering facts + body plan + render IR"]
+  E --> K["Shared lowering facts + runtime/body plans + helper bindings + render IR + diagnostics text"]
   G --> K
   K --> I["C/C++/Rust/Go/TypeScript/Python emitters"]
   I --> J["Generated language artifacts"]
@@ -104,7 +104,21 @@ Shared generator-side convergence modules include:
 - `MlirLoweredFacts*`
 - `LoweredBodyPlan*`
 - `LoweredRenderIR*`
+- `RuntimeLoweredPlan*` (backend-neutral ordered runtime field/section planning)
+- `RuntimeHelperBindings*` (shared lowered helper-symbol lookup/resolution)
+- `ScriptedBodyPlan*` (TS/Python scripted section/field helper planning)
+- `NativeEmitterTraversal*` (shared lowered-step traversal callbacks for C++/Rust/Go)
+- `CodegenDiagnosticText*` (shared cross-backend diagnostic text catalog)
 - helper/statement/binding planners in `lib/CodeGen/*Plan*` and `*Resolver*`
+
+Emitter responsibilities are intentionally constrained to:
+
+- language syntax/module/file rendering,
+- runtime primitive call wiring, and
+- backend-specific API surface mapping.
+
+Wire-semantics orchestration (ordering, helper selection, validation rules, and
+diagnostic-text parity) is centralized in the shared planning/binding layers.
 
 #### Runtime Layer
 
@@ -265,6 +279,10 @@ Current:
   `lower-dsdl-serialization` and `convert-dsdl-to-emitc`.
 - Shared lowered-fact collection drives backend wire-semantics decisions for
   C++ (`std`/`pmr`), Rust (`std`/`no-std-alloc`), Go, TypeScript, and Python.
+- Shared runtime/body orchestration now has explicit convergence layers:
+  `RuntimeLoweredPlan`, `RuntimeHelperBindings`, `ScriptedBodyPlan`
+  (TypeScript/Python), `NativeEmitterTraversal` (C++/Rust/Go), and
+  `CodegenDiagnosticText`.
 - Shared language-agnostic render-IR (`LoweredRenderIR`) now drives core
   per-section body step traversal (`field`, `padding`, `union-dispatch`) in
   C++, Rust, Go, TypeScript, and Python emitters.

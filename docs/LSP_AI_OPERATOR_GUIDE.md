@@ -53,7 +53,6 @@ Via `workspace/didChangeConfiguration`:
 {
   "settings": {
     "ai": {
-      "enabled": true,
       "mode": "suggest"
     }
   }
@@ -62,11 +61,7 @@ Via `workspace/didChangeConfiguration`:
 
 VS Code equivalents:
 
-1. `dsdld.aiEnabled`
-2. `dsdld.aiMode`
-
-`aiEnabled` is a legacy toggle and should be treated as compatibility-only.
-Use `aiMode` as the primary control.
+1. `dsdld.aiMode`
 
 ## 5. Operational Playbooks
 

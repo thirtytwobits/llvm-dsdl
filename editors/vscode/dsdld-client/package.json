@@ -80,11 +80,6 @@
           "default": true,
           "description": "Enable linting in dsdld."
         },
-        "dsdld.aiEnabled": {
-          "type": "boolean",
-          "default": false,
-          "description": "Legacy AI toggle. When enabled and aiMode is unset, dsdld defaults to suggest mode."
-        },
         "dsdld.aiMode": {
           "type": "string",
           "default": "off",

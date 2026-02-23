@@ -215,7 +215,7 @@ bool runLspServerTests()
     }
 
     server.handleMessage(parseJson(
-        R"({"jsonrpc":"2.0","method":"workspace/didChangeConfiguration","params":{"settings":{"roots":["/tmp/rootA","/tmp/rootB"],"lookupDirs":["/tmp/lookup"],"lint":{"enabled":false,"disabledRules":["style.no_tabs"],"fileSuppressions":{"file:///tmp/demo.dsdl":["naming.field_snake_case"]},"pluginLibraries":["/tmp/plugin.so"]},"ai":{"enabled":true},"trace":"verbose"}}})"));
+        R"({"jsonrpc":"2.0","method":"workspace/didChangeConfiguration","params":{"settings":{"roots":["/tmp/rootA","/tmp/rootB"],"lookupDirs":["/tmp/lookup"],"lint":{"enabled":false,"disabledRules":["style.no_tabs"],"fileSuppressions":{"file:///tmp/demo.dsdl":["naming.field_snake_case"]},"pluginLibraries":["/tmp/plugin.so"]},"ai":{"mode":"suggest"},"trace":"verbose"}}})"));
 
     if (server.config().rootNamespaceDirs.size() != 2 || server.config().lookupDirs.size() != 1 ||
         server.config().lintEnabled || server.config().aiMode != llvmdsdl::lsp::AiMode::Suggest ||
@@ -1130,7 +1130,7 @@ bool runLspServerTests()
                        {"disabledRules", llvm::json::Array{}},
                        {"fileSuppressions", llvm::json::Object{}},
                    }},
-                  {"ai", llvm::json::Object{{"enabled", false}}},
+                  {"ai", llvm::json::Object{{"mode", "off"}}},
               }},
          }},
     });

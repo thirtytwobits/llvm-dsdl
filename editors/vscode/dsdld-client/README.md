@@ -33,9 +33,8 @@ The extension contributes these settings:
 2. `dsdld.rootNamespaceDirs`: root namespace directories.
 3. `dsdld.lookupDirs`: dependency lookup directories.
 4. `dsdld.lintEnabled`: enable/disable lint diagnostics.
-5. `dsdld.aiEnabled`: legacy toggle (kept for compatibility).
-6. `dsdld.aiMode`: `off`, `suggest`, `assist`, `apply_with_confirmation`.
-7. `dsdld.trace`: `off`, `basic`, `verbose`.
+5. `dsdld.aiMode`: `off`, `suggest`, `assist`, `apply_with_confirmation`.
+6. `dsdld.trace`: `off`, `basic`, `verbose`.
 
 Example workspace settings:
 

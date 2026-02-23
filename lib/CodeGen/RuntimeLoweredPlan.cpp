@@ -8,13 +8,14 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// Builds TypeScript-specific lowering plans from render IR.
+/// Builds backend-neutral runtime lowering plans from lowered render IR.
 ///
-/// The planning utilities convert generic render steps into TypeScript execution primitives used by the TS emitter.
+/// The planning utilities convert generic render steps into runtime execution
+/// primitives shared by scripted emitters.
 ///
 //===----------------------------------------------------------------------===//
 
-#include "llvmdsdl/CodeGen/TsLoweredPlan.h"
+#include "llvmdsdl/CodeGen/RuntimeLoweredPlan.h"
 
 #include <algorithm>
 #include <cctype>
@@ -24,18 +25,18 @@
 #include <utility>
 
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
-#include "llvm/Support/Error.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
 #include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
 #include "llvmdsdl/Semantics/BitLengthSet.h"
+#include "llvm/Support/Error.h"
 
 namespace llvmdsdl
 {
 namespace
 {
 
-bool isTsKeyword(const std::string& name)
+bool isRuntimeKeyword(const std::string& name)
 {
     static const std::set<std::string> kKeywords =
         {"break", "case",       "catch",     "class",      "const",   "continue", "debugger",  "default", "delete",
@@ -47,7 +48,7 @@ bool isTsKeyword(const std::string& name)
     return kKeywords.contains(name);
 }
 
-std::string sanitizeTsIdent(std::string name)
+std::string sanitizeRuntimeIdent(std::string name)
 {
     if (name.empty())
     {
@@ -64,7 +65,7 @@ std::string sanitizeTsIdent(std::string name)
     {
         name.insert(name.begin(), '_');
     }
-    if (isTsKeyword(name))
+    if (isRuntimeKeyword(name))
     {
         name += "_";
     }
@@ -119,7 +120,7 @@ std::string toSnakeCase(const std::string& in)
     {
         out.insert(out.begin(), '_');
     }
-    return sanitizeTsIdent(out);
+    return sanitizeRuntimeIdent(out);
 }
 
 std::size_t expectedStepCount(const SemanticSection& section)
@@ -141,17 +142,17 @@ std::size_t expectedStepCount(const SemanticSection& section)
 
 }  // namespace
 
-llvm::Expected<std::vector<TsOrderedFieldStep>> buildTsOrderedFieldSteps(const SemanticSection&           section,
-                                                                         const LoweredSectionFacts* const sectionFacts)
+llvm::Expected<std::vector<RuntimeOrderedFieldStep>> buildRuntimeOrderedFieldSteps(const SemanticSection&           section,
+                                                                                    const LoweredSectionFacts* const sectionFacts)
 {
     if (sectionFacts == nullptr)
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "missing lowered section facts required for TypeScript runtime planning");
+                                       "missing lowered section facts required for runtime planning");
     }
 
     const auto renderIR = buildLoweredBodyRenderIR(section, sectionFacts, HelperBindingDirection::Serialize);
-    std::vector<TsOrderedFieldStep> out;
+    std::vector<RuntimeOrderedFieldStep> out;
 
     if (section.isUnion)
     {
@@ -181,7 +182,7 @@ llvm::Expected<std::vector<TsOrderedFieldStep>> buildTsOrderedFieldSteps(const S
                                                "missing lowered step index for union field '%s'",
                                                branch.field->name.c_str());
             }
-            out.push_back(TsOrderedFieldStep{branch.field, branch.arrayLengthPrefixBits});
+            out.push_back(RuntimeOrderedFieldStep{branch.field, branch.arrayLengthPrefixBits});
         }
     }
     else
@@ -206,7 +207,7 @@ llvm::Expected<std::vector<TsOrderedFieldStep>> buildTsOrderedFieldSteps(const S
                                                "missing lowered step index for field '%s'",
                                                step.fieldStep.field->name.c_str());
             }
-            out.push_back(TsOrderedFieldStep{step.fieldStep.field, step.fieldStep.arrayLengthPrefixBits});
+            out.push_back(RuntimeOrderedFieldStep{step.fieldStep.field, step.fieldStep.arrayLengthPrefixBits});
         }
     }
 
@@ -228,15 +229,15 @@ llvm::Expected<std::vector<TsOrderedFieldStep>> buildTsOrderedFieldSteps(const S
     return out;
 }
 
-llvm::Expected<TsRuntimeSectionPlan> buildTsRuntimeSectionPlan(const SemanticSection&           section,
-                                                               const LoweredSectionFacts* const sectionFacts)
+llvm::Expected<RuntimeSectionPlan> buildRuntimeSectionPlan(const SemanticSection&           section,
+                                                           const LoweredSectionFacts* const sectionFacts)
 {
-    TsRuntimeSectionPlan plan;
-    plan.isUnion                        = section.isUnion;
+    RuntimeSectionPlan plan;
+    plan.isUnion                      = section.isUnion;
     std::int64_t                maxBits = 0;
     std::optional<std::int64_t> unionTagBits;
     std::set<std::uint32_t>     unionOptionIndexes;
-    auto                        orderedStepsOrErr = buildTsOrderedFieldSteps(section, sectionFacts);
+    auto                        orderedStepsOrErr = buildRuntimeOrderedFieldSteps(section, sectionFacts);
     if (!orderedStepsOrErr)
     {
         return orderedStepsOrErr.takeError();
@@ -247,7 +248,7 @@ llvm::Expected<TsRuntimeSectionPlan> buildTsRuntimeSectionPlan(const SemanticSec
         if (orderedStep.field == nullptr)
         {
             return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                           "lowered TypeScript section plan contains null field");
+                                           "lowered runtime section plan contains null field");
         }
         const auto&  field     = *orderedStep.field;
         std::int64_t fieldBits = static_cast<std::int64_t>(field.resolvedType.bitLength);
@@ -258,12 +259,12 @@ llvm::Expected<TsRuntimeSectionPlan> buildTsRuntimeSectionPlan(const SemanticSec
                                            field.name.c_str());
         }
 
-        TsRuntimeArrayKind arrayKind             = TsRuntimeArrayKind::None;
-        std::int64_t       arrayCapacity         = 0;
-        std::int64_t       arrayLengthPrefixBits = 0;
+        RuntimeArrayKind arrayKind           = RuntimeArrayKind::None;
+        std::int64_t     arrayCapacity       = 0;
+        std::int64_t     arrayLengthPrefixBits = 0;
         if (field.resolvedType.arrayKind == ArrayKind::None)
         {
-            arrayKind = TsRuntimeArrayKind::None;
+            arrayKind = RuntimeArrayKind::None;
         }
         else if (field.resolvedType.arrayKind == ArrayKind::Fixed)
         {
@@ -273,7 +274,7 @@ llvm::Expected<TsRuntimeSectionPlan> buildTsRuntimeSectionPlan(const SemanticSec
                                                "field '%s' has invalid fixed-array capacity",
                                                field.name.c_str());
             }
-            arrayKind     = TsRuntimeArrayKind::Fixed;
+            arrayKind     = RuntimeArrayKind::Fixed;
             arrayCapacity = field.resolvedType.arrayCapacity;
         }
         else if (field.resolvedType.arrayKind == ArrayKind::VariableInclusive ||
@@ -288,7 +289,7 @@ llvm::Expected<TsRuntimeSectionPlan> buildTsRuntimeSectionPlan(const SemanticSec
                                                "field '%s' has invalid variable-array capacity or prefix width",
                                                field.name.c_str());
             }
-            arrayKind             = TsRuntimeArrayKind::Variable;
+            arrayKind             = RuntimeArrayKind::Variable;
             arrayCapacity         = field.resolvedType.arrayCapacity;
             arrayLengthPrefixBits = prefixBits;
         }
@@ -299,7 +300,7 @@ llvm::Expected<TsRuntimeSectionPlan> buildTsRuntimeSectionPlan(const SemanticSec
                                            field.name.c_str());
         }
 
-        TsRuntimeFieldKind kind = TsRuntimeFieldKind::Unsigned;
+        RuntimeFieldKind kind = RuntimeFieldKind::Unsigned;
         switch (field.resolvedType.scalarCategory)
         {
         case SemanticScalarCategory::Bool:
@@ -309,15 +310,15 @@ llvm::Expected<TsRuntimeSectionPlan> buildTsRuntimeSectionPlan(const SemanticSec
                                                "field '%s' bool bit length must be 1",
                                                field.name.c_str());
             }
-            kind = TsRuntimeFieldKind::Bool;
+            kind = RuntimeFieldKind::Bool;
             break;
         case SemanticScalarCategory::Byte:
         case SemanticScalarCategory::Utf8:
         case SemanticScalarCategory::UnsignedInt:
-            kind = TsRuntimeFieldKind::Unsigned;
+            kind = RuntimeFieldKind::Unsigned;
             break;
         case SemanticScalarCategory::SignedInt:
-            kind = TsRuntimeFieldKind::Signed;
+            kind = RuntimeFieldKind::Signed;
             break;
         case SemanticScalarCategory::Float:
             if (fieldBits != 16 && fieldBits != 32 && fieldBits != 64)
@@ -327,7 +328,7 @@ llvm::Expected<TsRuntimeSectionPlan> buildTsRuntimeSectionPlan(const SemanticSec
                                                field.name.c_str(),
                                                static_cast<long long>(fieldBits));
             }
-            kind = TsRuntimeFieldKind::Float;
+            kind = RuntimeFieldKind::Float;
             break;
         case SemanticScalarCategory::Composite:
             if (!field.resolvedType.compositeType)
@@ -344,20 +345,20 @@ llvm::Expected<TsRuntimeSectionPlan> buildTsRuntimeSectionPlan(const SemanticSec
             {
                 fieldBits = field.resolvedType.bitLengthSet.max();
             }
-            kind = TsRuntimeFieldKind::Composite;
+            kind = RuntimeFieldKind::Composite;
             break;
         case SemanticScalarCategory::Void:
-            if (arrayKind != TsRuntimeArrayKind::None)
+            if (arrayKind != RuntimeArrayKind::None)
             {
                 return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                                "padding field '%s' cannot be an array",
                                                field.name.c_str());
             }
-            kind = TsRuntimeFieldKind::Padding;
+            kind = RuntimeFieldKind::Padding;
             break;
         }
 
-        if (kind == TsRuntimeFieldKind::Composite || kind == TsRuntimeFieldKind::Padding)
+        if (kind == RuntimeFieldKind::Composite || kind == RuntimeFieldKind::Padding)
         {
             if (fieldBits < 0)
             {
@@ -377,22 +378,22 @@ llvm::Expected<TsRuntimeSectionPlan> buildTsRuntimeSectionPlan(const SemanticSec
             }
         }
 
-        if (plan.isUnion && kind == TsRuntimeFieldKind::Padding)
+        if (plan.isUnion && kind == RuntimeFieldKind::Padding)
         {
             return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                            "union section cannot contain padding runtime fields");
         }
 
-        TsRuntimeFieldPlan fieldPlan;
+        RuntimeFieldPlan fieldPlan;
         fieldPlan.semanticFieldName = field.name;
-        fieldPlan.fieldName         = sanitizeTsIdent(toSnakeCase(field.name));
+        fieldPlan.fieldName         = sanitizeRuntimeIdent(toSnakeCase(field.name));
         fieldPlan.kind              = kind;
         fieldPlan.castMode          = field.resolvedType.castMode;
         fieldPlan.bitLength         = fieldBits;
         fieldPlan.alignmentBits =
             std::max<std::int64_t>(1, static_cast<std::int64_t>(field.resolvedType.alignmentBits));
         fieldPlan.useBigInt =
-            (kind == TsRuntimeFieldKind::Unsigned || kind == TsRuntimeFieldKind::Signed) && (fieldBits > 53);
+            (kind == RuntimeFieldKind::Unsigned || kind == RuntimeFieldKind::Signed) && (fieldBits > 53);
         fieldPlan.compositeType           = field.resolvedType.compositeType;
         fieldPlan.compositeSealed         = field.resolvedType.compositeSealed;
         fieldPlan.compositePayloadMaxBits = field.resolvedType.bitLengthSet.max();
@@ -427,11 +428,11 @@ llvm::Expected<TsRuntimeSectionPlan> buildTsRuntimeSectionPlan(const SemanticSec
             unionOptionIndexes.insert(field.unionOptionIndex);
         }
 
-        if (arrayKind == TsRuntimeArrayKind::None)
+        if (arrayKind == RuntimeArrayKind::None)
         {
             maxBits += fieldBits;
         }
-        else if (arrayKind == TsRuntimeArrayKind::Fixed)
+        else if (arrayKind == RuntimeArrayKind::Fixed)
         {
             maxBits += fieldBits * arrayCapacity;
         }
@@ -450,7 +451,7 @@ llvm::Expected<TsRuntimeSectionPlan> buildTsRuntimeSectionPlan(const SemanticSec
         }
         std::sort(plan.fields.begin(),
                   plan.fields.end(),
-                  [](const TsRuntimeFieldPlan& lhs, const TsRuntimeFieldPlan& rhs) {
+                  [](const RuntimeFieldPlan& lhs, const RuntimeFieldPlan& rhs) {
                       return lhs.unionOptionIndex < rhs.unionOptionIndex;
                   });
         plan.unionTagBits          = *unionTagBits;
@@ -458,11 +459,11 @@ llvm::Expected<TsRuntimeSectionPlan> buildTsRuntimeSectionPlan(const SemanticSec
         for (const auto& fieldPlan : plan.fields)
         {
             std::int64_t optionBits = fieldPlan.bitLength;
-            if (fieldPlan.arrayKind == TsRuntimeArrayKind::Fixed)
+            if (fieldPlan.arrayKind == RuntimeArrayKind::Fixed)
             {
                 optionBits = fieldPlan.bitLength * fieldPlan.arrayCapacity;
             }
-            else if (fieldPlan.arrayKind == TsRuntimeArrayKind::Variable)
+            else if (fieldPlan.arrayKind == RuntimeArrayKind::Variable)
             {
                 optionBits = fieldPlan.arrayLengthPrefixBits + (fieldPlan.bitLength * fieldPlan.arrayCapacity);
             }
