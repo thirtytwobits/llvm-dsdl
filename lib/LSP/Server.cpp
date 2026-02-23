@@ -740,6 +740,35 @@ void Server::handleMessage(const llvm::json::Value& message)
     handleNotification(*object, *method);
 }
 
+void Server::invalidateAnalysisSnapshot()
+{
+    analysisDirty_ = true;
+}
+
+const AnalysisResult& Server::ensureAnalysisSnapshot(const bool scheduleIndex, const bool waitForSnapshot)
+{
+    if (analysisDirty_ || !latestAnalysisResult_.has_value())
+    {
+        latestAnalysisResult_ = analysis_.run(config_, documents_);
+        analysisDirty_        = false;
+    }
+
+    if (scheduleIndex && latestAnalysisResult_.has_value())
+    {
+        scheduleWorkspaceIndex(*latestAnalysisResult_, waitForSnapshot);
+    }
+    return *latestAnalysisResult_;
+}
+
+bool Server::canReuseDidOpenAnalysis(const std::string& uri, const std::string& text) const
+{
+    if (analysisDirty_ || !latestAnalysisResult_.has_value())
+    {
+        return false;
+    }
+    return analysis_.documentTextMatches(uri, text);
+}
+
 bool Server::handleRequest(const llvm::json::Object& message, const llvm::StringRef method, const llvm::json::Value& id)
 {
     if (method == "initialize")
@@ -796,8 +825,7 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
                 uri = *parsedUri;
             }
         }
-        const AnalysisResult analysisResult = analysis_.run(config_, documents_);
-        (void) analysisResult;
+        (void) ensureAnalysisSnapshot(false, false);
         sendResult(id, buildSemanticTokens(uri));
         return false;
     }
@@ -810,8 +838,7 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
             sendResult(id, llvm::json::Value(nullptr));
             return false;
         }
-        const AnalysisResult analysisResult = analysis_.run(config_, documents_);
-        (void) analysisResult;
+        (void) ensureAnalysisSnapshot(false, false);
         const auto hover = analysis_.hover(position->uri, position->line, position->character);
         if (!hover)
         {
@@ -833,8 +860,7 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
             sendResult(id, llvm::json::Value(nullptr));
             return false;
         }
-        const AnalysisResult analysisResult = analysis_.run(config_, documents_);
-        (void) analysisResult;
+        (void) ensureAnalysisSnapshot(false, false);
         const auto definitionLocation = analysis_.definition(position->uri, position->line, position->character);
         if (!definitionLocation)
         {
@@ -853,9 +879,8 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
             sendResult(id, llvm::json::Array{});
             return false;
         }
-        const bool           includeDeclaration = parseIncludeDeclaration(message.get("params"));
-        const AnalysisResult analysisResult     = analysis_.run(config_, documents_);
-        (void) analysisResult;
+        const bool includeDeclaration = parseIncludeDeclaration(message.get("params"));
+        (void) ensureAnalysisSnapshot(false, false);
         const std::vector<AnalysisLocation> references =
             analysis_.references(position->uri, position->line, position->character, includeDeclaration);
         llvm::json::Array payload;
@@ -877,8 +902,7 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
                 uri = *parsedUri;
             }
         }
-        const AnalysisResult analysisResult = analysis_.run(config_, documents_);
-        (void) analysisResult;
+        (void) ensureAnalysisSnapshot(false, false);
         const std::vector<DocumentSymbolData> symbols = analysis_.documentSymbols(uri);
         llvm::json::Array                     payload;
         for (const DocumentSymbolData& symbol : symbols)
@@ -927,8 +951,7 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
             sendResult(id, llvm::json::Object{{"isIncomplete", false}, {"items", llvm::json::Array{}}});
             return false;
         }
-        const AnalysisResult analysisResult = analysis_.run(config_, documents_);
-        (void) analysisResult;
+        (void) ensureAnalysisSnapshot(false, false);
         ensureSignalStore();
         std::string                       queryPrefix;
         const std::vector<CompletionData> completions =
@@ -971,8 +994,7 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
             sendResult(id, llvm::json::Value(nullptr));
             return false;
         }
-        const AnalysisResult analysisResult = analysis_.run(config_, documents_);
-        scheduleWorkspaceIndex(analysisResult, false);
+        (void) ensureAnalysisSnapshot(false, false);
         const auto prepare = analysis_.prepareRename(position->uri, position->line, position->character);
         if (!prepare.has_value())
         {
@@ -1010,8 +1032,7 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
             return false;
         }
 
-        const AnalysisResult analysisResult = analysis_.run(config_, documents_);
-        scheduleWorkspaceIndex(analysisResult, false);
+        (void) ensureAnalysisSnapshot(false, false);
         const RenamePlanData plan =
             analysis_.planRename(position->uri, position->line, position->character, *newName, true);
         if (!plan.ok)
@@ -1033,8 +1054,7 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
             return false;
         }
 
-        const AnalysisResult analysisResult = analysis_.run(config_, documents_);
-        scheduleWorkspaceIndex(analysisResult, false);
+        (void) ensureAnalysisSnapshot(false, false);
         const std::vector<std::string>    diagnosticMessages = parseCodeActionDiagnosticMessages(message.get("params"));
         const std::vector<CodeActionData> actions            = analysis_.codeActions(range->uri,
                                                                           range->startLine,
@@ -1110,8 +1130,7 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
             std::max<std::int64_t>(1,
                                    std::min<std::int64_t>(1000,
                                                           parseWorkspaceSymbolLimit(message.get("params"), 200))));
-        const AnalysisResult analysisResult = analysis_.run(config_, documents_);
-        scheduleWorkspaceIndex(analysisResult, true);
+        (void) ensureAnalysisSnapshot(true, true);
         ensureSignalStore();
 
         llvm::json::Array payload;
@@ -1290,8 +1309,7 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
             return false;
         }
 
-        const AnalysisResult analysisResult = analysis_.run(config_, documents_);
-        (void) analysisResult;
+        (void) ensureAnalysisSnapshot(false, false);
         const RenamePlanData plan =
             analysis_.planRename(position->uri, position->line, position->character, *newName, true);
 
@@ -1385,8 +1403,7 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
                 return false;
             }
 
-            const AnalysisResult analysisResult = analysis_.run(config_, documents_);
-            (void) analysisResult;
+            (void) ensureAnalysisSnapshot(false, false);
             std::string                       completionPrefix;
             const std::vector<CompletionData> completions =
                 analysis_.completions(uri->str(),
@@ -1417,8 +1434,7 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
 
         if (*kind == "workspaceSymbol")
         {
-            const AnalysisResult analysisResult = analysis_.run(config_, documents_);
-            scheduleWorkspaceIndex(analysisResult, true);
+            (void) ensureAnalysisSnapshot(true, true);
             if (indexManager_)
             {
                 const std::vector<WorkspaceSymbolResult> symbols =
@@ -1568,8 +1584,17 @@ void Server::handleNotification(const llvm::json::Object& message, const llvm::S
         const auto  version = parseTextDocumentVersion(params).value_or(0);
         if (uri && text)
         {
+            const bool reuseCachedAnalysis = canReuseDidOpenAnalysis(*uri, *text);
             documents_.open(*uri, *text, version);
-            publishDiagnosticsFromAnalysis();
+            if (reuseCachedAnalysis)
+            {
+                publishDiagnosticsForUriFromCachedAnalysis(*uri);
+            }
+            else
+            {
+                invalidateAnalysisSnapshot();
+                publishDiagnosticsFromAnalysis();
+            }
         }
         return;
     }
@@ -1584,6 +1609,7 @@ void Server::handleNotification(const llvm::json::Object& message, const llvm::S
         {
             const bool updated = documents_.applyFullTextChange(*uri, *text, version);
             (void) updated;
+            invalidateAnalysisSnapshot();
             publishDiagnosticsFromAnalysis();
         }
         return;
@@ -1595,6 +1621,7 @@ void Server::handleNotification(const llvm::json::Object& message, const llvm::S
         {
             const bool closed = documents_.close(*uri);
             (void) closed;
+            invalidateAnalysisSnapshot();
             publishDiagnosticsFromAnalysis();
         }
         return;
@@ -1606,6 +1633,7 @@ void Server::handleNotification(const llvm::json::Object& message, const llvm::S
         {
             const bool applied = applyDidChangeConfiguration(*params, config_);
             (void) applied;
+            invalidateAnalysisSnapshot();
             publishDiagnosticsFromAnalysis();
         }
         return;
@@ -1678,10 +1706,35 @@ void Server::publishEmptyDiagnostics(const std::string& uri)
                      });
 }
 
+void Server::publishDiagnosticsForUriFromCachedAnalysis(const std::string& uri)
+{
+    if (!latestAnalysisResult_.has_value())
+    {
+        publishDiagnosticsFromAnalysis();
+        return;
+    }
+
+    llvm::json::Array payload;
+    if (const auto it = latestAnalysisResult_->diagnosticsByUri.find(uri);
+        it != latestAnalysisResult_->diagnosticsByUri.end())
+    {
+        for (const Diagnostic& diagnostic : it->second)
+        {
+            payload.push_back(toLspDiagnostic(diagnostic));
+        }
+    }
+
+    sendNotification("textDocument/publishDiagnostics",
+                     llvm::json::Object{
+                         {"uri", uri},
+                         {"diagnostics", std::move(payload)},
+                     });
+    publishedDiagnosticUris_.insert(uri);
+}
+
 void Server::publishDiagnosticsFromAnalysis()
 {
-    AnalysisResult analysisResult = analysis_.run(config_, documents_);
-    scheduleWorkspaceIndex(analysisResult, false);
+    const AnalysisResult& analysisResult = ensureAnalysisSnapshot(true, false);
 
     std::unordered_map<std::string, llvm::json::Array> diagnosticsByUri;
     for (const auto& [uri, diagnostics] : analysisResult.diagnosticsByUri)
@@ -1754,6 +1807,8 @@ void Server::ensureIndexManager()
     }
     indexManager_        = std::make_unique<IndexManager>(cacheDirectory);
     indexCacheDirectory_ = cacheDirectory;
+    lastScheduledIndexSnapshotVersion_.reset();
+    lastTimedOutIndexWaitSnapshotVersion_.reset();
 }
 
 void Server::ensureSignalStore()
@@ -1784,12 +1839,46 @@ void Server::scheduleWorkspaceIndex(const AnalysisResult& analysisResult, const 
         return;
     }
 
-    indexManager_->scheduleRebuild(analysisResult.snapshotVersion, analysis_.buildIndexShards());
+    const bool snapshotAlreadyScheduled = lastScheduledIndexSnapshotVersion_.has_value() &&
+                                          *lastScheduledIndexSnapshotVersion_ == analysisResult.snapshotVersion;
+    if (!snapshotAlreadyScheduled)
+    {
+        indexManager_->scheduleRebuild(analysisResult.snapshotVersion, analysis_.buildIndexShards());
+        lastScheduledIndexSnapshotVersion_ = analysisResult.snapshotVersion;
+    }
+
     if (waitForSnapshot)
     {
-        const bool ready =
-            indexManager_->waitForSnapshot(analysisResult.snapshotVersion, std::chrono::milliseconds(2000));
-        (void) ready;
+        const IndexManagerStats stats = indexManager_->stats();
+        if (stats.lastCompletedSnapshotVersion >= analysisResult.snapshotVersion)
+        {
+            if (lastTimedOutIndexWaitSnapshotVersion_.has_value() &&
+                *lastTimedOutIndexWaitSnapshotVersion_ == analysisResult.snapshotVersion)
+            {
+                lastTimedOutIndexWaitSnapshotVersion_.reset();
+            }
+            return;
+        }
+
+        const bool previouslyTimedOut = lastTimedOutIndexWaitSnapshotVersion_.has_value() &&
+                                        *lastTimedOutIndexWaitSnapshotVersion_ == analysisResult.snapshotVersion;
+        if (previouslyTimedOut)
+        {
+            return;
+        }
+
+        const bool hasUsableIndex = stats.indexedSymbolCount > 0U;
+        const auto waitBudget     = hasUsableIndex ? std::chrono::milliseconds(25) : std::chrono::milliseconds(250);
+        const bool ready          = indexManager_->waitForSnapshot(analysisResult.snapshotVersion, waitBudget);
+        if (!ready)
+        {
+            lastTimedOutIndexWaitSnapshotVersion_ = analysisResult.snapshotVersion;
+        }
+        else if (lastTimedOutIndexWaitSnapshotVersion_.has_value() &&
+                 *lastTimedOutIndexWaitSnapshotVersion_ == analysisResult.snapshotVersion)
+        {
+            lastTimedOutIndexWaitSnapshotVersion_.reset();
+        }
     }
 }
 

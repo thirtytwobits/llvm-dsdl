@@ -274,6 +274,12 @@ public:
         return latestMlirSnapshot_;
     }
 
+    /// @brief Reports whether the current snapshot text for `uri` matches `text`.
+    /// @param[in] uri Document URI.
+    /// @param[in] text Candidate document text.
+    /// @return `true` when the URI exists in snapshot and cached source text matches `text`.
+    [[nodiscard]] bool documentTextMatches(const std::string& uri, const std::string& text) const;
+
     /// @brief Resolves hover text at a document position.
     /// @param[in] uri Document URI.
     /// @param[in] line Zero-based line.

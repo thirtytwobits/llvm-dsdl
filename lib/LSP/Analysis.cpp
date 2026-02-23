@@ -958,6 +958,13 @@ AnalysisResult AnalysisPipeline::run(const ServerConfig& config, const DocumentS
     return result;
 }
 
+bool AnalysisPipeline::documentTextMatches(const std::string& uri, const std::string& text) const
+{
+    const std::string path = uriToNormalizedPath(uri);
+    const auto        it   = cachedDefinitionsByPath_.find(path);
+    return it != cachedDefinitionsByPath_.end() && it->second.sourceText == text;
+}
+
 std::optional<HoverData> AnalysisPipeline::hover(const std::string&  uri,
                                                  const std::uint32_t line,
                                                  const std::uint32_t character) const

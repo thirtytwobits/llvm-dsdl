@@ -123,14 +123,18 @@ private:
                                      const llvm::json::Value&  id);
     void               handleNotification(const llvm::json::Object& message, llvm::StringRef method);
 
-    void                      sendResult(const llvm::json::Value& id, llvm::json::Value result);
-    void                      sendError(const llvm::json::Value& id, int code, std::string message);
-    void                      sendNotification(std::string method, llvm::json::Value params);
-    void                      publishEmptyDiagnostics(const std::string& uri);
-    void                      publishDiagnosticsFromAnalysis();
-    llvm::json::Value         buildSemanticTokens(const std::string& uri) const;
-    void                      ensureIndexManager();
-    void                      ensureSignalStore();
+    void                                sendResult(const llvm::json::Value& id, llvm::json::Value result);
+    void                                sendError(const llvm::json::Value& id, int code, std::string message);
+    void                                sendNotification(std::string method, llvm::json::Value params);
+    void                                publishEmptyDiagnostics(const std::string& uri);
+    void                                publishDiagnosticsFromAnalysis();
+    void                                publishDiagnosticsForUriFromCachedAnalysis(const std::string& uri);
+    void                                invalidateAnalysisSnapshot();
+    [[nodiscard]] const AnalysisResult& ensureAnalysisSnapshot(bool scheduleIndex, bool waitForSnapshot);
+    [[nodiscard]] bool                  canReuseDidOpenAnalysis(const std::string& uri, const std::string& text) const;
+    llvm::json::Value                   buildSemanticTokens(const std::string& uri) const;
+    void                                ensureIndexManager();
+    void                                ensureSignalStore();
     void                      scheduleWorkspaceIndex(const AnalysisResult& analysisResult, bool waitForSnapshot);
     [[nodiscard]] std::string resolveIndexCacheDirectory() const;
     [[nodiscard]] std::string resolveSignalStorePath() const;
@@ -162,6 +166,10 @@ private:
     mutable AiAuditLogger                                   aiAuditLogger_;
     std::unordered_map<std::string, AiCodeActionSuggestion> aiSuggestionsById_;
     std::unordered_set<std::string>                         publishedDiagnosticUris_;
+    std::optional<AnalysisResult>                           latestAnalysisResult_;
+    std::optional<std::uint64_t>                            lastScheduledIndexSnapshotVersion_;
+    std::optional<std::uint64_t>                            lastTimedOutIndexWaitSnapshotVersion_;
+    bool                                                    analysisDirty_{true};
     bool                                                    shutdownRequested_{false};
     bool                                                    shouldExit_{false};
     int                                                     exitCode_{0};
