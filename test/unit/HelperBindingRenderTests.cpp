@@ -128,6 +128,81 @@ bool runHelperBindingRenderTests()
     }
 
     {
+        const auto lines =
+            llvmdsdl::renderCapacityCheckBinding(llvmdsdl::HelperBindingRenderLanguage::TypeScript, "cap_ts", 128);
+        if (!hasSubstring(lines, "const cap_ts = (capacityBits: number): boolean => 128 <= capacityBits;"))
+        {
+            std::cerr << "typescript capacity render mismatch\n";
+            return false;
+        }
+    }
+
+    {
+        llvmdsdl::ScalarHelperDescriptor descriptor;
+        descriptor.kind      = llvmdsdl::ScalarHelperKind::Signed;
+        descriptor.bitLength = 5;
+        descriptor.castMode  = llvmdsdl::CastMode::Truncated;
+        const auto lines     = llvmdsdl::renderScalarBinding(llvmdsdl::HelperBindingRenderLanguage::TypeScript,
+                                                         llvmdsdl::ScalarBindingRenderDirection::Deserialize,
+                                                         "des_i5_ts",
+                                                         descriptor);
+        if (!hasSubstring(lines, "(raw & 16n) !== 0n") || !hasSubstring(lines, "raw | (~31n)"))
+        {
+            std::cerr << "typescript signed deserialize scalar render mismatch\n";
+            return false;
+        }
+    }
+
+    {
+        const auto lines =
+            llvmdsdl::renderArrayValidateBinding(llvmdsdl::HelperBindingRenderLanguage::TypeScript, "arr_check_ts", 7);
+        if (!hasSubstring(lines, "const arr_check_ts = (value: number): boolean => (value >= 0) && (value <= 7);"))
+        {
+            std::cerr << "typescript array validate render mismatch\n";
+            return false;
+        }
+    }
+
+    {
+        const auto lines = llvmdsdl::renderUnionTagValidateBinding(llvmdsdl::HelperBindingRenderLanguage::Python,
+                                                                   "union_check_py",
+                                                                   {1});
+        if (!hasSubstring(lines, "def union_check_py(tag_value: int) -> bool:") ||
+            !hasSubstring(lines, "return (tag_value == 1)"))
+        {
+            std::cerr << "python union validate render mismatch\n";
+            return false;
+        }
+    }
+
+    {
+        llvmdsdl::ScalarHelperDescriptor descriptor;
+        descriptor.kind      = llvmdsdl::ScalarHelperKind::Unsigned;
+        descriptor.bitLength = 4;
+        descriptor.castMode  = llvmdsdl::CastMode::Saturated;
+        const auto lines     = llvmdsdl::renderScalarBinding(llvmdsdl::HelperBindingRenderLanguage::Python,
+                                                         llvmdsdl::ScalarBindingRenderDirection::Serialize,
+                                                         "sat_u4_py",
+                                                         descriptor);
+        if (!hasSubstring(lines, "if raw > 15:") || !hasSubstring(lines, "return 15"))
+        {
+            std::cerr << "python saturated unsigned scalar render mismatch\n";
+            return false;
+        }
+    }
+
+    {
+        const auto lines =
+            llvmdsdl::renderDelimiterValidateBinding(llvmdsdl::HelperBindingRenderLanguage::Python, "delim_check_py");
+        if (!hasSubstring(lines, "def delim_check_py(payload_bytes: int, remaining_bytes: int) -> bool:") ||
+            !hasSubstring(lines, "payload_bytes <= remaining_bytes"))
+        {
+            std::cerr << "python delimiter validate render mismatch\n";
+            return false;
+        }
+    }
+
+    {
         llvmdsdl::SectionHelperBindingPlan plan;
         plan.capacityCheck    = llvmdsdl::CapacityCheckHelperDescriptor{"cap", 16};
         plan.unionTagValidate = llvmdsdl::UnionTagValidateHelperDescriptor{"validate_tag", {0, 1}};

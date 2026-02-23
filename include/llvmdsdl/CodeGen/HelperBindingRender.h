@@ -39,6 +39,12 @@ enum class HelperBindingRenderLanguage
 
     /// @brief Go target.
     Go,
+
+    /// @brief TypeScript target.
+    TypeScript,
+
+    /// @brief Python target.
+    Python,
 };
 
 /// @brief Direction for scalar helper snippet rendering.

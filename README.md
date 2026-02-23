@@ -554,6 +554,11 @@ Current behavior:
   C<->TS parity, and semantic-diff checks between portable and fast outputs.
 - Uses lowered-contract validation (`collectLoweredFactsFromMlir`) and shared
   lowered render-order planning for runtime section emission.
+- Emits lowered-helper bindings (`mlir_*`) and helper-driven call sites for
+  scalar normalization/sign-extension, array prefix/length validation, union
+  tag normalization/validation, delimiter checks, and section capacity checks.
+- Keeps low-level bit/float/buffer primitives in generated `dsdl_runtime.ts`
+  by design.
 - Hard-fails generation if required lowered runtime planning metadata is
   missing/inconsistent.
 - Integration gates verify no fallback runtime stub signatures in generated
@@ -585,6 +590,11 @@ Current behavior:
   - `pyproject.toml` (minimal local installability)
   - `py.typed` (typing marker)
 - Uses lowered-contract validation (`collectLoweredFactsFromMlir`) and shared lowered runtime planning for SerDes emission.
+- Emits lowered-helper bindings (`mlir_*`) and helper-driven call sites for
+  scalar normalization/sign-extension, array prefix/length validation, union
+  tag normalization/validation, delimiter checks, and section capacity checks.
+- Keeps low-level bit/float/buffer primitives in `_dsdl_runtime.py`
+  (and optional accelerator implementation) by design.
 - Optional C accelerator module support (`_dsdl_runtime_accel`) is available via CMake option
   `LLVMDSDL_ENABLE_PYTHON_ACCELERATOR=ON`.
 - Explicit malformed-input contract:

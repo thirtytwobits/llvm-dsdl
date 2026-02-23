@@ -384,10 +384,11 @@ llvm::Expected<TsRuntimeSectionPlan> buildTsRuntimeSectionPlan(const SemanticSec
         }
 
         TsRuntimeFieldPlan fieldPlan;
-        fieldPlan.fieldName = sanitizeTsIdent(toSnakeCase(field.name));
-        fieldPlan.kind      = kind;
-        fieldPlan.castMode  = field.resolvedType.castMode;
-        fieldPlan.bitLength = fieldBits;
+        fieldPlan.semanticFieldName = field.name;
+        fieldPlan.fieldName         = sanitizeTsIdent(toSnakeCase(field.name));
+        fieldPlan.kind              = kind;
+        fieldPlan.castMode          = field.resolvedType.castMode;
+        fieldPlan.bitLength         = fieldBits;
         fieldPlan.alignmentBits =
             std::max<std::int64_t>(1, static_cast<std::int64_t>(field.resolvedType.alignmentBits));
         fieldPlan.useBigInt =

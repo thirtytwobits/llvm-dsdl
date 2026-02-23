@@ -228,14 +228,14 @@ bool runTsLoweredPlanTests()
             std::cerr << "ts runtime plan non-union shape mismatch\n";
             return false;
         }
-        if (runtimePlan.fields[0].fieldName != "payload" ||
+        if (runtimePlan.fields[0].fieldName != "payload" || runtimePlan.fields[0].semanticFieldName != "payload" ||
             runtimePlan.fields[0].arrayKind != llvmdsdl::TsRuntimeArrayKind::Variable ||
             runtimePlan.fields[0].arrayLengthPrefixBits != 12)
         {
             std::cerr << "ts runtime plan non-union array metadata mismatch\n";
             return false;
         }
-        if (runtimePlan.fields[1].fieldName != "counter" ||
+        if (runtimePlan.fields[1].fieldName != "counter" || runtimePlan.fields[1].semanticFieldName != "counter" ||
             runtimePlan.fields[1].kind != llvmdsdl::TsRuntimeFieldKind::Unsigned)
         {
             std::cerr << "ts runtime plan non-union scalar metadata mismatch\n";
@@ -284,6 +284,11 @@ bool runTsLoweredPlanTests()
         if (runtimePlan.fields[0].unionOptionIndex != 1 || runtimePlan.fields[1].unionOptionIndex != 2)
         {
             std::cerr << "ts runtime plan union option sorting mismatch\n";
+            return false;
+        }
+        if (runtimePlan.fields[0].semanticFieldName != "beta" || runtimePlan.fields[1].semanticFieldName != "alpha")
+        {
+            std::cerr << "ts runtime plan semantic field names mismatch\n";
             return false;
         }
     }

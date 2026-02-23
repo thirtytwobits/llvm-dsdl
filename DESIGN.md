@@ -118,6 +118,11 @@ Runtime helpers encapsulate wire-level bit operations and numeric conversions:
 - generated `_dsdl_runtime.py` + `_runtime_loader.py` (Python runtime helpers emitted by `dsdlc python`)
 - generated `pyproject.toml` + `py.typed` (Python packaging metadata emitted by `dsdlc python`)
 
+Generated helper bindings sourced from lowered MLIR contracts provide
+scalar/array/union/delimiter/capacity semantics in all non-C backends
+(C++, Rust, Go, TypeScript, Python); low-level runtime primitives remain
+hand-maintained by design.
+
 ### 1.4 Tooling and Validation
 
 - `dsdlc` is the main CLI frontend/driver.
@@ -259,10 +264,10 @@ Current:
 - Lowered SerDes contract versioning/producer checks are enforced between
   `lower-dsdl-serialization` and `convert-dsdl-to-emitc`.
 - Shared lowered-fact collection drives backend wire-semantics decisions for
-  C++ (`std`/`pmr`), Rust (`std`/`no-std-alloc`), Go, and TypeScript.
+  C++ (`std`/`pmr`), Rust (`std`/`no-std-alloc`), Go, TypeScript, and Python.
 - Shared language-agnostic render-IR (`LoweredRenderIR`) now drives core
   per-section body step traversal (`field`, `padding`, `union-dispatch`) in
-  C++, Rust, Go, and TypeScript emitters.
+  C++, Rust, Go, TypeScript, and Python emitters.
 - `dsdlc` and `dsdl-opt` support optional optimization on lowered SerDes IR via:
   - CLI flag `--optimize-lowered-serdes`
   - MLIR pass pipeline `optimize-dsdl-lowered-serdes`
@@ -392,6 +397,10 @@ At this stage, backend-specific behavior is intentionally limited to:
 Wire-semantics behavior (scalar normalization, array prefix/validation, union tag
 helpers, delimiter checks, capacity checks, section-plan ordering) is expected to
 be sourced from lowered MLIR contracts rather than backend-local fallback logic.
+
+TypeScript and Python now follow the same helper-binding architecture as
+C++/Rust/Go for these semantics; remaining backend-local runtime code in
+`runtime/` is intentionally limited to low-level bit/float/buffer primitives.
 
 ### 4.2 Frontend Semantics
 

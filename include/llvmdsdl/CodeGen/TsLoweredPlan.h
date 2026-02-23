@@ -85,6 +85,9 @@ enum class TsRuntimeArrayKind
 /// @brief TypeScript runtime plan entry for one field.
 struct TsRuntimeFieldPlan final
 {
+    /// @brief Original semantic field identifier used for lowered-facts lookup.
+    std::string semanticFieldName;
+
     /// @brief Sanitized runtime field identifier.
     std::string fieldName;
 

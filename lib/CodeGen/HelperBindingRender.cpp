@@ -65,6 +65,26 @@ std::string renderU64MaskLiteral(const HelperBindingRenderLanguage language, con
             return "^uint64(0)";
         }
         return "uint64(" + std::to_string((1ULL << bits) - 1ULL) + ")";
+    case HelperBindingRenderLanguage::TypeScript:
+        if (bits == 0U)
+        {
+            return "0n";
+        }
+        if (bits >= 64U)
+        {
+            return "18446744073709551615n";
+        }
+        return std::to_string((1ULL << bits) - 1ULL) + "n";
+    case HelperBindingRenderLanguage::Python:
+        if (bits == 0U)
+        {
+            return "0";
+        }
+        if (bits >= 64U)
+        {
+            return "18446744073709551615";
+        }
+        return std::to_string((1ULL << bits) - 1ULL);
     }
     return "0";
 }
@@ -109,6 +129,16 @@ std::vector<std::string> renderCapacityCheckBinding(const HelperBindingRenderLan
             "return dsdlruntime.DSDL_RUNTIME_SUCCESS",
             "}",
         };
+    case HelperBindingRenderLanguage::TypeScript:
+        return {
+            "const " + helperName + " = (capacityBits: number): boolean => " + std::to_string(requiredBits) +
+                " <= capacityBits;",
+        };
+    case HelperBindingRenderLanguage::Python:
+        return {
+            "def " + helperName + "(capacity_bits: int) -> bool:",
+            "    return " + std::to_string(requiredBits) + " <= capacity_bits",
+        };
     }
     return {};
 }
@@ -132,6 +162,19 @@ std::vector<std::string> renderUnionTagMaskBinding(const HelperBindingRenderLang
     case HelperBindingRenderLanguage::Go:
         return {
             helperName + " := func(value uint64) uint64 { return value & " + bitMaskLiteral + " }",
+        };
+    case HelperBindingRenderLanguage::TypeScript:
+        return {
+            "const " + helperName + " = (value: number | bigint): number | bigint => {",
+            "const raw = (typeof value === \"bigint\") ? value : BigInt(Math.trunc(value));",
+            "const masked = raw & " + bitMaskLiteral + ";",
+            "return (typeof value === \"bigint\") ? masked : Number(masked);",
+            "};",
+        };
+    case HelperBindingRenderLanguage::Python:
+        return {
+            "def " + helperName + "(value: int) -> int:",
+            "    return int(value) & " + bitMaskLiteral,
         };
     }
     return {};
@@ -224,6 +267,48 @@ std::vector<std::string> renderUnionTagValidateBinding(const HelperBindingRender
             "}",
         };
     }
+    case HelperBindingRenderLanguage::TypeScript: {
+        std::string condition;
+        for (const auto tag : allowedTags)
+        {
+            if (!condition.empty())
+            {
+                condition += " || ";
+            }
+            condition += "(tagValue === " + std::to_string(tag) + ")";
+        }
+        if (condition.empty())
+        {
+            return {
+                "const " + helperName + " = (_tagValue: number): boolean => false;",
+            };
+        }
+        return {
+            "const " + helperName + " = (tagValue: number): boolean => " + condition + ";",
+        };
+    }
+    case HelperBindingRenderLanguage::Python: {
+        std::string condition;
+        for (const auto tag : allowedTags)
+        {
+            if (!condition.empty())
+            {
+                condition += " or ";
+            }
+            condition += "(tag_value == " + std::to_string(tag) + ")";
+        }
+        if (condition.empty())
+        {
+            return {
+                "def " + helperName + "(tag_value: int) -> bool:",
+                "    return False",
+            };
+        }
+        return {
+            "def " + helperName + "(tag_value: int) -> bool:",
+            "    return " + condition,
+        };
+    }
     }
     return {};
 }
@@ -260,6 +345,17 @@ std::vector<std::string> renderDelimiterValidateBinding(const HelperBindingRende
             "}",
             "return dsdlruntime.DSDL_RUNTIME_SUCCESS",
             "}",
+        };
+    case HelperBindingRenderLanguage::TypeScript:
+        return {
+            "const " + helperName +
+                " = (payloadBytes: number, remainingBytes: number): boolean => (payloadBytes >= 0) && "
+                "(payloadBytes <= remainingBytes);",
+        };
+    case HelperBindingRenderLanguage::Python:
+        return {
+            "def " + helperName + "(payload_bytes: int, remaining_bytes: int) -> bool:",
+            "    return (payload_bytes >= 0) and (payload_bytes <= remaining_bytes)",
         };
     }
     return {};
@@ -415,6 +511,146 @@ std::vector<std::string> renderScalarBinding(const HelperBindingRenderLanguage  
         }
     }
 
+    if (language == HelperBindingRenderLanguage::TypeScript)
+    {
+        switch (descriptor.kind)
+        {
+        case ScalarHelperKind::Unsigned: {
+            if (direction == ScalarBindingRenderDirection::Serialize && descriptor.castMode == CastMode::Saturated &&
+                descriptor.bitLength < 64U)
+            {
+                return {
+                    "const " + helperName + " = (value: number | bigint): number | bigint => {",
+                    "const raw = (typeof value === \"bigint\") ? value : BigInt(Math.trunc(value));",
+                    "const clamped = raw < 0n ? 0n : (raw > " + maskLiteral + " ? " + maskLiteral + " : raw);",
+                    "return (typeof value === \"bigint\") ? clamped : Number(clamped);",
+                    "};",
+                };
+            }
+            if (descriptor.bitLength < 64U)
+            {
+                return {
+                    "const " + helperName + " = (value: number | bigint): number | bigint => {",
+                    "const raw = (typeof value === \"bigint\") ? value : BigInt(Math.trunc(value));",
+                    "const masked = raw & " + maskLiteral + ";",
+                    "return (typeof value === \"bigint\") ? masked : Number(masked);",
+                    "};",
+                };
+            }
+            return {
+                "const " + helperName + " = (value: number | bigint): number | bigint => value;",
+            };
+        }
+        case ScalarHelperKind::Signed: {
+            if (direction == ScalarBindingRenderDirection::Serialize && descriptor.castMode == CastMode::Saturated &&
+                descriptor.bitLength > 0U && descriptor.bitLength < 64U)
+            {
+                const auto minVal = -(1LL << (descriptor.bitLength - 1U));
+                const auto maxVal = (1LL << (descriptor.bitLength - 1U)) - 1LL;
+                return {
+                    "const " + helperName + " = (value: number | bigint): number | bigint => {",
+                    "const raw = (typeof value === \"bigint\") ? value : BigInt(Math.trunc(value));",
+                    "const clamped = raw < " + std::to_string(minVal) + "n ? " + std::to_string(minVal) +
+                        "n : (raw > " + std::to_string(maxVal) + "n ? " + std::to_string(maxVal) + "n : raw);",
+                    "return (typeof value === \"bigint\") ? clamped : Number(clamped);",
+                    "};",
+                };
+            }
+            if (direction == ScalarBindingRenderDirection::Deserialize && descriptor.bitLength > 0U &&
+                descriptor.bitLength < 64U)
+            {
+                const auto signMask = std::to_string((1ULL << (descriptor.bitLength - 1U))) + "n";
+                return {
+                    "const " + helperName + " = (value: number | bigint): number | bigint => {",
+                    "const raw = ((typeof value === \"bigint\") ? value : BigInt(Math.trunc(value))) & " + maskLiteral +
+                        ";",
+                    "const signed = (raw & " + signMask + ") !== 0n ? (raw | (~" + maskLiteral + ")) : raw;",
+                    "return (typeof value === \"bigint\") ? signed : Number(signed);",
+                    "};",
+                };
+            }
+            return {
+                "const " + helperName + " = (value: number | bigint): number | bigint => value;",
+            };
+        }
+        case ScalarHelperKind::Float:
+            return {
+                "const " + helperName + " = (value: number): number => value;",
+            };
+        }
+    }
+
+    if (language == HelperBindingRenderLanguage::Python)
+    {
+        switch (descriptor.kind)
+        {
+        case ScalarHelperKind::Unsigned: {
+            if (direction == ScalarBindingRenderDirection::Serialize && descriptor.castMode == CastMode::Saturated &&
+                descriptor.bitLength < 64U)
+            {
+                return {
+                    "def " + helperName + "(value: int) -> int:",
+                    "    raw = int(value)",
+                    "    if raw < 0:",
+                    "        return 0",
+                    "    if raw > " + maskLiteral + ":",
+                    "        return " + maskLiteral,
+                    "    return raw",
+                };
+            }
+            if (descriptor.bitLength < 64U)
+            {
+                return {
+                    "def " + helperName + "(value: int) -> int:",
+                    "    return int(value) & " + maskLiteral,
+                };
+            }
+            return {
+                "def " + helperName + "(value: int) -> int:",
+                "    return int(value)",
+            };
+        }
+        case ScalarHelperKind::Signed: {
+            if (direction == ScalarBindingRenderDirection::Serialize && descriptor.castMode == CastMode::Saturated &&
+                descriptor.bitLength > 0U && descriptor.bitLength < 64U)
+            {
+                const auto minVal = -(1LL << (descriptor.bitLength - 1U));
+                const auto maxVal = (1LL << (descriptor.bitLength - 1U)) - 1LL;
+                return {
+                    "def " + helperName + "(value: int) -> int:",
+                    "    raw = int(value)",
+                    "    if raw < " + std::to_string(minVal) + ":",
+                    "        return " + std::to_string(minVal),
+                    "    if raw > " + std::to_string(maxVal) + ":",
+                    "        return " + std::to_string(maxVal),
+                    "    return raw",
+                };
+            }
+            if (direction == ScalarBindingRenderDirection::Deserialize && descriptor.bitLength > 0U &&
+                descriptor.bitLength < 64U)
+            {
+                const auto signMask = std::to_string(1ULL << (descriptor.bitLength - 1U));
+                return {
+                    "def " + helperName + "(value: int) -> int:",
+                    "    raw = int(value) & " + maskLiteral,
+                    "    if (raw & " + signMask + ") != 0:",
+                    "        return raw | (~" + maskLiteral + ")",
+                    "    return raw",
+                };
+            }
+            return {
+                "def " + helperName + "(value: int) -> int:",
+                "    return int(value)",
+            };
+        }
+        case ScalarHelperKind::Float:
+            return {
+                "def " + helperName + "(value: float) -> float:",
+                "    return float(value)",
+            };
+        }
+    }
+
     switch (descriptor.kind)
     {
     case ScalarHelperKind::Unsigned: {
@@ -528,6 +764,16 @@ std::vector<std::string> renderArrayValidateBinding(const HelperBindingRenderLan
             "}",
             "return dsdlruntime.DSDL_RUNTIME_SUCCESS",
             "}",
+        };
+    case HelperBindingRenderLanguage::TypeScript:
+        return {
+            "const " + helperName +
+                " = (value: number): boolean => (value >= 0) && (value <= " + std::to_string(capacity) + ");",
+        };
+    case HelperBindingRenderLanguage::Python:
+        return {
+            "def " + helperName + "(value: int) -> bool:",
+            "    return (value >= 0) and (value <= " + std::to_string(capacity) + ")",
         };
     }
     return {};

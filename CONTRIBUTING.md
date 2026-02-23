@@ -585,6 +585,19 @@ Coverage artifacts:
 - `build/coverage/coverage/RelWithDebInfo/coverage.lcov`
 - `build/coverage/coverage/RelWithDebInfo/html/index.html`
 
+### 12.6 Backend semantic-authoring rule (avoid duplicate emitter logic)
+
+When changing wire semantics for TypeScript/Python/C++/Rust/Go:
+
+- Update lowered helper contracts/plans first (`*Plan*`, `*Resolver*`,
+  `HelperBindingRender*`), then wire emitters to invoke generated helper
+  bindings.
+- Do not add backend-local fallback arithmetic for scalar cast/sign-extension,
+  array prefix/length validation, union tag checks, delimiter checks, or section
+  capacity checks.
+- Keep backend-local runtime code focused on low-level primitives
+  (bit/float/buffer operations) only.
+
 ## 13. Troubleshooting
 
 ### 13.1 `Could not find LLVMConfig.cmake` / `MLIRConfig.cmake`
