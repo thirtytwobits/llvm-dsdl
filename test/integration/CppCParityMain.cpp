@@ -5,6 +5,16 @@
 //
 //===----------------------------------------------------------------------===//
 
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Differential parity harness comparing generated C++ and C bindings.
+///
+/// The test executes randomized roundtrips and checks deserialize/serialize
+/// return codes, consumed sizes, and serialized byte equivalence.
+///
+//===----------------------------------------------------------------------===//
+
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>

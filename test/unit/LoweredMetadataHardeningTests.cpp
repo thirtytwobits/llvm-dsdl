@@ -281,7 +281,7 @@ bool runLoweringMetadataFamilyTests(mlir::MLIRContext& context)
     }
 
     auto cModule = mlir::OwningOpRef<mlir::ModuleOp>(mlir::cast<mlir::ModuleOp>((*malformed)->clone()));
-    if (!expectCEmitterFailure(*semantic, *cModule, "EmitC lowering pipeline failed"))
+    if (!expectCEmitterFailure(*semantic, *cModule, "MLIR schema coverage validation failed for C emission"))
     {
         return false;
     }

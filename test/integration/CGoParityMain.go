@@ -1,3 +1,13 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Go parity driver comparing generated Go and C serializers/deserializers.
+///
+/// The program executes randomized and directed parity checks through cgo
+/// bindings and reports category-based pass/fail summaries.
+///
+//===----------------------------------------------------------------------===//
+
 package main
 
 /*

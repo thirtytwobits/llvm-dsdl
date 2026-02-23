@@ -1,3 +1,13 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Go parity driver for signed-narrow C-vs-Go compatibility tests.
+///
+/// The program runs randomized roundtrips and directed edge-case checks for
+/// 3-bit saturating and truncating integer fixtures.
+///
+//===----------------------------------------------------------------------===//
+
 package main
 
 /*

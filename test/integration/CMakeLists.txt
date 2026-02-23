@@ -58,6 +58,67 @@ string(REPLACE ";"
                LLVMDSDL_PY_RUNTIME_BENCH_SPECIALIZATIONS_ARG
                "${LLVMDSDL_PY_RUNTIME_BENCH_SPECIALIZATIONS}")
 
+if(PYTHON_EXECUTABLE)
+  add_test(
+    NAME llvmdsdl-convergence-scorecard
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DOUTPUT_JSON=${CMAKE_CURRENT_BINARY_DIR}/convergence-scorecard-out/report.json
+        -DOUTPUT_MD=${CMAKE_CURRENT_BINARY_DIR}/convergence-scorecard-out/CONVERGENCE_SCORECARD.md
+        -DBASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/tools/convergence/convergence_baseline.json
+        -DCONVERGENCE_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/convergence/convergence_report.py
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunConvergenceReport.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-convergence-scorecard
+    PROPERTIES
+      LABELS "integration;convergence"
+  )
+
+  add_test(
+    NAME llvmdsdl-parity-matrix-coverage
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DCTEST_TEST_DIR=${CMAKE_BINARY_DIR}
+        -DOUTPUT_JSON=${CMAKE_CURRENT_BINARY_DIR}/parity-matrix-out/report.json
+        -DOUTPUT_MD=${CMAKE_CURRENT_BINARY_DIR}/parity-matrix-out/PARITY_MATRIX.md
+        -DPARITY_MATRIX_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/convergence/parity_matrix_report.py
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunParityMatrixReport.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-parity-matrix-coverage
+    PROPERTIES
+      LABELS "integration;convergence;parity"
+  )
+
+  add_test(
+    NAME llvmdsdl-malformed-contract-matrix
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DCTEST_TEST_DIR=${CMAKE_BINARY_DIR}
+        -DOUTPUT_JSON=${CMAKE_CURRENT_BINARY_DIR}/malformed-contract-matrix-out/report.json
+        -DOUTPUT_MD=${CMAKE_CURRENT_BINARY_DIR}/malformed-contract-matrix-out/MALFORMED_INPUT_CONTRACT_MATRIX.md
+        -DMALFORMED_CONTRACT_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/convergence/malformed_contract_matrix_report.py
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunMalformedContractMatrixReport.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-malformed-contract-matrix
+    PROPERTIES
+      LABELS "integration;convergence;contract"
+  )
+else()
+  message(STATUS "Skipping convergence scorecard test: python3 unavailable")
+endif()
+
 if(EXISTS "${LLVMDSDL_FIXTURES_ROOT}")
   add_test(
     NAME llvmdsdl-dsdl-opt-sanity

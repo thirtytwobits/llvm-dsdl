@@ -1,5 +1,15 @@
 #![allow(non_camel_case_types)]
 
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Rust parity driver for signed-narrow C-vs-Rust compatibility tests.
+///
+/// The executable validates randomized and directed behavior parity for signed
+/// 3-bit saturating and truncating integer fixture types.
+///
+//===----------------------------------------------------------------------===//
+
 use std::fmt::Write as _;
 use std::os::raw::c_int;
 

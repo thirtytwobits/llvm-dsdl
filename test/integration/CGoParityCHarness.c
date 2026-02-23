@@ -5,6 +5,16 @@
 //
 //===----------------------------------------------------------------------===//
 
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// C ABI harness for C-vs-Go differential parity integration tests.
+///
+/// This harness exposes roundtrip entry points for generated C types so the Go
+/// parity driver can compare deserialize/serialize behavior and payload bytes.
+///
+//===----------------------------------------------------------------------===//
+
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>

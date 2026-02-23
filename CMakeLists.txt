@@ -226,6 +226,83 @@ add_custom_target(check-include-what-you-use
   DEPENDS check-iwyu
 )
 
+if(LLVMDSDL_PYTHON3_EXE)
+  add_custom_target(convergence-report
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DPYTHON_EXECUTABLE=${LLVMDSDL_PYTHON3_EXE}
+        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DOUTPUT_JSON=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/report.json
+        -DOUTPUT_MD=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/CONVERGENCE_SCORECARD.md
+        -DBASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/tools/convergence/convergence_baseline.json
+        -DCONVERGENCE_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/convergence/convergence_report.py
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunConvergenceReport.cmake
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "Generating convergence score report and scorecard"
+  )
+else()
+  add_custom_target(convergence-report
+    COMMAND ${CMAKE_COMMAND} -E echo "python3 not found; cannot run convergence-report"
+    COMMAND ${CMAKE_COMMAND} -E false
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "convergence-report requires python3"
+  )
+endif()
+
+if(LLVMDSDL_PYTHON3_EXE)
+  add_custom_target(parity-matrix-report
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DPYTHON_EXECUTABLE=${LLVMDSDL_PYTHON3_EXE}
+        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DCTEST_TEST_DIR=${LLVMDSDL_BINARY_DIR}
+        -DCTEST_CONFIG=$<CONFIG>
+        -DOUTPUT_JSON=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/parity-matrix-report.json
+        -DOUTPUT_MD=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/PARITY_MATRIX.md
+        -DPARITY_MATRIX_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/convergence/parity_matrix_report.py
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunParityMatrixReport.cmake
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "Generating parity matrix coverage report"
+  )
+else()
+  add_custom_target(parity-matrix-report
+    COMMAND ${CMAKE_COMMAND} -E echo "python3 not found; cannot run parity-matrix-report"
+    COMMAND ${CMAKE_COMMAND} -E false
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "parity-matrix-report requires python3"
+  )
+endif()
+
+if(LLVMDSDL_PYTHON3_EXE)
+  add_custom_target(malformed-contract-report
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DPYTHON_EXECUTABLE=${LLVMDSDL_PYTHON3_EXE}
+        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DCTEST_TEST_DIR=${LLVMDSDL_BINARY_DIR}
+        -DCTEST_CONFIG=$<CONFIG>
+        -DOUTPUT_JSON=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/malformed-contract-matrix-report.json
+        -DOUTPUT_MD=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/MALFORMED_INPUT_CONTRACT_MATRIX.md
+        -DMALFORMED_CONTRACT_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/convergence/malformed_contract_matrix_report.py
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunMalformedContractMatrixReport.cmake
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "Generating malformed-input contract matrix report"
+  )
+else()
+  add_custom_target(malformed-contract-report
+    COMMAND ${CMAKE_COMMAND} -E echo "python3 not found; cannot run malformed-contract-report"
+    COMMAND ${CMAKE_COMMAND} -E false
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "malformed-contract-report requires python3"
+  )
+endif()
+
 add_subdirectory(include/llvmdsdl)
 add_subdirectory(lib)
 add_subdirectory(tools)

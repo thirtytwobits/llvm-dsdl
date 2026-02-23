@@ -5,6 +5,16 @@
 //
 //===----------------------------------------------------------------------===//
 
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Differential parity harness for signed-narrow C++-vs-C bindings.
+///
+/// The test checks randomized deserialize/serialize parity for saturating and
+/// truncating 3-bit integer fixtures generated for C and C++.
+///
+//===----------------------------------------------------------------------===//
+
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>

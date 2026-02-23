@@ -14,6 +14,7 @@ bool runAnalyzerTests();
 bool runRuntimeTests();
 bool runArrayWirePlanTests();
 bool runCodegenDiagnosticTextTests();
+bool runNativeHelperContractTests();
 bool runLoweredBodyPlanTests();
 bool runLoweredRenderIRTests();
 bool runNativeEmitterTraversalTests();
@@ -48,6 +49,7 @@ int main()
     ok      = runRuntimeTests() && ok;
     ok      = runArrayWirePlanTests() && ok;
     ok      = runCodegenDiagnosticTextTests() && ok;
+    ok      = runNativeHelperContractTests() && ok;
     ok      = runLoweredBodyPlanTests() && ok;
     ok      = runLoweredRenderIRTests() && ok;
     ok      = runNativeEmitterTraversalTests() && ok;

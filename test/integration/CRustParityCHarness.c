@@ -5,6 +5,16 @@
 //
 //===----------------------------------------------------------------------===//
 
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// C ABI harness for C-vs-Rust differential parity integration tests.
+///
+/// This harness bridges generated C types to Rust parity drivers by exposing
+/// stable roundtrip and directed-serialize entry points.
+///
+//===----------------------------------------------------------------------===//
+
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>

@@ -594,6 +594,7 @@ When changing wire semantics for TypeScript/Python/C++/Rust/Go:
   - `RuntimeHelperBindings*`
   - `ScriptedBodyPlan*` (TypeScript/Python)
   - `NativeEmitterTraversal*` (C++/Rust/Go traversal callbacks)
+  - `NativeHelperContract*` (C++/Rust/Go section+field helper contracts)
   - `HelperBindingRender*`
   - `CodegenDiagnosticText*` (for shared diagnostic text)
 - Do not add backend-local fallback arithmetic for scalar cast/sign-extension,
@@ -601,6 +602,42 @@ When changing wire semantics for TypeScript/Python/C++/Rust/Go:
   capacity checks.
 - Keep backend-local runtime code focused on low-level primitives
   (bit/float/buffer operations) only.
+
+### 12.7 Generate and Gate Convergence, Parity, and Malformed-Contract Reports
+
+Run the manual utility target:
+
+```bash
+cmake --build build/matrix/dev-llvm-env --config RelWithDebInfo --target convergence-report -j1
+cmake --build build/matrix/dev-llvm-env --config RelWithDebInfo --target parity-matrix-report -j1
+cmake --build build/matrix/dev-llvm-env --config RelWithDebInfo --target malformed-contract-report -j1
+```
+
+Artifacts:
+
+- `build/matrix/dev-llvm-env/convergence/RelWithDebInfo/report.json`
+- `build/matrix/dev-llvm-env/convergence/RelWithDebInfo/CONVERGENCE_SCORECARD.md`
+- `build/matrix/dev-llvm-env/convergence/RelWithDebInfo/parity-matrix-report.json`
+- `build/matrix/dev-llvm-env/convergence/RelWithDebInfo/PARITY_MATRIX.md`
+- `build/matrix/dev-llvm-env/convergence/RelWithDebInfo/malformed-contract-matrix-report.json`
+- `build/matrix/dev-llvm-env/convergence/RelWithDebInfo/MALFORMED_INPUT_CONTRACT_MATRIX.md`
+
+Run the integration regression gate directly:
+
+```bash
+ctest --test-dir build/matrix/dev-llvm-env -C RelWithDebInfo --output-on-failure -R '^llvmdsdl-convergence-scorecard$'
+ctest --test-dir build/matrix/dev-llvm-env -C RelWithDebInfo --output-on-failure -R '^llvmdsdl-parity-matrix-coverage$'
+ctest --test-dir build/matrix/dev-llvm-env -C RelWithDebInfo --output-on-failure -R '^llvmdsdl-malformed-contract-matrix$'
+```
+
+The gate compares current backend classifications against
+`tools/convergence/convergence_baseline.json` and fails on regressions.
+The parity gate verifies that every backend/family matrix cell has at least one
+configured integration test evidence lane.
+The malformed-contract gate verifies that every malformed-input category/mode
+matrix cell has at least one configured integration test evidence lane and that
+native parity harness guard assertions remain present for category-level
+malformed behavior consistency.
 
 ## 13. Troubleshooting
 
@@ -787,6 +824,12 @@ Run format/include checks:
 ```bash
 cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target check-format -j1
 cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target check-iwyu -j1
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target convergence-report -j1
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target parity-matrix-report -j1
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target malformed-contract-report -j1
+ctest --test-dir build/matrix/dev-homebrew -C RelWithDebInfo --output-on-failure -R '^llvmdsdl-convergence-scorecard$'
+ctest --test-dir build/matrix/dev-homebrew -C RelWithDebInfo --output-on-failure -R '^llvmdsdl-parity-matrix-coverage$'
+ctest --test-dir build/matrix/dev-homebrew -C RelWithDebInfo --output-on-failure -R '^llvmdsdl-malformed-contract-matrix$'
 ```
 
 Optional but recommended static checks:
@@ -818,6 +861,7 @@ Expectations for a release-ready repository/build state:
 4. `DESIGN.md` reflects current architecture and backend set.
 5. Generated outputs are deterministic for integration determinism lanes.
 6. Lowered contract validation remains hard-fail on malformed/missing metadata.
+7. Convergence scorecard gate passes and report artifacts are generated.
 
 ### 15.6 Final sign-off
 
@@ -848,6 +892,16 @@ and benchmark utility targets:
 - `benchmark-codegen-check-dev-ab`
 - `benchmark-codegen-check-ci-oom`
 
+Optional per-language order-of-magnitude CTest gates (enabled via
+`-DLLVMDSDL_ENABLE_BENCHMARK_TESTS=ON` once thresholds are calibrated):
+
+- `llvmdsdl-codegen-benchmark-ci-oom-c`
+- `llvmdsdl-codegen-benchmark-ci-oom-cpp`
+- `llvmdsdl-codegen-benchmark-ci-oom-rust`
+- `llvmdsdl-codegen-benchmark-ci-oom-go`
+- `llvmdsdl-codegen-benchmark-ci-oom-ts`
+- `llvmdsdl-codegen-benchmark-ci-oom-python`
+
 Calibrate thresholds on reference hardware:
 
 ```bash
@@ -875,6 +929,8 @@ Notes:
 
 1. `dev_ab` is intended for strict A/B comparisons on same or similar hardware.
 2. `ci_oom` is a looser guard intended to catch order-of-magnitude regressions in CI.
+3. Per-language `llvmdsdl-codegen-benchmark-ci-oom-*` CTest lanes require non-template
+   baselines in `test/benchmark/complex_codegen_thresholds.json`.
 
 ### 15.8 dsdld + VS Code extension release gates
 

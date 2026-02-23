@@ -44,6 +44,16 @@ CMake utility targets are available:
 - `benchmark-lsp-replay`
 - `benchmark-lsp-index-cold-warm`
 
+When `-DLLVMDSDL_ENABLE_BENCHMARK_TESTS=ON` is configured and thresholds are
+calibrated, per-language CTest lanes are also available:
+
+- `llvmdsdl-codegen-benchmark-ci-oom-c`
+- `llvmdsdl-codegen-benchmark-ci-oom-cpp`
+- `llvmdsdl-codegen-benchmark-ci-oom-rust`
+- `llvmdsdl-codegen-benchmark-ci-oom-go`
+- `llvmdsdl-codegen-benchmark-ci-oom-ts`
+- `llvmdsdl-codegen-benchmark-ci-oom-python`
+
 ### Live status during long runs
 
 The harness prints heartbeat lines while each language command is running, e.g.:

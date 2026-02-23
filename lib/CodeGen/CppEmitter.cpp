@@ -19,6 +19,7 @@
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
+#include <cassert>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
@@ -38,6 +39,7 @@
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
+#include "llvmdsdl/CodeGen/NativeHelperContract.h"
 #include "llvmdsdl/CodeGen/NativeEmitterTraversal.h"
 #include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
@@ -489,26 +491,28 @@ public:
         emitLine(out, 1, "std::size_t offset_bits = 0U;");
         const auto renderIR = buildLoweredBodyRenderIR(section, sectionFacts, HelperBindingDirection::Serialize);
         emitSerializeMlirHelperBindings(out, renderIR.helperBindings, 1);
-        if (renderIR.helperBindings.capacityCheck)
+        std::string missingHelperRequirement;
+        if (!validateNativeSectionHelperContract(section,
+                                                 sectionFacts,
+                                                 HelperBindingDirection::Serialize,
+                                                 renderIR.helperBindings,
+                                                 &missingHelperRequirement))
         {
-            const auto capacityHelper = helperBindingName(renderIR.helperBindings.capacityCheck->symbol);
-            const auto errCapacity    = nextName("err_capacity");
-            emitLine(out,
-                     1,
-                     "const std::int8_t " + errCapacity + " = " + capacityHelper +
-                         "(static_cast<std::int64_t>(capacity_bytes * 8U));");
-            emitLine(out, 1, "if (" + errCapacity + " != static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS)) {");
-            emitLine(out, 2, "return " + errCapacity + ";");
-            emitLine(out, 1, "}");
+            emitLine(out, 1, "/* missing lowered helper contract: " + missingHelperRequirement + " */");
+            emitLine(out, 1, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+            emitLine(out, 0, "}");
+            out << "\n";
+            return;
         }
-        else
-        {
-            emitLine(out,
-                     1,
-                     "if ((capacity_bytes * 8U) < " + std::to_string(section.serializationBufferSizeBits) + "ULL) {");
-            emitLine(out, 2, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL);");
-            emitLine(out, 1, "}");
-        }
+        const auto capacityHelper = helperBindingName(renderIR.helperBindings.capacityCheck->symbol);
+        const auto errCapacity    = nextName("err_capacity");
+        emitLine(out,
+                 1,
+                 "const std::int8_t " + errCapacity + " = " + capacityHelper +
+                     "(static_cast<std::int64_t>(capacity_bytes * 8U));");
+        emitLine(out, 1, "if (" + errCapacity + " != static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS)) {");
+        emitLine(out, 2, "return " + errCapacity + ";");
+        emitLine(out, 1, "}");
 
         NativeEmitterTraversalCallbacks callbacks;
         callbacks.onUnionDispatch =
@@ -581,6 +585,19 @@ public:
         emitLine(out, 1, "std::size_t offset_bits = 0U;");
         const auto renderIR = buildLoweredBodyRenderIR(section, sectionFacts, HelperBindingDirection::Deserialize);
         emitDeserializeMlirHelperBindings(out, renderIR.helperBindings, 1);
+        std::string missingHelperRequirement;
+        if (!validateNativeSectionHelperContract(section,
+                                                 sectionFacts,
+                                                 HelperBindingDirection::Deserialize,
+                                                 renderIR.helperBindings,
+                                                 &missingHelperRequirement))
+        {
+            emitLine(out, 1, "/* missing lowered helper contract: " + missingHelperRequirement + " */");
+            emitLine(out, 1, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+            emitLine(out, 0, "}");
+            out << "\n";
+            return;
+        }
 
         NativeEmitterTraversalCallbacks callbacks;
         callbacks.onUnionDispatch =
@@ -764,27 +781,17 @@ private:
                             const SectionHelperBindingPlan&      helperBindings)
     {
         const auto tagBits        = resolveUnionTagBits(section, sectionFacts);
-        const auto validateHelper = !helperBindings.unionTagValidate
-                                        ? std::string{}
-                                        : helperBindingName(helperBindings.unionTagValidate->symbol);
-        if (!validateHelper.empty())
-        {
-            const auto validateErr = nextName("err_union_tag");
-            emitLine(out,
-                     indent,
-                     "const std::int8_t " + validateErr + " = " + validateHelper + "(static_cast<std::int64_t>(" +
-                         objRef + "->_tag_));");
-            emitLine(out, indent, "if (" + validateErr + " != static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS)) {");
-            emitLine(out, indent + 1, "return " + validateErr + ";");
-            emitLine(out, indent, "}");
-        }
-        const auto tagHelper =
-            !helperBindings.unionTagMask ? std::string{} : helperBindingName(helperBindings.unionTagMask->symbol);
-        std::string tagExpr = "static_cast<std::uint64_t>(" + objRef + "->_tag_)";
-        if (!tagHelper.empty())
-        {
-            tagExpr = tagHelper + "(" + tagExpr + ")";
-        }
+        const auto validateHelper = helperBindingName(helperBindings.unionTagValidate->symbol);
+        const auto validateErr    = nextName("err_union_tag");
+        emitLine(out,
+                 indent,
+                 "const std::int8_t " + validateErr + " = " + validateHelper + "(static_cast<std::int64_t>(" + objRef +
+                     "->_tag_));");
+        emitLine(out, indent, "if (" + validateErr + " != static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS)) {");
+        emitLine(out, indent + 1, "return " + validateErr + ";");
+        emitLine(out, indent, "}");
+        const auto tagHelper = helperBindingName(helperBindings.unionTagMask->symbol);
+        const auto tagExpr   = tagHelper + "(static_cast<std::uint64_t>(" + objRef + "->_tag_))";
 
         const auto tagErr = nextName("err");
         emitLine(out,
@@ -835,29 +842,19 @@ private:
                  indent,
                  "const std::uint64_t " + rawTag + " = static_cast<std::uint64_t>(" + unsignedGetter(tagBits) +
                      "(buffer, capacity_bytes, offset_bits, " + std::to_string(tagBits) + "U));");
-        const auto tagHelper =
-            !helperBindings.unionTagMask ? std::string{} : helperBindingName(helperBindings.unionTagMask->symbol);
-        std::string tagExpr = rawTag;
-        if (!tagHelper.empty())
-        {
-            tagExpr = tagHelper + "(" + tagExpr + ")";
-        }
+        const auto tagHelper = helperBindingName(helperBindings.unionTagMask->symbol);
+        const auto tagExpr   = tagHelper + "(" + rawTag + ")";
 
         emitLine(out, indent, objRef + "->_tag_ = static_cast<std::uint8_t>(" + tagExpr + ");");
-        const auto validateHelper = !helperBindings.unionTagValidate
-                                        ? std::string{}
-                                        : helperBindingName(helperBindings.unionTagValidate->symbol);
-        if (!validateHelper.empty())
-        {
-            const auto validateErr = nextName("err_union_tag");
-            emitLine(out,
-                     indent,
-                     "const std::int8_t " + validateErr + " = " + validateHelper + "(static_cast<std::int64_t>(" +
-                         objRef + "->_tag_));");
-            emitLine(out, indent, "if (" + validateErr + " != static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS)) {");
-            emitLine(out, indent + 1, "return " + validateErr + ";");
-            emitLine(out, indent, "}");
-        }
+        const auto validateHelper = helperBindingName(helperBindings.unionTagValidate->symbol);
+        const auto validateErr    = nextName("err_union_tag");
+        emitLine(out,
+                 indent,
+                 "const std::int8_t " + validateErr + " = " + validateHelper + "(static_cast<std::int64_t>(" + objRef +
+                     "->_tag_));");
+        emitLine(out, indent, "if (" + validateErr + " != static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS)) {");
+        emitLine(out, indent + 1, "return " + validateErr + ";");
+        emitLine(out, indent, "}");
         emitLine(out, indent, "offset_bits += " + std::to_string(tagBits) + "U;");
 
         bool first = true;
@@ -917,14 +914,10 @@ private:
         case SemanticScalarCategory::UnsignedInt: {
             std::string valueExpr    = "static_cast<std::uint64_t>(" + expr + ")";
             const auto  helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Serialize);
-            const auto  helper       = helperSymbol.empty() ? std::string{} : helperBindingName(helperSymbol);
-            if (helper.empty())
-            {
-                emitLine(out, indent, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-                return;
-            }
-            valueExpr      = helper + "(" + valueExpr + ")";
-            const auto err = nextName("err");
+            assert(!helperSymbol.empty());
+            const auto helper = helperBindingName(helperSymbol);
+            valueExpr         = helper + "(" + valueExpr + ")";
+            const auto err    = nextName("err");
             emitLine(out,
                      indent,
                      "const std::int8_t " + err + " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits, " +
@@ -938,14 +931,10 @@ private:
         case SemanticScalarCategory::SignedInt: {
             std::string valueExpr    = "static_cast<std::int64_t>(" + expr + ")";
             const auto  helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Serialize);
-            const auto  helper       = helperSymbol.empty() ? std::string{} : helperBindingName(helperSymbol);
-            if (helper.empty())
-            {
-                emitLine(out, indent, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-                return;
-            }
-            valueExpr      = helper + "(" + valueExpr + ")";
-            const auto err = nextName("err");
+            assert(!helperSymbol.empty());
+            const auto helper = helperBindingName(helperSymbol);
+            valueExpr         = helper + "(" + valueExpr + ")";
+            const auto err    = nextName("err");
             emitLine(out,
                      indent,
                      "const std::int8_t " + err + " = dsdl_runtime_set_ixx(buffer, capacity_bytes, offset_bits, " +
@@ -960,13 +949,9 @@ private:
             const auto  err            = nextName("err");
             std::string normalizedExpr = "static_cast<double>(" + expr + ")";
             const auto  helperSymbol   = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Serialize);
-            const auto  helper         = helperSymbol.empty() ? std::string{} : helperBindingName(helperSymbol);
-            if (helper.empty())
-            {
-                emitLine(out, indent, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-                return;
-            }
-            normalizedExpr = helper + "(" + normalizedExpr + ")";
+            assert(!helperSymbol.empty());
+            const auto helper = helperBindingName(helperSymbol);
+            normalizedExpr    = helper + "(" + normalizedExpr + ")";
             std::string call;
             if (type.bitLength == 16U)
             {
@@ -1022,13 +1007,9 @@ private:
         case SemanticScalarCategory::Utf8:
         case SemanticScalarCategory::UnsignedInt: {
             const auto helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Deserialize);
-            const auto helper       = helperSymbol.empty() ? std::string{} : helperBindingName(helperSymbol);
-            if (helper.empty())
-            {
-                emitLine(out, indent, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-                return;
-            }
-            const auto raw = nextName("raw");
+            assert(!helperSymbol.empty());
+            const auto helper = helperBindingName(helperSymbol);
+            const auto raw    = nextName("raw");
             emitLine(out,
                      indent,
                      "const std::uint64_t " + raw + " = static_cast<std::uint64_t>(" + unsignedGetter(type.bitLength) +
@@ -1042,13 +1023,9 @@ private:
         }
         case SemanticScalarCategory::SignedInt: {
             const auto helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Deserialize);
-            const auto helper       = helperSymbol.empty() ? std::string{} : helperBindingName(helperSymbol);
-            if (helper.empty())
-            {
-                emitLine(out, indent, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-                return;
-            }
-            const auto raw = nextName("raw");
+            assert(!helperSymbol.empty());
+            const auto helper = helperBindingName(helperSymbol);
+            const auto raw    = nextName("raw");
             emitLine(out,
                      indent,
                      "const std::int64_t " + raw + " = static_cast<std::int64_t>(" + unsignedGetter(type.bitLength) +
@@ -1061,12 +1038,8 @@ private:
         }
         case SemanticScalarCategory::Float: {
             const auto helperSymbol = resolveScalarHelperSymbol(type, fieldFacts, HelperBindingDirection::Deserialize);
-            const auto helper       = helperSymbol.empty() ? std::string{} : helperBindingName(helperSymbol);
-            if (helper.empty())
-            {
-                emitLine(out, indent, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-                return;
-            }
+            assert(!helperSymbol.empty());
+            const auto helper = helperBindingName(helperSymbol);
             if (type.bitLength == 16U)
             {
                 emitLine(out,
@@ -1116,17 +1089,10 @@ private:
 
         if (variable)
         {
-            std::string validateHelper;
-            if (arrayDescriptor && !arrayDescriptor->validateSymbol.empty())
-            {
-                validateHelper = helperBindingName(arrayDescriptor->validateSymbol);
-            }
-            if (validateHelper.empty())
-            {
-                emitLine(out, indent, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-                return;
-            }
-            const auto validateRc = nextName("len_rc");
+            assert(arrayDescriptor.has_value());
+            assert(!arrayDescriptor->validateSymbol.empty());
+            const auto validateHelper = helperBindingName(arrayDescriptor->validateSymbol);
+            const auto validateRc     = nextName("len_rc");
             emitLine(out,
                      indent,
                      "const std::int8_t " + validateRc + " = " + validateHelper + "(static_cast<std::int64_t>(" + expr +
@@ -1136,18 +1102,10 @@ private:
             emitLine(out, indent, "}");
 
             std::string prefixExpr = "static_cast<std::uint64_t>(" + expr + ".size())";
-            std::string serPrefixHelper;
-            if (arrayDescriptor && !arrayDescriptor->prefixSymbol.empty())
-            {
-                serPrefixHelper = helperBindingName(arrayDescriptor->prefixSymbol);
-            }
-            if (serPrefixHelper.empty())
-            {
-                emitLine(out, indent, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-                return;
-            }
-            prefixExpr     = serPrefixHelper + "(" + prefixExpr + ")";
-            const auto err = nextName("err");
+            assert(!arrayDescriptor->prefixSymbol.empty());
+            const auto serPrefixHelper = helperBindingName(arrayDescriptor->prefixSymbol);
+            prefixExpr                 = serPrefixHelper + "(" + prefixExpr + ")";
+            const auto err             = nextName("err");
             emitLine(out,
                      indent,
                      "const std::int8_t " + err + " = dsdl_runtime_set_uxx(buffer, capacity_bytes, offset_bits, " +
@@ -1204,33 +1162,18 @@ private:
                          std::to_string(prefixBits) + "U));");
             emitLine(out, indent, "offset_bits += " + std::to_string(prefixBits) + "U;");
             std::string countRawExpr = rawCountVar;
-            std::string deserPrefixHelper;
-            if (arrayDescriptor && !arrayDescriptor->prefixSymbol.empty())
-            {
-                deserPrefixHelper = helperBindingName(arrayDescriptor->prefixSymbol);
-            }
-            if (deserPrefixHelper.empty())
-            {
-                emitLine(out, indent, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-                return;
-            }
-            countRawExpr        = deserPrefixHelper + "(" + countRawExpr + ")";
-            const auto countVar = nextName("count");
+            assert(arrayDescriptor.has_value());
+            assert(!arrayDescriptor->prefixSymbol.empty());
+            const auto deserPrefixHelper = helperBindingName(arrayDescriptor->prefixSymbol);
+            countRawExpr                 = deserPrefixHelper + "(" + countRawExpr + ")";
+            const auto countVar          = nextName("count");
             emitLine(out,
                      indent,
                      "const std::size_t " + countVar + " = static_cast<std::size_t>(" + countRawExpr + ");");
 
-            std::string validateHelper;
-            if (arrayDescriptor && !arrayDescriptor->validateSymbol.empty())
-            {
-                validateHelper = helperBindingName(arrayDescriptor->validateSymbol);
-            }
-            if (validateHelper.empty())
-            {
-                emitLine(out, indent, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-                return;
-            }
-            const auto validateRc = nextName("len_rc");
+            assert(!arrayDescriptor->validateSymbol.empty());
+            const auto validateHelper = helperBindingName(arrayDescriptor->validateSymbol);
+            const auto validateRc     = nextName("len_rc");
             emitLine(out,
                      indent,
                      "const std::int8_t " + validateRc + " = " + validateHelper + "(static_cast<std::int64_t>(" +
@@ -1327,12 +1270,8 @@ private:
                      "const std::size_t " + remaining +
                          " = capacity_bytes - dsdl_runtime_choose_min(offset_bits / 8U, capacity_bytes);");
             const auto helperSymbol = resolveDelimiterValidateHelperSymbol(type, fieldFacts);
-            const auto helper       = helperSymbol.empty() ? std::string{} : helperBindingName(helperSymbol);
-            if (helper.empty())
-            {
-                emitLine(out, indent, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-                return;
-            }
+            assert(!helperSymbol.empty());
+            const auto helper     = helperBindingName(helperSymbol);
             const auto validateRc = nextName("rc");
             emitLine(out,
                      indent,
@@ -1399,12 +1338,8 @@ private:
             const auto remVar = "_remaining_" + std::to_string(id_);
             ++id_;
             const auto helperSymbol = resolveDelimiterValidateHelperSymbol(type, fieldFacts);
-            const auto helper       = helperSymbol.empty() ? std::string{} : helperBindingName(helperSymbol);
-            if (helper.empty())
-            {
-                emitLine(out, indent, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
-                return;
-            }
+            assert(!helperSymbol.empty());
+            const auto helper     = helperBindingName(helperSymbol);
             const auto validateRc = nextName("rc");
             emitLine(out,
                      indent,

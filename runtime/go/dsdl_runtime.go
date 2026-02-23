@@ -1,3 +1,13 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Portable bit-level runtime primitives for generated Go DSDL bindings.
+///
+/// This module provides integer, floating-point, and bit-copy helpers shared by
+/// generated serializers and deserializers.
+///
+//===----------------------------------------------------------------------===//
+
 // Package dsdlruntime provides the portable bit-level runtime used by generated
 // DSDL Go bindings.
 package dsdlruntime

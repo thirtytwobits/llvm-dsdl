@@ -5,6 +5,16 @@
 #
 #===----------------------------------------------------------------------===#
 
+#===----------------------------------------------------------------------===#
+#
+# @file
+# Pure-Python DSDL runtime primitives used by generated serializers/deserializers.
+#
+# The module provides reference bit, integer, and floating-point helpers that
+# match the runtime contract used by generated Python packages.
+#
+#===----------------------------------------------------------------------===#
+
 """Python DSDL runtime primitives used by generated serializers/deserializers."""
 
 from __future__ import annotations

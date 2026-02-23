@@ -5,6 +5,16 @@
 #
 #===----------------------------------------------------------------------===#
 
+#===----------------------------------------------------------------------===#
+#
+# @file
+# Pure-Python DSDL runtime primitives with byte-aligned fast-path helpers.
+#
+# The module preserves the reference runtime API while accelerating aligned copy
+# operations commonly emitted by generated serializers and deserializers.
+#
+#===----------------------------------------------------------------------===#
+
 """Python DSDL runtime primitives with byte-aligned fast-path helpers."""
 
 from __future__ import annotations

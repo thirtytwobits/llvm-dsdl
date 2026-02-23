@@ -17,6 +17,7 @@ add_library(llvmdsdlCodeGen
   HelperSymbolResolver.cpp
   LoweredBodyPlan.cpp
   LoweredRenderIR.cpp
+  NativeHelperContract.cpp
   NativeEmitterTraversal.cpp
   MlirLoweredFacts.cpp
   RuntimeHelperBindings.cpp

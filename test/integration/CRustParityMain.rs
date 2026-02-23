@@ -1,5 +1,15 @@
 #![allow(non_camel_case_types)]
 
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Rust parity driver comparing generated Rust and C serializers/deserializers.
+///
+/// The executable runs randomized and directed parity checks through a shared C
+/// harness and validates status, consumed size, and payload equivalence.
+///
+//===----------------------------------------------------------------------===//
+
 use std::fmt::Write as _;
 use std::os::raw::c_int;
 

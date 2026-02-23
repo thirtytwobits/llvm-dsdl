@@ -108,6 +108,7 @@ Shared generator-side convergence modules include:
 - `RuntimeHelperBindings*` (shared lowered helper-symbol lookup/resolution)
 - `ScriptedBodyPlan*` (TS/Python scripted section/field helper planning)
 - `NativeEmitterTraversal*` (shared lowered-step traversal callbacks for C++/Rust/Go)
+- `NativeHelperContract*` (shared section+field helper contract checks for C++/Rust/Go)
 - `CodegenDiagnosticText*` (shared cross-backend diagnostic text catalog)
 - helper/statement/binding planners in `lib/CodeGen/*Plan*` and `*Resolver*`
 

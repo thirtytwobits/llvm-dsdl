@@ -1,16 +1,14 @@
 {
-  "schema_version": 1,
-  "suite_name": "llvmdsdl-codegen-complex-thresholds",
-  "created_utc": "1970-01-01T00:00:00+00:00",
-  "source_report": "uninitialized",
   "baselines_sec": {
-    "c": 0.0,
-    "cpp": 0.0,
-    "go": 0.0,
-    "python": 0.0,
-    "rust": 0.0,
-    "ts": 0.0
+    "c": 8.008848417084664,
+    "cpp": 6.97056983388029,
+    "go": 6.200420917011797,
+    "python": 6.205356250051409,
+    "rust": 6.202177458908409,
+    "ts": 6.203772666864097
   },
+  "created_utc": "2026-02-23T19:54:29.083688+00:00",
+  "profile_overrides": {},
   "profiles": {
     "ci_oom": {
       "absolute_margin_sec": 30.0,
@@ -23,5 +21,7 @@
       "relative_multiplier": 1.35
     }
   },
-  "profile_overrides": {}
+  "schema_version": 1,
+  "source_report": "/Users/thirtytwobits/workspace/github/thirtytwobits/llvm-dsdl/build/matrix/dev-llvm-env/test/benchmark/complex-codegen/record-report.json",
+  "suite_name": "llvmdsdl-codegen-complex-thresholds"
 }

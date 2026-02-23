@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/CodeGen/CEmitter.h"
+#include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/ilist_iterator.h>
@@ -750,6 +751,13 @@ llvm::Error emitC(const SemanticModule& semantic,
     llvm::sys::fs::create_directories(options.outDir, true);
     std::filesystem::path outRoot(options.outDir);
     EmitterContext        ctx(semantic);
+
+    if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "C", nullptr, options.optimizeLoweredSerDes))
+    {
+        diagnostics.error({"<mlir>", 1, 1}, "MLIR schema coverage validation failed for C emission");
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "MLIR schema coverage validation failed for C emission");
+    }
 
     std::unordered_map<std::string, mlir::Operation*> schemaByHeaderPath;
     for (mlir::Operation& op : module.getBodyRegion().front())

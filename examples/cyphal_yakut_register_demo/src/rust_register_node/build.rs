@@ -1,3 +1,13 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Build script for the Rust Yakut register demo transport shim.
+///
+/// The script compiles the demo C transport sources and tracks file changes so
+/// Cargo rebuilds the shim when transport dependencies are updated.
+///
+//===----------------------------------------------------------------------===//
+
 fn main() {
     println!("cargo:rerun-if-changed=transport_shim.c");
     println!("cargo:rerun-if-changed=transport_shim.h");

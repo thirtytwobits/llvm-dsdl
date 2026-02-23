@@ -5,6 +5,16 @@
 #
 #===----------------------------------------------------------------------===#
 
+#===----------------------------------------------------------------------===#
+#
+# @file
+# Runtime backend selector for generated Python DSDL packages.
+#
+# This loader resolves pure or accelerator-backed runtime implementations from
+# environment configuration and exposes the selected backend identity.
+#
+#===----------------------------------------------------------------------===#
+
 """Runtime backend loader for generated Python packages."""
 
 from __future__ import annotations

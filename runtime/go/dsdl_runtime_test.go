@@ -1,3 +1,13 @@
+//===----------------------------------------------------------------------===//
+///
+/// @file
+/// Unit tests for Go DSDL runtime helper primitives.
+///
+/// These tests validate bit-copy, integer/float conversion, and error-boundary
+/// behavior used by generated Go code.
+///
+//===----------------------------------------------------------------------===//
+
 // Package dsdlruntime contains unit tests for the Go DSDL runtime helpers.
 package dsdlruntime
 

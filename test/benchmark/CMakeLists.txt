@@ -223,6 +223,33 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
         PROPERTIES
           LABELS "benchmark;performance;integration;slow"
       )
+
+      foreach(lang IN ITEMS c cpp rust go ts python)
+        add_test(
+          NAME llvmdsdl-codegen-benchmark-ci-oom-${lang}
+          COMMAND
+            ${Python3_EXECUTABLE}
+              ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
+              check
+              --dsdlc $<TARGET_FILE:dsdlc>
+              --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+              ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
+              --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}/ctest-ci-oom-${lang}
+              --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/ctest-check-ci-oom-${lang}-report.json
+              --thresholds-json ${LLVMDSDL_COMPLEX_BENCHMARK_THRESHOLDS}
+              --profile ci_oom
+              --iterations ${LLVMDSDL_CODEGEN_BENCHMARK_ITERATIONS}
+              --languages ${lang}
+              --per-language-timeout-sec ${LLVMDSDL_CODEGEN_BENCHMARK_PER_LANGUAGE_TIMEOUT_SEC}
+              --status-interval-sec ${LLVMDSDL_CODEGEN_BENCHMARK_STATUS_INTERVAL_SEC}
+              --max-rss-mib ${LLVMDSDL_CODEGEN_BENCHMARK_MAX_RSS_MIB}
+        )
+        set_tests_properties(
+          llvmdsdl-codegen-benchmark-ci-oom-${lang}
+          PROPERTIES
+            LABELS "benchmark;performance;integration;slow;codegen;codegen-${lang}"
+        )
+      endforeach()
     endif()
   else()
     message(WARNING

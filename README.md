@@ -14,6 +14,9 @@ Canonical project docs:
 - `editors/vscode/dsdld-client/README.md`: extension install/debug/settings.
 - `docs/LSP_LINT_RULE_AUTHORING.md`: lint rule implementation workflow.
 - `docs/LSP_AI_OPERATOR_GUIDE.md`: AI safety and operator controls.
+- `docs/CONVERGENCE_SCORECARD.md`: generated MLIR-convergence score snapshot.
+- `docs/PARITY_MATRIX.md`: generated parity matrix coverage snapshot.
+- `docs/MALFORMED_INPUT_CONTRACT_MATRIX.md`: generated malformed-input contract matrix snapshot.
 - `LICENSE.md`: project license (MIT).
 - `THIRD_PARTY_NOTICES.md`: third-party licensing notices.
 
@@ -115,6 +118,7 @@ generated from lowered MLIR contracts through shared codegen layers:
 - `RuntimeHelperBindings*` for lowered helper-symbol lookup/resolution
 - `ScriptedBodyPlan*` for scripted-backend (TypeScript/Python) helper planning
 - `NativeEmitterTraversal*` for native-backend (C++/Rust/Go) lowered-step traversal
+- `NativeHelperContract*` for native-backend section/field helper-contract validation
 - `CodegenDiagnosticText*` for cross-backend diagnostic text parity
 
 Low-level runtime primitives remain hand-written by design in generated/runtime
@@ -135,6 +139,15 @@ cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target format-
 # Static analysis helpers.
 cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target check-clang-tidy -j1
 cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target check-iwyu -j1
+
+# Convergence scorecard and regression gate.
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target convergence-report -j1
+
+# Parity matrix coverage report and regression gate.
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target parity-matrix-report -j1
+
+# Malformed-input contract matrix report and regression gate.
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target malformed-contract-report -j1
 
 # LLVM source-based coverage (configure with coverage enabled first).
 cmake -S . -B build/coverage -G "Ninja Multi-Config" \
@@ -782,6 +795,16 @@ Utility targets:
 - `benchmark-codegen-init-thresholds`
 - `benchmark-codegen-check-dev-ab`
 - `benchmark-codegen-check-ci-oom`
+
+Optional per-language CI-oom CTest lanes (enabled with
+`-DLLVMDSDL_ENABLE_BENCHMARK_TESTS=ON` after thresholds are calibrated):
+
+- `llvmdsdl-codegen-benchmark-ci-oom-c`
+- `llvmdsdl-codegen-benchmark-ci-oom-cpp`
+- `llvmdsdl-codegen-benchmark-ci-oom-rust`
+- `llvmdsdl-codegen-benchmark-ci-oom-go`
+- `llvmdsdl-codegen-benchmark-ci-oom-ts`
+- `llvmdsdl-codegen-benchmark-ci-oom-python`
 
 Typical flow:
 
