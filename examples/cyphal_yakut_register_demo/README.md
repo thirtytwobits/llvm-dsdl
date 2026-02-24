@@ -1,6 +1,6 @@
-# Yakut + Register Node Demo (Native or Go)
+# Yakut + Register Node Example (Native, Go, or Rust)
 
-This demo pairs Yakut with either:
+This example pairs Yakut with either:
 
 1. A native C++ Cyphal node built from this repository using libudpard + POSIX UDP shim.
 2. A Go Cyphal node built from this repository using generated Go types + libudpard via cgo.
@@ -96,43 +96,3 @@ Expected behavior:
 1. `demo.rate_hz` changes and readback reflects new value.
 2. `uavcan.node.description` changes and readback reflects new value.
 3. `sys.version` remains unchanged because it is immutable.
-
-## One-Command Utility Target
-
-If Yakut is installed, run:
-
-```bash
-cmake --build build/dev-homebrew --target run-yakut-register-demo -j
-```
-
-This starts the node, executes a register interaction script, and writes logs under:
-
-`build/dev-homebrew/examples/cyphal_yakut_register_demo/run-logs`
-
-Backend-specific targets:
-
-```bash
-cmake --build build/dev-homebrew --target run-yakut-register-demo-native -j
-cmake --build build/dev-homebrew --target run-yakut-register-demo-go -j
-cmake --build build/dev-homebrew --target run-yakut-register-demo-rust -j
-cmake --build build/dev-homebrew --target run-yakut-register-demo-all -j
-```
-
-## One-Command Utility Target (Register + Heartbeat Verification)
-
-```bash
-cmake --build build/dev-homebrew --target run-yakut-register-heartbeat-demo -j
-```
-
-This runs the same register workflow and also subscribes to
-`uavcan.node.heartbeat` using Yakut, validating that heartbeats are observed
-from node `42`.
-
-Backend-specific targets:
-
-```bash
-cmake --build build/dev-homebrew --target run-yakut-register-heartbeat-demo-native -j
-cmake --build build/dev-homebrew --target run-yakut-register-heartbeat-demo-go -j
-cmake --build build/dev-homebrew --target run-yakut-register-heartbeat-demo-rust -j
-cmake --build build/dev-homebrew --target run-yakut-register-heartbeat-demo-all -j
-```

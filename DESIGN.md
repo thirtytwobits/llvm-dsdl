@@ -299,6 +299,5 @@ These decisions have produced a stable multi-backend compiler that can evolve in
 
 - Project walkthrough and quick run paths: [`README.md`](./README.md)
 - Contribution and reproducible build details: [`CONTRIBUTING.md`](./CONTRIBUTING.md)
-- Demo-focused workflow: [`DEMO.md`](./DEMO.md)
 - Language server usage: [`tools/dsdld/README.md`](./tools/dsdld/README.md)
 - Cyphal specification source: [OpenCyphal/specification](https://github.com/OpenCyphal/specification)

@@ -6,17 +6,6 @@ set(LLVMDSDL_PING_PONG_UDPARD_C
     "${CMAKE_SOURCE_DIR}/submodules/libudpard/libudpard/udpard.c")
 set(LLVMDSDL_PING_PONG_UDPARD_INCLUDE
     "${CMAKE_SOURCE_DIR}/submodules/libudpard/libudpard")
-set(LLVMDSDL_PING_PONG_DEMO_LOG_DIR
-    "${CMAKE_CURRENT_BINARY_DIR}/run-logs")
-
-set(LLVMDSDL_PING_PONG_DEMO_DURATION_SECONDS
-    "3"
-    CACHE STRING
-    "Duration in seconds for the run-cyphal-ping-pong-demo target")
-set(LLVMDSDL_PING_PONG_DEMO_PERIOD_MS
-    "200"
-    CACHE STRING
-    "Ping period in milliseconds for the run-cyphal-ping-pong-demo target")
 
 if(NOT EXISTS "${LLVMDSDL_PING_PONG_UDPARD_C}")
   message(WARNING
@@ -69,17 +58,3 @@ set_target_properties(cyphal-ping-pong-node PROPERTIES
   C_EXTENSIONS OFF
   CXX_STANDARD 20
   CXX_STANDARD_REQUIRED ON)
-
-add_custom_target(run-cyphal-ping-pong-demo
-  COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_PING_PONG_DEMO_LOG_DIR}"
-  COMMAND
-    ${CMAKE_COMMAND} -E env
-      NODE_EXE=$<TARGET_FILE:cyphal-ping-pong-node>
-      LOG_DIR=${LLVMDSDL_PING_PONG_DEMO_LOG_DIR}
-      DURATION_SECONDS=${LLVMDSDL_PING_PONG_DEMO_DURATION_SECONDS}
-      PERIOD_MS=${LLVMDSDL_PING_PONG_DEMO_PERIOD_MS}
-      /bin/sh "${CMAKE_CURRENT_SOURCE_DIR}/run_ping_pong_demo.sh"
-  DEPENDS cyphal-ping-pong-node
-  USES_TERMINAL
-  VERBATIM
-  COMMENT "Running cyphal ping-pong demo pair")
