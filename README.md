@@ -60,6 +60,8 @@ It currently provides:
   - Optional C accelerator loading (`_dsdl_runtime_accel`) with automatic fallback to pure runtime.
   - MLIR schema/plan metadata validation before emission.
 - Spec-conformant frontend semantics (single mode; no compatibility fallback mode).
+- Make-style dependency file emission for codegen outputs via `-MD`
+  (`<generated-output>.d` files containing DSDL input closure dependencies).
 
 ## Ambitions
 

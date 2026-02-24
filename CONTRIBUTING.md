@@ -224,6 +224,9 @@ mkdir -p "${OUT}"
   --outdir "${OUT}"
 ```
 
+To emit make-style depfiles alongside generated files, add `-MD` to codegen
+invocations.
+
 Expected result:
 
 - Exit code `0`

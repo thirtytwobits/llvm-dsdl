@@ -6,6 +6,7 @@
 # RUN: not %dsdlc --target-language ast %S/does-not-exist 2>&1 | FileCheck %s --check-prefix=BAD_TARGET
 # RUN: not %dsdlc --target-language cpp --cpp-profile not-a-profile %S/fixtures --outdir %t 2>&1 | FileCheck %s --check-prefix=BAD_CPP_PROFILE
 # RUN: not %dsdlc --target-language c --py-package bad %S/fixtures 2>&1 | FileCheck %s --check-prefix=GATED_PY
+# RUN: not %dsdlc --target-language ast -MD %S/fixtures 2>&1 | FileCheck %s --check-prefix=GATED_MD
 # RUN: not %dsdlc --target-language cpp --cpp-profile 2>&1 | FileCheck %s --check-prefix=MISSING_VALUE_CPP
 # RUN: %dsdlc --target-language ast %S/fixtures 2>&1 | FileCheck %s --check-prefix=SUMMARY
 
@@ -15,6 +16,7 @@
 # HELP: --lookup-dir, -I <dir>
 # HELP: --outdir, -O <dir>
 # HELP: --allow-unregulated-fixed-port-id
+# HELP: -MD
 # HELP: --list-inputs
 # HELP: --list-outputs
 
@@ -33,6 +35,8 @@
 # BAD_CPP_PROFILE: Usage: dsdlc --target-language <ast|mlir|c|cpp|rust|go|ts|python> [options] [target_files_or_root_namespace ...]
 
 # GATED_PY: --py-* is only valid when --target-language is 'python'
+
+# GATED_MD: -MD is only valid when --target-language is one of: c, cpp, rust, go, ts, python
 
 # MISSING_VALUE_CPP: missing value for --cpp-profile
 # MISSING_VALUE_CPP: Usage: dsdlc --target-language <ast|mlir|c|cpp|rust|go|ts|python> [options] [target_files_or_root_namespace ...]

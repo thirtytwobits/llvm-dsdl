@@ -73,6 +73,32 @@ bool shouldEmitDefinition(const DiscoveredDefinition& info, const std::unordered
 /// @return Success or a descriptive I/O error.
 llvm::Error writeGeneratedFile(const std::filesystem::path& path, llvm::StringRef content, const EmitWritePolicy& policy);
 
+/// @brief Renders one make-style depfile body.
+///
+/// @details
+/// The output format is: `<escaped_target>: <escaped_dep_1> <escaped_dep_2> ...\n`.
+/// Dependency inputs are sorted and de-duplicated for deterministic output.
+///
+/// @param[in] target Make-rule target path.
+/// @param[in] deps Dependency path list.
+/// @return Rendered depfile text with trailing newline.
+std::string renderMakeDepfile(const std::string& target, const std::vector<std::string>& deps);
+
+/// @brief Writes `<outputPath>.d` make depfile for one generated output path.
+///
+/// @details
+/// Dependency paths and target path are normalized to absolute lexical paths.
+/// The write path obeys @ref EmitWritePolicy semantics (`dryRun`,
+/// `noOverwrite`, `fileMode`, and `recordedOutputs`).
+///
+/// @param[in] outputPath Generated output path the depfile describes.
+/// @param[in] deps Dependency path list.
+/// @param[in] policy Write policy.
+/// @return Success or a descriptive I/O error.
+llvm::Error writeDepfileForGeneratedOutput(const std::filesystem::path& outputPath,
+                                           const std::vector<std::string>& deps,
+                                           const EmitWritePolicy&          policy);
+
 }  // namespace llvmdsdl
 
 #endif  // LLVMDSDL_CODEGEN_EMITCOMMON_H

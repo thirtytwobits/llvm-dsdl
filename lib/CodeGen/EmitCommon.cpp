@@ -18,6 +18,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <algorithm>
 #include <system_error>
 
 namespace llvmdsdl
@@ -71,15 +72,61 @@ std::filesystem::perms permsFromMode(const std::uint32_t mode)
     return out;
 }
 
+std::string absoluteNormalizedPath(const std::filesystem::path& path)
+{
+    std::error_code ec;
+    const auto      absolute = std::filesystem::absolute(path, ec);
+    if (ec)
+    {
+        return path.lexically_normal().string();
+    }
+    return absolute.lexically_normal().string();
+}
+
 void recordOutputPath(const std::filesystem::path& path, const EmitWritePolicy& policy)
 {
     if (policy.recordedOutputs == nullptr)
     {
         return;
     }
-    std::error_code ec;
-    const auto      absolute = std::filesystem::absolute(path, ec);
-    policy.recordedOutputs->push_back(ec ? path.lexically_normal().string() : absolute.lexically_normal().string());
+    policy.recordedOutputs->push_back(absoluteNormalizedPath(path));
+}
+
+std::string escapeMakeToken(llvm::StringRef text)
+{
+    std::string out;
+    out.reserve(text.size());
+
+    for (const char c : text)
+    {
+        switch (c)
+        {
+        case '\\':
+            out.append("\\\\");
+            break;
+        case ' ':
+            out.append("\\ ");
+            break;
+        case '\t':
+            out.push_back('\\');
+            out.push_back('\t');
+            break;
+        case '#':
+            out.append("\\#");
+            break;
+        case '$':
+            out.append("$$");
+            break;
+        case ':':
+            out.append("\\:");
+            break;
+        default:
+            out.push_back(c);
+            break;
+        }
+    }
+
+    return out;
 }
 
 }  // namespace
@@ -161,6 +208,42 @@ llvm::Error writeGeneratedFile(const std::filesystem::path& path, llvm::StringRe
     }
 
     return llvm::Error::success();
+}
+
+std::string renderMakeDepfile(const std::string& target, const std::vector<std::string>& deps)
+{
+    std::vector<std::string> normalizedDeps = deps;
+    std::sort(normalizedDeps.begin(), normalizedDeps.end());
+    normalizedDeps.erase(std::unique(normalizedDeps.begin(), normalizedDeps.end()), normalizedDeps.end());
+
+    std::string out;
+    out += escapeMakeToken(target);
+    out += ':';
+
+    for (const auto& dep : normalizedDeps)
+    {
+        out.push_back(' ');
+        out += escapeMakeToken(dep);
+    }
+    out.push_back('\n');
+    return out;
+}
+
+llvm::Error writeDepfileForGeneratedOutput(const std::filesystem::path& outputPath,
+                                           const std::vector<std::string>& deps,
+                                           const EmitWritePolicy&          policy)
+{
+    const std::filesystem::path depfilePath = outputPath.string() + ".d";
+
+    std::vector<std::string> normalizedDeps;
+    normalizedDeps.reserve(deps.size());
+    for (const auto& dep : deps)
+    {
+        normalizedDeps.push_back(absoluteNormalizedPath(dep));
+    }
+
+    const std::string depfileContent = renderMakeDepfile(absoluteNormalizedPath(outputPath), normalizedDeps);
+    return writeGeneratedFile(depfilePath, depfileContent, policy);
 }
 
 }  // namespace llvmdsdl

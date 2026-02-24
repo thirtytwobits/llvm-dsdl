@@ -75,6 +75,7 @@ struct CliOptions final
     bool dryRun{false};
     bool listOutputs{false};
     bool listInputs{false};
+    bool emitDepfiles{false};
 
     int verbose{0};
 
@@ -166,6 +167,8 @@ void printHelp()
                  << "      Increase verbosity (-v, -vv).\n"
                  << "  --dry-run, -d\n"
                  << "      Run full planning/validation without filesystem writes.\n"
+                 << "  -MD\n"
+                 << "      Emit make-style .d dependency files alongside generated outputs.\n"
                  << "  --list-inputs\n"
                  << "      Emit semicolon-separated input file list (implies --dry-run).\n"
                  << "  --list-outputs\n"
@@ -395,6 +398,11 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
         if (arg == "--dry-run" || arg == "-d")
         {
             options.dryRun = true;
+            continue;
+        }
+        if (arg == "-MD")
+        {
+            options.emitDepfiles = true;
             continue;
         }
         if (arg == "--list-outputs")
@@ -689,6 +697,11 @@ llvm::Expected<int> validateLanguageGatedOptions(const CliOptions& options)
         !r)
     {
         return r.takeError();
+    }
+    if (options.emitDepfiles && !isCodegenLanguage(language))
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "-MD is only valid when --target-language is one of: c, cpp, rust, go, ts, python");
     }
 
     return 0;
@@ -1057,6 +1070,23 @@ int main(int argc, char** argv)
     writePolicy.fileMode       = options.fileMode;
     writePolicy.recordedOutputs = &generatedOutputs;
 
+    const auto emitDepfilesForGeneratedOutputs = [&](const std::vector<std::string>& regularOutputs) -> llvm::Error {
+        if (!options.emitDepfiles)
+        {
+            return llvm::Error::success();
+        }
+
+        for (const auto& output : regularOutputs)
+        {
+            if (auto err = llvmdsdl::writeDepfileForGeneratedOutput(output, inputsForListing, writePolicy))
+            {
+                return err;
+            }
+        }
+
+        return llvm::Error::success();
+    };
+
     logVerbose(1, "running backend emission");
 
     if (options.targetLanguage == "c")
@@ -1068,6 +1098,12 @@ int main(int argc, char** argv)
         emitOptions.writePolicy           = writePolicy;
 
         if (auto err = llvmdsdl::emitC(closureSemantic, *mlirModule, emitOptions, diagnostics))
+        {
+            llvm::errs() << llvm::toString(std::move(err)) << "\n";
+            return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
+        }
+        const std::vector<std::string> regularOutputs = generatedOutputs;
+        if (auto err = emitDepfilesForGeneratedOutputs(regularOutputs))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
@@ -1085,6 +1121,12 @@ int main(int argc, char** argv)
         emitOptions.writePolicy           = writePolicy;
 
         if (auto err = llvmdsdl::emitCpp(closureSemantic, *mlirModule, emitOptions, diagnostics))
+        {
+            llvm::errs() << llvm::toString(std::move(err)) << "\n";
+            return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
+        }
+        const std::vector<std::string> regularOutputs = generatedOutputs;
+        if (auto err = emitDepfilesForGeneratedOutputs(regularOutputs))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
@@ -1110,6 +1152,12 @@ int main(int argc, char** argv)
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
         }
+        const std::vector<std::string> regularOutputs = generatedOutputs;
+        if (auto err = emitDepfilesForGeneratedOutputs(regularOutputs))
+        {
+            llvm::errs() << llvm::toString(std::move(err)) << "\n";
+            return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
+        }
         return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs));
     }
 
@@ -1123,6 +1171,12 @@ int main(int argc, char** argv)
         emitOptions.writePolicy           = writePolicy;
 
         if (auto err = llvmdsdl::emitGo(closureSemantic, *mlirModule, emitOptions, diagnostics))
+        {
+            llvm::errs() << llvm::toString(std::move(err)) << "\n";
+            return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
+        }
+        const std::vector<std::string> regularOutputs = generatedOutputs;
+        if (auto err = emitDepfilesForGeneratedOutputs(regularOutputs))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
@@ -1145,6 +1199,12 @@ int main(int argc, char** argv)
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
         }
+        const std::vector<std::string> regularOutputs = generatedOutputs;
+        if (auto err = emitDepfilesForGeneratedOutputs(regularOutputs))
+        {
+            llvm::errs() << llvm::toString(std::move(err)) << "\n";
+            return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
+        }
         return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs));
     }
 
@@ -1159,6 +1219,12 @@ int main(int argc, char** argv)
         emitOptions.writePolicy           = writePolicy;
 
         if (auto err = llvmdsdl::emitPython(closureSemantic, *mlirModule, emitOptions, diagnostics))
+        {
+            llvm::errs() << llvm::toString(std::move(err)) << "\n";
+            return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
+        }
+        const std::vector<std::string> regularOutputs = generatedOutputs;
+        if (auto err = emitDepfilesForGeneratedOutputs(regularOutputs))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
