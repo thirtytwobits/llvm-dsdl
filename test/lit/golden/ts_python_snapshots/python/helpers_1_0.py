@@ -99,8 +99,8 @@ def _deserialize_Helpers_1_0(data: bytes | bytearray | memoryview) -> tuple[Help
         raise ValueError("decoded length for field 'c' exceeds max length 5")
     c_arr = []
     for _ in range(c_len):
-        c_item_raw = dsdl_runtime.read_unsigned(data, offset_bits, 8)
-        c_item = mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser(c_item_raw)
+        c_raw = dsdl_runtime.read_unsigned(data, offset_bits, 8)
+        c_item = mlir___llvmdsdl_plan_scalar_unsigned__fixtures_vendor_Helpers_1_0__2__deser(c_raw)
         offset_bits += 8
         c_arr.append(c_item)
     value.c = c_arr

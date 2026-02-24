@@ -39,9 +39,11 @@
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
 #include "llvmdsdl/CodeGen/NamingPolicy.h"
+#include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/HelperBindingRender.h"
+#include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
 #include "llvmdsdl/CodeGen/RuntimeHelperBindings.h"
-#include "llvmdsdl/CodeGen/ScriptedBodyPlan.h"
+#include "llvmdsdl/CodeGen/ScriptedOperationPlan.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
 #include "llvmdsdl/CodeGen/RuntimeLoweredPlan.h"
 #include "llvm/Support/Error.h"
@@ -307,7 +309,7 @@ std::string compositeTypeName(const RuntimeFieldPlan& field, const EmitterContex
 
 std::string helperBindingNameTs(const std::string& helperSymbol)
 {
-    return "mlir_" + codegenSanitizeIdentifier(CodegenNamingLanguage::TypeScript, helperSymbol);
+    return renderHelperBindingIdentifier(CodegenNamingLanguage::TypeScript, helperSymbol);
 }
 
 std::string normalizeTsDeserScalarExpr(const RuntimeFieldPlan&        field,
@@ -503,17 +505,16 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
     const RuntimeHelperNameResolver helperNameResolver = [](const std::string& symbol) {
         return helperBindingNameTs(symbol);
     };
-    auto bodyPlan = buildScriptedSectionBodyPlan(section, plan, sectionFacts, helperNameResolver);
-    for (auto& scriptedField : bodyPlan.fields)
+    auto operationPlan = buildScriptedSectionOperationPlan(section, plan, sectionFacts, helperNameResolver);
+    for (auto& scriptedField : operationPlan.fields)
     {
-        const auto& semanticName = scriptedField.field.semanticFieldName.empty()
-                                       ? scriptedField.field.fieldName
-                                       : scriptedField.field.semanticFieldName;
-        scriptedField.field.fieldName =
+        auto&       field        = scriptedField.body.field;
+        const auto& semanticName = field.semanticFieldName.empty() ? field.fieldName : field.semanticFieldName;
+        field.fieldName =
             codegenSanitizeIdentifier(CodegenNamingLanguage::TypeScript,
                                       codegenToSnakeCaseIdentifier(CodegenNamingLanguage::TypeScript, semanticName));
     }
-    const auto& sectionHelperNames = bodyPlan.sectionHelpers;
+    const auto& sectionHelperNames = operationPlan.sectionHelpers;
 
     const auto emitSerializeHelperBindings = [&]() {
         const auto lines = renderSectionHelperBindings(serializeHelpers,
@@ -547,9 +548,9 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
         }
     };
 
-    if (plan.isUnion)
+    if (operationPlan.isUnion)
     {
-        const auto tagBits = std::to_string(plan.unionTagBits);
+        const auto tagBits = std::to_string(operationPlan.unionTagBits);
         emitLine(out, 0, "export function " + serializeFn + "(value: " + typeName + "): Uint8Array {");
         emitLine(out, 1, "const out = new Uint8Array(" + std::to_string(maxByteLength) + ");");
         emitLine(out, 1, "let offsetBits = 0;");
@@ -574,15 +575,16 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
         emitLine(out, 1, "dsdlRuntime.writeUnsigned(out, offsetBits, " + tagBits + ", tag, false);");
         emitLine(out, 1, "offsetBits += " + tagBits + ";");
         emitLine(out, 1, "switch (tag) {");
-        for (const auto& scriptedField : bodyPlan.fields)
+        for (const auto& scriptedField : operationPlan.fields)
         {
-            const auto& field      = scriptedField.field;
-            const auto& helpers    = scriptedField.helpers;
-            const auto  bits       = std::to_string(field.bitLength);
-            const auto  optionTag  = std::to_string(field.unionOptionIndex);
-            const auto  saturating = field.castMode == CastMode::Saturated ? "true" : "false";
-            const auto  cap        = std::to_string(field.arrayCapacity);
-            const auto  prefixBits = std::to_string(field.arrayLengthPrefixBits);
+            const auto& field       = scriptedField.body.field;
+            const auto& helpers     = scriptedField.body.helpers;
+            const auto  cardinality = scriptedField.cardinality;
+            const auto  bits        = std::to_string(field.bitLength);
+            const auto  optionTag   = std::to_string(field.unionOptionIndex);
+            const auto  saturating  = field.castMode == CastMode::Saturated ? "true" : "false";
+            const auto  cap         = std::to_string(field.arrayCapacity);
+            const auto  prefixBits  = std::to_string(field.arrayLengthPrefixBits);
             emitLine(out, 1, "case " + optionTag + ": {");
             emitLine(out, 2, "const optionValue = (value as Record<string, unknown>)." + field.fieldName + ";");
             emitLine(out, 2, "if (optionValue === undefined) {");
@@ -592,7 +594,7 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
                          codegen_diagnostic_text::unionFieldMissingForTag(field.fieldName, optionTag) + "\");");
             emitLine(out, 2, "}");
             emitTsRuntimeAlignSerialize(out, 2, field.alignmentBits, field.fieldName + "Option");
-            if (field.arrayKind == RuntimeArrayKind::None)
+            if (cardinality == ScriptedFieldCardinality::Scalar)
             {
                 if (field.kind == RuntimeFieldKind::Padding)
                 {
@@ -648,7 +650,7 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
                     emitLine(out, 2, "offsetBits += " + bits + ";");
                 }
             }
-            else if (field.arrayKind == RuntimeArrayKind::Fixed)
+            else if (cardinality == ScriptedFieldCardinality::FixedArray)
             {
                 const auto optionArray = field.fieldName + "Array";
                 emitLine(out, 2, "const " + optionArray + " = optionValue;");
@@ -839,14 +841,15 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
         }
         emitLine(out, 1, "let value: " + typeName + ";");
         emitLine(out, 1, "switch (tag) {");
-        for (const auto& scriptedField : bodyPlan.fields)
+        for (const auto& scriptedField : operationPlan.fields)
         {
-            const auto& field      = scriptedField.field;
-            const auto& helpers    = scriptedField.helpers;
-            const auto  bits       = std::to_string(field.bitLength);
-            const auto  optionTag  = std::to_string(field.unionOptionIndex);
-            const auto  cap        = std::to_string(field.arrayCapacity);
-            const auto  prefixBits = std::to_string(field.arrayLengthPrefixBits);
+            const auto& field       = scriptedField.body.field;
+            const auto& helpers     = scriptedField.body.helpers;
+            const auto  cardinality = scriptedField.cardinality;
+            const auto  bits        = std::to_string(field.bitLength);
+            const auto  optionTag   = std::to_string(field.unionOptionIndex);
+            const auto  cap         = std::to_string(field.arrayCapacity);
+            const auto  prefixBits  = std::to_string(field.arrayLengthPrefixBits);
             const auto  arrayElemType =
                 field.kind == RuntimeFieldKind::Bool
                      ? "boolean"
@@ -854,7 +857,7 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
                                                                   : (field.useBigInt ? "bigint" : "number"));
             emitLine(out, 1, "case " + optionTag + ": {");
             emitTsRuntimeAlignDeserialize(out, 2, field.alignmentBits);
-            if (field.arrayKind == RuntimeArrayKind::None)
+            if (cardinality == ScriptedFieldCardinality::Scalar)
             {
                 if (field.kind == RuntimeFieldKind::Padding)
                 {
@@ -903,7 +906,7 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
             else
             {
                 std::string arrayLenExpr = cap;
-                if (field.arrayKind == RuntimeArrayKind::Variable)
+                if (cardinality == ScriptedFieldCardinality::VariableArray)
                 {
                     const auto rawLen = field.fieldName + "LengthRaw";
                     emitLine(out,
@@ -1013,15 +1016,16 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
         emitLine(out, 2, "throw new Error(\"" + codegen_diagnostic_text::serializationBufferTooSmall() + "\");");
         emitLine(out, 1, "}");
     }
-    for (const auto& scriptedField : bodyPlan.fields)
+    for (const auto& scriptedField : operationPlan.fields)
     {
-        const auto& field      = scriptedField.field;
-        const auto& helpers    = scriptedField.helpers;
-        const auto  bits       = std::to_string(field.bitLength);
-        const auto  saturating = field.castMode == CastMode::Saturated ? "true" : "false";
+        const auto& field       = scriptedField.body.field;
+        const auto& helpers     = scriptedField.body.helpers;
+        const auto  cardinality = scriptedField.cardinality;
+        const auto  bits        = std::to_string(field.bitLength);
+        const auto  saturating  = field.castMode == CastMode::Saturated ? "true" : "false";
         emitTsRuntimeAlignSerialize(out, 1, field.alignmentBits, field.fieldName);
 
-        if (field.arrayKind == RuntimeArrayKind::None)
+        if (cardinality == ScriptedFieldCardinality::Scalar)
         {
             if (field.kind == RuntimeFieldKind::Padding)
             {
@@ -1073,7 +1077,7 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
                 emitLine(out, 1, "offsetBits += " + bits + ";");
             }
         }
-        else if (field.arrayKind == RuntimeArrayKind::Fixed)
+        else if (cardinality == ScriptedFieldCardinality::FixedArray)
         {
             const auto cap      = std::to_string(field.arrayCapacity);
             const auto fieldArr = field.fieldName + "Array";
@@ -1232,13 +1236,14 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
     emitDeserializeHelperBindings();
     emitLine(out, 1, "const value = {} as " + typeName + ";");
     emitLine(out, 1, "let offsetBits = 0;");
-    for (const auto& scriptedField : bodyPlan.fields)
+    for (const auto& scriptedField : operationPlan.fields)
     {
-        const auto& field   = scriptedField.field;
-        const auto& helpers = scriptedField.helpers;
-        const auto  bits    = std::to_string(field.bitLength);
+        const auto& field       = scriptedField.body.field;
+        const auto& helpers     = scriptedField.body.helpers;
+        const auto  cardinality = scriptedField.cardinality;
+        const auto  bits        = std::to_string(field.bitLength);
         emitTsRuntimeAlignDeserialize(out, 1, field.alignmentBits);
-        if (field.arrayKind == RuntimeArrayKind::None)
+        if (cardinality == ScriptedFieldCardinality::Scalar)
         {
             if (field.kind == RuntimeFieldKind::Padding)
             {
@@ -1287,7 +1292,7 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
             continue;
         }
 
-        if (field.arrayKind == RuntimeArrayKind::Fixed)
+        if (cardinality == ScriptedFieldCardinality::FixedArray)
         {
             const auto cap      = std::to_string(field.arrayCapacity);
             const auto fieldArr = field.fieldName + "Array";
@@ -1425,24 +1430,6 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
     emitLine(out, 0, "}");
 }
 
-const LoweredSectionFacts* findLoweredSectionFacts(const LoweredFactsMap&    loweredFacts,
-                                                   const SemanticDefinition& def,
-                                                   llvm::StringRef           sectionKey)
-{
-    const auto defIt =
-        loweredFacts.find(loweredTypeKey(def.info.fullName, def.info.majorVersion, def.info.minorVersion));
-    if (defIt == loweredFacts.end())
-    {
-        return nullptr;
-    }
-    const auto sectionIt = defIt->second.find(sectionKey.str());
-    if (sectionIt == defIt->second.end())
-    {
-        return nullptr;
-    }
-    return &sectionIt->second;
-}
-
 llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                                  const EmitterContext&     ctx,
                                                  const LoweredFactsMap&    loweredFacts)
@@ -1451,7 +1438,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     emitLine(out, 0, "// Generated by llvmdsdl (TypeScript backend).");
 
     const llvm::StringRef      requestSectionKey   = def.isService ? "request" : "";
-    const LoweredSectionFacts* requestSectionFacts = findLoweredSectionFacts(loweredFacts, def, requestSectionKey);
+    const LoweredSectionFacts* requestSectionFacts = lookupLoweredSectionFacts(loweredFacts, def, requestSectionKey);
     auto                       requestRuntimePlan  = buildRuntimeSectionPlan(def.request, requestSectionFacts);
     if (!requestRuntimePlan)
     {
@@ -1464,7 +1451,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     const RuntimeSectionPlan*         responseRuntimePlan = nullptr;
     if (def.response)
     {
-        const auto* const responseSectionFacts = findLoweredSectionFacts(loweredFacts, def, "response");
+        const auto* const responseSectionFacts = lookupLoweredSectionFacts(loweredFacts, def, "response");
         auto              responsePlanOrErr    = buildRuntimeSectionPlan(*def.response, responseSectionFacts);
         if (!responsePlanOrErr)
         {
@@ -1590,7 +1577,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                *responseRuntimePlan,
                                ctx,
                                *def.response,
-                               findLoweredSectionFacts(loweredFacts, def, "response"));
+                               lookupLoweredSectionFacts(loweredFacts, def, "response"));
         emitLine(out, 0, "");
     }
 

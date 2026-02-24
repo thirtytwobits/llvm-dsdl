@@ -601,7 +601,11 @@ When changing wire semantics for TypeScript/Python/C++/Rust/Go:
   - `ConstantLiteralRender*` (shared literal syntax rendering)
   - `StorageTypeTokens*` (shared scalar storage token mapping)
   - `DefinitionIndex*` + `DefinitionPathProjection*` (shared type lookup + path/name projection)
+  - `DefinitionDependencies*` (shared native-backend composite dependency collection)
   - `CompositeImportGraph*` (shared scripted-backend import dependency projection)
+  - `CHeaderRender*` (shared C metadata macro/service wrapper rendering)
+  - `HelperBindingNaming*` (shared lowered helper-binding identifier projection)
+  - `LoweredFactsLookup*` (shared lowered section-facts lookup)
 - Do not add backend-local fallback arithmetic for scalar cast/sign-extension,
   array prefix/length validation, union tag checks, delimiter checks, or section
   capacity checks.

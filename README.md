@@ -125,7 +125,12 @@ generated from lowered MLIR contracts through shared codegen layers:
 - `StorageTypeTokens*` for shared scalar storage token mapping (C/C++/Rust/Go)
 - `DefinitionIndex*` and `DefinitionPathProjection*` for shared type lookup and
   deterministic type/file projection
+- `DefinitionDependencies*` for shared native-backend composite dependency
+  collection
 - `CompositeImportGraph*` for shared scripted-backend composite import collection/projection
+- `CHeaderRender*` for shared C metadata macro and service wrapper rendering
+- `HelperBindingNaming*` for shared lowered helper-binding identifier projection
+- `LoweredFactsLookup*` for shared lowered section-facts lookup
 
 Low-level runtime primitives remain hand-written by design in generated/runtime
 helper modules (`dsdl_runtime.h/.hpp/.rs/.go/.ts`, `_dsdl_runtime.py`, and the

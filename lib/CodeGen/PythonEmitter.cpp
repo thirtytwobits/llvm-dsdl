@@ -41,9 +41,11 @@
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/DefinitionPathProjection.h"
 #include "llvmdsdl/CodeGen/NamingPolicy.h"
+#include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/HelperBindingRender.h"
+#include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
 #include "llvmdsdl/CodeGen/RuntimeHelperBindings.h"
-#include "llvmdsdl/CodeGen/ScriptedBodyPlan.h"
+#include "llvmdsdl/CodeGen/ScriptedOperationPlan.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
 #include "llvmdsdl/CodeGen/RuntimeLoweredPlan.h"
 #include "llvm/Support/Error.h"
@@ -420,7 +422,7 @@ std::string compositeTypeName(const RuntimeFieldPlan& field, const EmitterContex
 
 std::string helperBindingNamePy(const std::string& helperSymbol)
 {
-    return "mlir_" + codegenSanitizeIdentifier(CodegenNamingLanguage::Python, helperSymbol);
+    return renderHelperBindingIdentifier(CodegenNamingLanguage::Python, helperSymbol);
 }
 
 void emitPyRuntimeSerializeCompositeValue(std::ostringstream&     out,
@@ -564,76 +566,85 @@ void emitPyRuntimeDeserializePadding(std::ostringstream& out, int indent, const 
     emitLine(out, indent, "offset_bits += " + std::to_string(field.bitLength));
 }
 
-void emitPyRuntimeSerializeFieldValue(std::ostringstream&            out,
-                                      int                            indent,
-                                      const RuntimeFieldPlan&        field,
-                                      const std::string&             valueExpr,
-                                      const EmitterContext&          ctx,
-                                      const RuntimeFieldHelperNames& helpers)
+void emitPyRuntimeSerializeScalarValue(std::ostringstream&               out,
+                                       int                               indent,
+                                       const ScriptedFieldOperationPlan& operation,
+                                       const std::string&                valueExpr,
+                                       const EmitterContext&             ctx)
 {
-    const auto bits       = std::to_string(field.bitLength);
-    const auto saturating = field.castMode == CastMode::Saturated ? "True" : "False";
+    const auto& field      = operation.body.field;
+    const auto& helpers    = operation.body.helpers;
+    const auto  bits       = std::to_string(field.bitLength);
+    const auto  saturating = field.castMode == CastMode::Saturated ? "True" : "False";
 
-    emitPyRuntimeAlignSerialize(out, indent, field.alignmentBits, field.fieldName);
-    if (field.arrayKind == RuntimeArrayKind::None)
+    switch (operation.valueKind)
     {
-        if (field.kind == RuntimeFieldKind::Padding)
+    case ScriptedFieldValueKind::Padding:
+        emitPyRuntimeSerializePadding(out, indent, field);
+        return;
+    case ScriptedFieldValueKind::Bool:
+        emitLine(out, indent, "dsdl_runtime.set_bit(out, offset_bits, bool(" + valueExpr + "))");
+        emitLine(out, indent, "offset_bits += " + bits);
+        return;
+    case ScriptedFieldValueKind::Composite:
+        emitPyRuntimeSerializeCompositeValue(out, indent, field, valueExpr, ctx);
+        return;
+    case ScriptedFieldValueKind::Unsigned: {
+        std::string scalarExpr = "int(" + valueExpr + ")";
+        if (!helpers.serScalar.empty())
         {
-            emitPyRuntimeSerializePadding(out, indent, field);
+            scalarExpr = "int(" + helpers.serScalar + "(" + scalarExpr + "))";
         }
-        else if (field.kind == RuntimeFieldKind::Bool)
-        {
-            emitLine(out, indent, "dsdl_runtime.set_bit(out, offset_bits, bool(" + valueExpr + "))");
-            emitLine(out, indent, "offset_bits += " + bits);
-        }
-        else if (field.kind == RuntimeFieldKind::Composite)
-        {
-            emitPyRuntimeSerializeCompositeValue(out, indent, field, valueExpr, ctx);
-        }
-        else if (field.kind == RuntimeFieldKind::Unsigned)
-        {
-            std::string scalarExpr = "int(" + valueExpr + ")";
-            if (!helpers.serScalar.empty())
-            {
-                scalarExpr = "int(" + helpers.serScalar + "(" + scalarExpr + "))";
-            }
-            emitLine(out,
-                     indent,
-                     "dsdl_runtime.write_unsigned(out, offset_bits, " + bits + ", " + scalarExpr + ", " + saturating +
-                         ")");
-            emitLine(out, indent, "offset_bits += " + bits);
-        }
-        else if (field.kind == RuntimeFieldKind::Float)
-        {
-            std::string scalarExpr = "float(" + valueExpr + ")";
-            if (!helpers.serScalar.empty())
-            {
-                scalarExpr = "float(" + helpers.serScalar + "(" + scalarExpr + "))";
-            }
-            emitLine(out, indent, "dsdl_runtime.write_float(out, offset_bits, " + bits + ", " + scalarExpr + ")");
-            emitLine(out, indent, "offset_bits += " + bits);
-        }
-        else
-        {
-            std::string scalarExpr = "int(" + valueExpr + ")";
-            if (!helpers.serScalar.empty())
-            {
-                scalarExpr = "int(" + helpers.serScalar + "(" + scalarExpr + "))";
-            }
-            emitLine(out,
-                     indent,
-                     "dsdl_runtime.write_signed(out, offset_bits, " + bits + ", " + scalarExpr + ", " + saturating +
-                         ")");
-            emitLine(out, indent, "offset_bits += " + bits);
-        }
+        emitLine(out,
+                 indent,
+                 "dsdl_runtime.write_unsigned(out, offset_bits, " + bits + ", " + scalarExpr + ", " + saturating + ")");
+        emitLine(out, indent, "offset_bits += " + bits);
         return;
     }
+    case ScriptedFieldValueKind::Float: {
+        std::string scalarExpr = "float(" + valueExpr + ")";
+        if (!helpers.serScalar.empty())
+        {
+            scalarExpr = "float(" + helpers.serScalar + "(" + scalarExpr + "))";
+        }
+        emitLine(out, indent, "dsdl_runtime.write_float(out, offset_bits, " + bits + ", " + scalarExpr + ")");
+        emitLine(out, indent, "offset_bits += " + bits);
+        return;
+    }
+    case ScriptedFieldValueKind::Signed: {
+        std::string scalarExpr = "int(" + valueExpr + ")";
+        if (!helpers.serScalar.empty())
+        {
+            scalarExpr = "int(" + helpers.serScalar + "(" + scalarExpr + "))";
+        }
+        emitLine(out,
+                 indent,
+                 "dsdl_runtime.write_signed(out, offset_bits, " + bits + ", " + scalarExpr + ", " + saturating + ")");
+        emitLine(out, indent, "offset_bits += " + bits);
+        return;
+    }
+    }
+}
 
-    if (field.arrayKind == RuntimeArrayKind::Fixed)
+void emitPyRuntimeSerializeFieldValue(std::ostringstream&               out,
+                                      int                               indent,
+                                      const ScriptedFieldOperationPlan& operation,
+                                      const std::string&                valueExpr,
+                                      const EmitterContext&             ctx)
+{
+    const auto& field   = operation.body.field;
+    const auto& helpers = operation.body.helpers;
+    const auto  cap     = std::to_string(field.arrayCapacity);
+
+    emitPyRuntimeAlignSerialize(out, indent, field.alignmentBits, field.fieldName);
+    switch (operation.cardinality)
     {
+    case ScriptedFieldCardinality::Scalar:
+        emitPyRuntimeSerializeScalarValue(out, indent, operation, valueExpr, ctx);
+        return;
+    case ScriptedFieldCardinality::FixedArray: {
         const auto arrVar  = field.fieldName + "_arr";
         const auto itemVar = field.fieldName + "_item";
-        const auto cap     = std::to_string(field.arrayCapacity);
         emitLine(out, indent, arrVar + " = " + valueExpr);
         emitLine(out, indent, "if len(" + arrVar + ") != " + cap + ":");
         emitLine(out,
@@ -641,57 +652,15 @@ void emitPyRuntimeSerializeFieldValue(std::ostringstream&            out,
                  "raise ValueError(\"" +
                      codegen_diagnostic_text::fieldExpectsExactlyElements(field.fieldName, cap, false) + "\")");
         emitLine(out, indent, "for " + itemVar + " in " + arrVar + ":");
-        if (field.kind == RuntimeFieldKind::Bool)
-        {
-            emitLine(out, indent + 1, "dsdl_runtime.set_bit(out, offset_bits, bool(" + itemVar + "))");
-            emitLine(out, indent + 1, "offset_bits += " + bits);
-        }
-        else if (field.kind == RuntimeFieldKind::Composite)
-        {
-            emitPyRuntimeSerializeCompositeValue(out, indent + 1, field, itemVar, ctx);
-        }
-        else if (field.kind == RuntimeFieldKind::Unsigned)
-        {
-            std::string scalarExpr = "int(" + itemVar + ")";
-            if (!helpers.serScalar.empty())
-            {
-                scalarExpr = "int(" + helpers.serScalar + "(" + scalarExpr + "))";
-            }
-            emitLine(out,
-                     indent + 1,
-                     "dsdl_runtime.write_unsigned(out, offset_bits, " + bits + ", " + scalarExpr + ", " + saturating +
-                         ")");
-            emitLine(out, indent + 1, "offset_bits += " + bits);
-        }
-        else if (field.kind == RuntimeFieldKind::Float)
-        {
-            std::string scalarExpr = "float(" + itemVar + ")";
-            if (!helpers.serScalar.empty())
-            {
-                scalarExpr = "float(" + helpers.serScalar + "(" + scalarExpr + "))";
-            }
-            emitLine(out, indent + 1, "dsdl_runtime.write_float(out, offset_bits, " + bits + ", " + scalarExpr + ")");
-            emitLine(out, indent + 1, "offset_bits += " + bits);
-        }
-        else
-        {
-            std::string scalarExpr = "int(" + itemVar + ")";
-            if (!helpers.serScalar.empty())
-            {
-                scalarExpr = "int(" + helpers.serScalar + "(" + scalarExpr + "))";
-            }
-            emitLine(out,
-                     indent + 1,
-                     "dsdl_runtime.write_signed(out, offset_bits, " + bits + ", " + scalarExpr + ", " + saturating +
-                         ")");
-            emitLine(out, indent + 1, "offset_bits += " + bits);
-        }
+        emitPyRuntimeSerializeScalarValue(out, indent + 1, operation, itemVar, ctx);
         return;
+    }
+    case ScriptedFieldCardinality::VariableArray:
+        break;
     }
 
     const auto arrVar    = field.fieldName + "_arr";
     const auto itemVar   = field.fieldName + "_item";
-    const auto cap       = std::to_string(field.arrayCapacity);
     const auto prefixBit = std::to_string(field.arrayLengthPrefixBits);
     emitLine(out, indent, arrVar + " = " + valueExpr);
     if (!helpers.arrayValidate.empty())
@@ -716,189 +685,109 @@ void emitPyRuntimeSerializeFieldValue(std::ostringstream&            out,
              "dsdl_runtime.write_unsigned(out, offset_bits, " + prefixBit + ", " + prefixExpr + ", False)");
     emitLine(out, indent, "offset_bits += " + prefixBit);
     emitLine(out, indent, "for " + itemVar + " in " + arrVar + ":");
-    if (field.kind == RuntimeFieldKind::Bool)
+    emitPyRuntimeSerializeScalarValue(out, indent + 1, operation, itemVar, ctx);
+}
+
+void emitPyRuntimeDeserializeScalarValue(std::ostringstream&               out,
+                                         int                               indent,
+                                         const ScriptedFieldOperationPlan& operation,
+                                         const std::string&                targetExpr,
+                                         const EmitterContext&             ctx)
+{
+    const auto& field   = operation.body.field;
+    const auto& helpers = operation.body.helpers;
+    const auto  bits    = std::to_string(field.bitLength);
+
+    switch (operation.valueKind)
     {
-        emitLine(out, indent + 1, "dsdl_runtime.set_bit(out, offset_bits, bool(" + itemVar + "))");
-        emitLine(out, indent + 1, "offset_bits += " + bits);
-    }
-    else if (field.kind == RuntimeFieldKind::Composite)
-    {
-        emitPyRuntimeSerializeCompositeValue(out, indent + 1, field, itemVar, ctx);
-    }
-    else if (field.kind == RuntimeFieldKind::Unsigned)
-    {
-        std::string scalarExpr = "int(" + itemVar + ")";
-        if (!helpers.serScalar.empty())
+    case ScriptedFieldValueKind::Padding:
+        emitPyRuntimeDeserializePadding(out, indent, field);
+        return;
+    case ScriptedFieldValueKind::Bool:
+        emitLine(out, indent, targetExpr + " = dsdl_runtime.get_bit(data, offset_bits)");
+        emitLine(out, indent, "offset_bits += " + bits);
+        return;
+    case ScriptedFieldValueKind::Composite:
+        emitPyRuntimeDeserializeCompositeValue(out, indent, field, targetExpr, ctx, helpers.delimiterValidate);
+        return;
+    case ScriptedFieldValueKind::Unsigned: {
+        const auto rawVar = field.fieldName + "_raw";
+        emitLine(out, indent, rawVar + " = dsdl_runtime.read_unsigned(data, offset_bits, " + bits + ")");
+        if (!helpers.deserScalar.empty())
         {
-            scalarExpr = "int(" + helpers.serScalar + "(" + scalarExpr + "))";
+            emitLine(out, indent, targetExpr + " = " + helpers.deserScalar + "(" + rawVar + ")");
         }
-        emitLine(out,
-                 indent + 1,
-                 "dsdl_runtime.write_unsigned(out, offset_bits, " + bits + ", " + scalarExpr + ", " + saturating + ")");
-        emitLine(out, indent + 1, "offset_bits += " + bits);
-    }
-    else if (field.kind == RuntimeFieldKind::Float)
-    {
-        std::string scalarExpr = "float(" + itemVar + ")";
-        if (!helpers.serScalar.empty())
+        else
         {
-            scalarExpr = "float(" + helpers.serScalar + "(" + scalarExpr + "))";
+            emitLine(out, indent, targetExpr + " = " + rawVar);
         }
-        emitLine(out, indent + 1, "dsdl_runtime.write_float(out, offset_bits, " + bits + ", " + scalarExpr + ")");
-        emitLine(out, indent + 1, "offset_bits += " + bits);
+        emitLine(out, indent, "offset_bits += " + bits);
+        return;
     }
-    else
-    {
-        std::string scalarExpr = "int(" + itemVar + ")";
-        if (!helpers.serScalar.empty())
+    case ScriptedFieldValueKind::Float: {
+        const auto rawVar = field.fieldName + "_raw";
+        emitLine(out, indent, rawVar + " = dsdl_runtime.read_float(data, offset_bits, " + bits + ")");
+        if (!helpers.deserScalar.empty())
         {
-            scalarExpr = "int(" + helpers.serScalar + "(" + scalarExpr + "))";
+            emitLine(out, indent, targetExpr + " = " + helpers.deserScalar + "(" + rawVar + ")");
         }
-        emitLine(out,
-                 indent + 1,
-                 "dsdl_runtime.write_signed(out, offset_bits, " + bits + ", " + scalarExpr + ", " + saturating + ")");
-        emitLine(out, indent + 1, "offset_bits += " + bits);
+        else
+        {
+            emitLine(out, indent, targetExpr + " = " + rawVar);
+        }
+        emitLine(out, indent, "offset_bits += " + bits);
+        return;
+    }
+    case ScriptedFieldValueKind::Signed: {
+        const auto rawVar = field.fieldName + "_raw";
+        emitLine(out, indent, rawVar + " = dsdl_runtime.read_signed(data, offset_bits, " + bits + ")");
+        if (!helpers.deserScalar.empty())
+        {
+            emitLine(out, indent, targetExpr + " = " + helpers.deserScalar + "(" + rawVar + ")");
+        }
+        else
+        {
+            emitLine(out, indent, targetExpr + " = " + rawVar);
+        }
+        emitLine(out, indent, "offset_bits += " + bits);
+        return;
+    }
     }
 }
 
-void emitPyRuntimeDeserializeFieldValue(std::ostringstream&            out,
-                                        int                            indent,
-                                        const RuntimeFieldPlan&        field,
-                                        const std::string&             targetExpr,
-                                        const EmitterContext&          ctx,
-                                        const RuntimeFieldHelperNames& helpers)
+void emitPyRuntimeDeserializeFieldValue(std::ostringstream&               out,
+                                        int                               indent,
+                                        const ScriptedFieldOperationPlan& operation,
+                                        const std::string&                targetExpr,
+                                        const EmitterContext&             ctx)
 {
-    const auto bits = std::to_string(field.bitLength);
+    const auto& field   = operation.body.field;
+    const auto& helpers = operation.body.helpers;
+    const auto  cap     = std::to_string(field.arrayCapacity);
 
     emitPyRuntimeAlignDeserialize(out, indent, field.alignmentBits);
-    if (field.arrayKind == RuntimeArrayKind::None)
+    switch (operation.cardinality)
     {
-        if (field.kind == RuntimeFieldKind::Padding)
-        {
-            emitPyRuntimeDeserializePadding(out, indent, field);
-        }
-        else if (field.kind == RuntimeFieldKind::Bool)
-        {
-            emitLine(out, indent, targetExpr + " = dsdl_runtime.get_bit(data, offset_bits)");
-            emitLine(out, indent, "offset_bits += " + bits);
-        }
-        else if (field.kind == RuntimeFieldKind::Composite)
-        {
-            emitPyRuntimeDeserializeCompositeValue(out, indent, field, targetExpr, ctx, helpers.delimiterValidate);
-        }
-        else if (field.kind == RuntimeFieldKind::Unsigned)
-        {
-            const auto rawVar = field.fieldName + "_raw";
-            emitLine(out, indent, rawVar + " = dsdl_runtime.read_unsigned(data, offset_bits, " + bits + ")");
-            if (!helpers.deserScalar.empty())
-            {
-                emitLine(out, indent, targetExpr + " = " + helpers.deserScalar + "(" + rawVar + ")");
-            }
-            else
-            {
-                emitLine(out, indent, targetExpr + " = " + rawVar);
-            }
-            emitLine(out, indent, "offset_bits += " + bits);
-        }
-        else if (field.kind == RuntimeFieldKind::Float)
-        {
-            const auto rawVar = field.fieldName + "_raw";
-            emitLine(out, indent, rawVar + " = dsdl_runtime.read_float(data, offset_bits, " + bits + ")");
-            if (!helpers.deserScalar.empty())
-            {
-                emitLine(out, indent, targetExpr + " = " + helpers.deserScalar + "(" + rawVar + ")");
-            }
-            else
-            {
-                emitLine(out, indent, targetExpr + " = " + rawVar);
-            }
-            emitLine(out, indent, "offset_bits += " + bits);
-        }
-        else
-        {
-            const auto rawVar = field.fieldName + "_raw";
-            emitLine(out, indent, rawVar + " = dsdl_runtime.read_signed(data, offset_bits, " + bits + ")");
-            if (!helpers.deserScalar.empty())
-            {
-                emitLine(out, indent, targetExpr + " = " + helpers.deserScalar + "(" + rawVar + ")");
-            }
-            else
-            {
-                emitLine(out, indent, targetExpr + " = " + rawVar);
-            }
-            emitLine(out, indent, "offset_bits += " + bits);
-        }
+    case ScriptedFieldCardinality::Scalar:
+        emitPyRuntimeDeserializeScalarValue(out, indent, operation, targetExpr, ctx);
         return;
-    }
-
-    if (field.arrayKind == RuntimeArrayKind::Fixed)
-    {
+    case ScriptedFieldCardinality::FixedArray: {
         const auto arrVar  = field.fieldName + "_arr";
         const auto itemVar = field.fieldName + "_item";
-        const auto cap     = std::to_string(field.arrayCapacity);
         emitLine(out, indent, arrVar + " = []");
         emitLine(out, indent, "for _ in range(" + cap + "):");
-        if (field.kind == RuntimeFieldKind::Bool)
-        {
-            emitLine(out, indent + 1, itemVar + " = dsdl_runtime.get_bit(data, offset_bits)");
-            emitLine(out, indent + 1, "offset_bits += " + bits);
-        }
-        else if (field.kind == RuntimeFieldKind::Composite)
-        {
-            emitLine(out, indent + 1, itemVar + " = None");
-            emitPyRuntimeDeserializeCompositeValue(out, indent + 1, field, itemVar, ctx, helpers.delimiterValidate);
-        }
-        else if (field.kind == RuntimeFieldKind::Unsigned)
-        {
-            const auto rawVar = field.fieldName + "_item_raw";
-            emitLine(out, indent + 1, rawVar + " = dsdl_runtime.read_unsigned(data, offset_bits, " + bits + ")");
-            if (!helpers.deserScalar.empty())
-            {
-                emitLine(out, indent + 1, itemVar + " = " + helpers.deserScalar + "(" + rawVar + ")");
-            }
-            else
-            {
-                emitLine(out, indent + 1, itemVar + " = " + rawVar);
-            }
-            emitLine(out, indent + 1, "offset_bits += " + bits);
-        }
-        else if (field.kind == RuntimeFieldKind::Float)
-        {
-            const auto rawVar = field.fieldName + "_item_raw";
-            emitLine(out, indent + 1, rawVar + " = dsdl_runtime.read_float(data, offset_bits, " + bits + ")");
-            if (!helpers.deserScalar.empty())
-            {
-                emitLine(out, indent + 1, itemVar + " = " + helpers.deserScalar + "(" + rawVar + ")");
-            }
-            else
-            {
-                emitLine(out, indent + 1, itemVar + " = " + rawVar);
-            }
-            emitLine(out, indent + 1, "offset_bits += " + bits);
-        }
-        else
-        {
-            const auto rawVar = field.fieldName + "_item_raw";
-            emitLine(out, indent + 1, rawVar + " = dsdl_runtime.read_signed(data, offset_bits, " + bits + ")");
-            if (!helpers.deserScalar.empty())
-            {
-                emitLine(out, indent + 1, itemVar + " = " + helpers.deserScalar + "(" + rawVar + ")");
-            }
-            else
-            {
-                emitLine(out, indent + 1, itemVar + " = " + rawVar);
-            }
-            emitLine(out, indent + 1, "offset_bits += " + bits);
-        }
+        emitPyRuntimeDeserializeScalarValue(out, indent + 1, operation, itemVar, ctx);
         emitLine(out, indent + 1, arrVar + ".append(" + itemVar + ")");
         emitLine(out, indent, targetExpr + " = " + arrVar);
         return;
+    }
+    case ScriptedFieldCardinality::VariableArray:
+        break;
     }
 
     const auto arrVar     = field.fieldName + "_arr";
     const auto lenVar     = field.fieldName + "_len";
     const auto itemVar    = field.fieldName + "_item";
-    const auto cap        = std::to_string(field.arrayCapacity);
     const auto prefixBits = std::to_string(field.arrayLengthPrefixBits);
     const auto rawLenVar  = field.fieldName + "_len_raw";
     emitLine(out, indent, rawLenVar + " = int(dsdl_runtime.read_unsigned(data, offset_bits, " + prefixBits + "))");
@@ -925,58 +814,7 @@ void emitPyRuntimeDeserializeFieldValue(std::ostringstream&            out,
                  codegen_diagnostic_text::decodedLengthExceedsMaxLength(field.fieldName, cap, false) + "\")");
     emitLine(out, indent, arrVar + " = []");
     emitLine(out, indent, "for _ in range(" + lenVar + "):");
-    if (field.kind == RuntimeFieldKind::Bool)
-    {
-        emitLine(out, indent + 1, itemVar + " = dsdl_runtime.get_bit(data, offset_bits)");
-        emitLine(out, indent + 1, "offset_bits += " + bits);
-    }
-    else if (field.kind == RuntimeFieldKind::Composite)
-    {
-        emitLine(out, indent + 1, itemVar + " = None");
-        emitPyRuntimeDeserializeCompositeValue(out, indent + 1, field, itemVar, ctx, helpers.delimiterValidate);
-    }
-    else if (field.kind == RuntimeFieldKind::Unsigned)
-    {
-        const auto rawVar = field.fieldName + "_item_raw";
-        emitLine(out, indent + 1, rawVar + " = dsdl_runtime.read_unsigned(data, offset_bits, " + bits + ")");
-        if (!helpers.deserScalar.empty())
-        {
-            emitLine(out, indent + 1, itemVar + " = " + helpers.deserScalar + "(" + rawVar + ")");
-        }
-        else
-        {
-            emitLine(out, indent + 1, itemVar + " = " + rawVar);
-        }
-        emitLine(out, indent + 1, "offset_bits += " + bits);
-    }
-    else if (field.kind == RuntimeFieldKind::Float)
-    {
-        const auto rawVar = field.fieldName + "_item_raw";
-        emitLine(out, indent + 1, rawVar + " = dsdl_runtime.read_float(data, offset_bits, " + bits + ")");
-        if (!helpers.deserScalar.empty())
-        {
-            emitLine(out, indent + 1, itemVar + " = " + helpers.deserScalar + "(" + rawVar + ")");
-        }
-        else
-        {
-            emitLine(out, indent + 1, itemVar + " = " + rawVar);
-        }
-        emitLine(out, indent + 1, "offset_bits += " + bits);
-    }
-    else
-    {
-        const auto rawVar = field.fieldName + "_item_raw";
-        emitLine(out, indent + 1, rawVar + " = dsdl_runtime.read_signed(data, offset_bits, " + bits + ")");
-        if (!helpers.deserScalar.empty())
-        {
-            emitLine(out, indent + 1, itemVar + " = " + helpers.deserScalar + "(" + rawVar + ")");
-        }
-        else
-        {
-            emitLine(out, indent + 1, itemVar + " = " + rawVar);
-        }
-        emitLine(out, indent + 1, "offset_bits += " + bits);
-    }
+    emitPyRuntimeDeserializeScalarValue(out, indent + 1, operation, itemVar, ctx);
     emitLine(out, indent + 1, arrVar + ".append(" + itemVar + ")");
     emitLine(out, indent, targetExpr + " = " + arrVar);
 }
@@ -999,17 +837,16 @@ void emitPyRuntimeFunctions(std::ostringstream&        out,
     const RuntimeHelperNameResolver helperNameResolver = [](const std::string& symbol) {
         return helperBindingNamePy(symbol);
     };
-    auto bodyPlan = buildScriptedSectionBodyPlan(section, plan, sectionFacts, helperNameResolver);
-    for (auto& scriptedField : bodyPlan.fields)
+    auto operationPlan = buildScriptedSectionOperationPlan(section, plan, sectionFacts, helperNameResolver);
+    for (auto& scriptedField : operationPlan.fields)
     {
-        const auto& semanticName = scriptedField.field.semanticFieldName.empty()
-                                       ? scriptedField.field.fieldName
-                                       : scriptedField.field.semanticFieldName;
-        scriptedField.field.fieldName =
+        auto&       field        = scriptedField.body.field;
+        const auto& semanticName = field.semanticFieldName.empty() ? field.fieldName : field.semanticFieldName;
+        field.fieldName =
             codegenSanitizeIdentifier(CodegenNamingLanguage::Python,
                                       codegenToSnakeCaseIdentifier(CodegenNamingLanguage::Python, semanticName));
     }
-    const auto& sectionHelperNames = bodyPlan.sectionHelpers;
+    const auto& sectionHelperNames = operationPlan.sectionHelpers;
 
     const auto emitSerializeHelperBindings = [&]() {
         const auto lines = renderSectionHelperBindings(serializeHelpers,
@@ -1043,7 +880,7 @@ void emitPyRuntimeFunctions(std::ostringstream&        out,
         }
     };
 
-    if (plan.isUnion)
+    if (operationPlan.isUnion)
     {
         emitLine(out, 0, "def " + serializeFn + "(value: " + typeName + ") -> bytes:");
         emitLine(out, 1, "out = bytearray(" + std::to_string(maxByteLength) + ")");
@@ -1066,15 +903,14 @@ void emitPyRuntimeFunctions(std::ostringstream&        out,
         }
         emitLine(out,
                  1,
-                 "dsdl_runtime.write_unsigned(out, offset_bits, " + std::to_string(plan.unionTagBits) +
+                 "dsdl_runtime.write_unsigned(out, offset_bits, " + std::to_string(operationPlan.unionTagBits) +
                      ", tag, False)");
-        emitLine(out, 1, "offset_bits += " + std::to_string(plan.unionTagBits));
+        emitLine(out, 1, "offset_bits += " + std::to_string(operationPlan.unionTagBits));
 
         bool first = true;
-        for (const auto& scriptedField : bodyPlan.fields)
+        for (const auto& scriptedField : operationPlan.fields)
         {
-            const auto& field     = scriptedField.field;
-            const auto& helpers   = scriptedField.helpers;
+            const auto& field     = scriptedField.body.field;
             const auto  optionTag = std::to_string(field.unionOptionIndex);
             emitLine(out, 1, std::string(first ? "if " : "elif ") + "tag == " + optionTag + ":");
             const auto optionValueExpr = "value." + field.fieldName;
@@ -1083,7 +919,7 @@ void emitPyRuntimeFunctions(std::ostringstream&        out,
                      3,
                      "raise ValueError(\"" +
                          codegen_diagnostic_text::unionFieldMissingForTag(field.fieldName, optionTag) + "\")");
-            emitPyRuntimeSerializeFieldValue(out, 2, field, optionValueExpr, ctx, helpers);
+            emitPyRuntimeSerializeFieldValue(out, 2, scriptedField, optionValueExpr, ctx);
             first = false;
         }
         emitLine(out, 1, "else:");
@@ -1104,8 +940,9 @@ void emitPyRuntimeFunctions(std::ostringstream&        out,
         emitLine(out, 1, "offset_bits = 0");
         emitLine(out,
                  1,
-                 "tag = int(dsdl_runtime.read_unsigned(data, offset_bits, " + std::to_string(plan.unionTagBits) + "))");
-        emitLine(out, 1, "offset_bits += " + std::to_string(plan.unionTagBits));
+                 "tag = int(dsdl_runtime.read_unsigned(data, offset_bits, " +
+                     std::to_string(operationPlan.unionTagBits) + "))");
+        emitLine(out, 1, "offset_bits += " + std::to_string(operationPlan.unionTagBits));
         if (!sectionHelperNames.deserUnionTagMask.empty())
         {
             emitLine(out, 1, "tag = int(" + sectionHelperNames.deserUnionTagMask + "(tag))");
@@ -1120,13 +957,12 @@ void emitPyRuntimeFunctions(std::ostringstream&        out,
         emitLine(out, 1, "value = " + typeName + "(_tag=tag)");
 
         first = true;
-        for (const auto& scriptedField : bodyPlan.fields)
+        for (const auto& scriptedField : operationPlan.fields)
         {
-            const auto& field     = scriptedField.field;
-            const auto& helpers   = scriptedField.helpers;
+            const auto& field     = scriptedField.body.field;
             const auto  optionTag = std::to_string(field.unionOptionIndex);
             emitLine(out, 1, std::string(first ? "if " : "elif ") + "tag == " + optionTag + ":");
-            emitPyRuntimeDeserializeFieldValue(out, 2, field, "value." + field.fieldName, ctx, helpers);
+            emitPyRuntimeDeserializeFieldValue(out, 2, scriptedField, "value." + field.fieldName, ctx);
             first = false;
         }
         emitLine(out, 1, "else:");
@@ -1146,11 +982,10 @@ void emitPyRuntimeFunctions(std::ostringstream&        out,
         emitLine(out, 1, "if not " + sectionHelperNames.capacityCheck + "(len(out) * 8):");
         emitLine(out, 2, "raise ValueError(\"" + codegen_diagnostic_text::serializationBufferTooSmall() + "\")");
     }
-    for (const auto& scriptedField : bodyPlan.fields)
+    for (const auto& scriptedField : operationPlan.fields)
     {
-        const auto& field   = scriptedField.field;
-        const auto& helpers = scriptedField.helpers;
-        emitPyRuntimeSerializeFieldValue(out, 1, field, "value." + field.fieldName, ctx, helpers);
+        const auto& field = scriptedField.body.field;
+        emitPyRuntimeSerializeFieldValue(out, 1, scriptedField, "value." + field.fieldName, ctx);
     }
     emitLine(out, 1, "used_bytes = dsdl_runtime.byte_length_for_bits(offset_bits)");
     emitLine(out, 1, "return bytes(out[:used_bytes])");
@@ -1163,32 +998,13 @@ void emitPyRuntimeFunctions(std::ostringstream&        out,
     emitDeserializeHelperBindings();
     emitLine(out, 1, "value = " + typeName + "()");
     emitLine(out, 1, "offset_bits = 0");
-    for (const auto& scriptedField : bodyPlan.fields)
+    for (const auto& scriptedField : operationPlan.fields)
     {
-        const auto& field   = scriptedField.field;
-        const auto& helpers = scriptedField.helpers;
-        emitPyRuntimeDeserializeFieldValue(out, 1, field, "value." + field.fieldName, ctx, helpers);
+        const auto& field = scriptedField.body.field;
+        emitPyRuntimeDeserializeFieldValue(out, 1, scriptedField, "value." + field.fieldName, ctx);
     }
     emitLine(out, 1, "consumed = min(len(data), dsdl_runtime.byte_length_for_bits(offset_bits))");
     emitLine(out, 1, "return value, consumed");
-}
-
-const LoweredSectionFacts* findLoweredSectionFacts(const LoweredFactsMap&    loweredFacts,
-                                                   const SemanticDefinition& def,
-                                                   llvm::StringRef           sectionKey)
-{
-    const auto defIt =
-        loweredFacts.find(loweredTypeKey(def.info.fullName, def.info.majorVersion, def.info.minorVersion));
-    if (defIt == loweredFacts.end())
-    {
-        return nullptr;
-    }
-    const auto sectionIt = defIt->second.find(sectionKey.str());
-    if (sectionIt == defIt->second.end())
-    {
-        return nullptr;
-    }
-    return &sectionIt->second;
 }
 
 llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
@@ -1203,7 +1019,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     emitLine(out, 0, "");
 
     const llvm::StringRef      requestSectionKey   = def.isService ? "request" : "";
-    const LoweredSectionFacts* requestSectionFacts = findLoweredSectionFacts(loweredFacts, def, requestSectionKey);
+    const LoweredSectionFacts* requestSectionFacts = lookupLoweredSectionFacts(loweredFacts, def, requestSectionKey);
     auto                       requestRuntimePlan  = buildRuntimeSectionPlan(def.request, requestSectionFacts);
     if (!requestRuntimePlan)
     {
@@ -1217,7 +1033,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     const RuntimeSectionPlan*         responseRuntimePlan = nullptr;
     if (def.response)
     {
-        const auto* const responseSectionFacts = findLoweredSectionFacts(loweredFacts, def, "response");
+        const auto* const responseSectionFacts = lookupLoweredSectionFacts(loweredFacts, def, "response");
         auto              responsePlanOrErr    = buildRuntimeSectionPlan(*def.response, responseSectionFacts);
         if (!responsePlanOrErr)
         {
@@ -1304,7 +1120,7 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
                                *responseRuntimePlan,
                                ctx,
                                *def.response,
-                               findLoweredSectionFacts(loweredFacts, def, "response"));
+                               lookupLoweredSectionFacts(loweredFacts, def, "response"));
         emitLine(out, 0, "");
     }
 

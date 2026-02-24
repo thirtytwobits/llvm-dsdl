@@ -86,11 +86,12 @@ def _detect_traits(kind: str, text: str) -> Dict[str, bool]:
     if kind == "native":
         traits["collect_lowered_facts"] = _has_any(text, [r"collectLoweredFactsFromMlir\("])
         traits["native_traversal"] = _has_any(text, [r"forEachNativeEmitterRenderStep\("])
+        traits["native_function_skeleton"] = _has_any(text, [r"emitNativeFunctionSkeleton\("])
         traits["render_ir_helper_usage"] = _has_any(text, [r"renderIR\.helperBindings"])
         traits["helper_binding_render"] = _has_any(text, [r"renderSectionHelperBindings\("])
         traits["union_helper_usage"] = _has_any(text, [r"unionTagValidate"])
         traits["capacity_helper_usage"] = _has_any(text, [r"capacityCheck"])
-        traits["shared_pipeline"] = _has_all(
+        traits["shared_pipeline"] = traits["native_function_skeleton"] or _has_all(
             text,
             [
                 r"collectLoweredFactsFromMlir\(",
@@ -106,7 +107,9 @@ def _detect_traits(kind: str, text: str) -> Dict[str, bool]:
     if kind == "scripted":
         traits["collect_lowered_facts"] = _has_any(text, [r"collectLoweredFactsFromMlir\("])
         traits["runtime_plan"] = _has_any(text, [r"buildRuntimeSectionPlan\("])
-        traits["scripted_body_plan"] = _has_any(text, [r"buildScriptedSectionBodyPlan\("])
+        traits["scripted_body_plan"] = _has_any(
+            text, [r"buildScriptedSectionBodyPlan\(", r"buildScriptedSectionOperationPlan\("]
+        )
         traits["helper_plan_builder"] = _has_any(text, [r"buildSectionHelperBindingPlan\("])
         traits["helper_binding_render"] = _has_any(text, [r"renderSectionHelperBindings\("])
         traits["union_helper_usage"] = _has_any(text, [r"sectionHelperNames\.unionTagValidate"])
@@ -123,11 +126,10 @@ def _detect_traits(kind: str, text: str) -> Dict[str, bool]:
             [
                 r"collectLoweredFactsFromMlir\(",
                 r"buildRuntimeSectionPlan\(",
-                r"buildScriptedSectionBodyPlan\(",
                 r"buildSectionHelperBindingPlan\(",
                 r"renderSectionHelperBindings\(",
             ],
-        )
+        ) and traits["scripted_body_plan"]
         return traits
 
     raise ValueError(f"unknown backend kind: {kind}")

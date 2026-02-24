@@ -2329,6 +2329,22 @@ if(GO_EXECUTABLE)
 endif()
 
 add_test(
+  NAME llvmdsdl-uavcan-c-determinism
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-c-determinism-out
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanCDeterminism.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-uavcan-c-determinism
+  PROPERTIES
+    LABELS "integration;uavcan;c;slow;determinism"
+)
+
+add_test(
   NAME llvmdsdl-uavcan-cpp-generation
   COMMAND
     ${CMAKE_COMMAND}
@@ -2343,6 +2359,22 @@ set_tests_properties(
   llvmdsdl-uavcan-cpp-generation
   PROPERTIES
     LABELS "integration;uavcan;cpp;slow"
+)
+
+add_test(
+  NAME llvmdsdl-uavcan-cpp-determinism
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-cpp-determinism-out
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunUavcanCppDeterminism.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-uavcan-cpp-determinism
+  PROPERTIES
+    LABELS "integration;uavcan;cpp;slow;determinism"
 )
 
 add_test(

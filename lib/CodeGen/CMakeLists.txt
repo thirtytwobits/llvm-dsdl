@@ -9,8 +9,10 @@
 
 add_library(llvmdsdlCodeGen
   ArrayWirePlan.cpp
+  CHeaderRender.cpp
   CompositeImportGraph.cpp
   ConstantLiteralRender.cpp
+  DefinitionDependencies.cpp
   DefinitionIndex.cpp
   DefinitionPathProjection.cpp
   EmitCommon.cpp
@@ -18,17 +20,21 @@ add_library(llvmdsdlCodeGen
   CppEmitter.cpp
   GoEmitter.cpp
   CodegenDiagnosticText.cpp
+  HelperBindingNaming.cpp
   HelperBindingRender.cpp
   HelperSymbolResolver.cpp
   LoweredBodyPlan.cpp
+  LoweredFactsLookup.cpp
   LoweredRenderIR.cpp
   NativeHelperContract.cpp
   NativeEmitterTraversal.cpp
+  NativeFunctionSkeleton.cpp
   NamingPolicy.cpp
   MlirLoweredFacts.cpp
   RuntimeHelperBindings.cpp
   RuntimeLoweredPlan.cpp
   ScriptedBodyPlan.cpp
+  ScriptedOperationPlan.cpp
   StorageTypeTokens.cpp
   PythonEmitter.cpp
   RustEmitter.cpp

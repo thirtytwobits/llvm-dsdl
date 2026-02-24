@@ -32,7 +32,6 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
-#include <set>
 #include <sstream>
 #include <unordered_map>
 #include <vector>
@@ -43,7 +42,9 @@
 #include <variant>
 
 #include "llvmdsdl/CodeGen/TypeStorage.h"
+#include "llvmdsdl/CodeGen/CHeaderRender.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
+#include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
@@ -65,11 +66,6 @@ namespace llvmdsdl
 {
 namespace
 {
-
-std::string typeKey(const std::string& name, std::uint32_t major, std::uint32_t minor)
-{
-    return name + ":" + std::to_string(major) + ":" + std::to_string(minor);
-}
 
 std::string sanitizeMacroToken(std::string token)
 {
@@ -295,18 +291,6 @@ std::string cTypeFromFieldType(const SemanticFieldType& type, const EmitterConte
     return "uint8_t";
 }
 
-void collectSectionDependencies(const SemanticSection& section, std::set<std::string>& out)
-{
-    for (const auto& field : section.fields)
-    {
-        if (field.resolvedType.compositeType)
-        {
-            const auto& ref = *field.resolvedType.compositeType;
-            out.insert(typeKey(ref.fullName, ref.majorVersion, ref.minorVersion));
-        }
-    }
-}
-
 void emitArrayMacros(std::ostringstream& out, const std::string& typeName, const SemanticSection& section)
 {
     for (const auto& field : section.fields)
@@ -439,18 +423,17 @@ void emitSectionMetadata(std::ostringstream&    out,
                          std::uint32_t          minorVersion,
                          const SemanticSection& section)
 {
-    emitLine(out, 0, "#define " + typeName + "_FULL_NAME_ \"" + fullName + "\"");
-    emitLine(out,
-             0,
-             "#define " + typeName + "_FULL_NAME_AND_VERSION_ \"" + fullName + "." + std::to_string(majorVersion) +
-                 "." + std::to_string(minorVersion) + "\"");
-    emitLine(out,
-             0,
-             "#define " + typeName + "_EXTENT_BYTES_ " + std::to_string(section.extentBits.value_or(0) / 8) + "UL");
-    emitLine(out,
-             0,
-             "#define " + typeName + "_SERIALIZATION_BUFFER_SIZE_BYTES_ " +
-                 std::to_string((section.serializationBufferSizeBits + 7) / 8) + "UL");
+    CHeaderTypeMetadata metadata;
+    metadata.typeName                     = typeName;
+    metadata.fullName                     = fullName;
+    metadata.majorVersion                 = majorVersion;
+    metadata.minorVersion                 = minorVersion;
+    metadata.extentBytes                  = static_cast<std::uint64_t>(section.extentBits.value_or(0) / 8);
+    metadata.serializationBufferSizeBytes = static_cast<std::uint64_t>((section.serializationBufferSizeBits + 7) / 8);
+    for (const auto& line : renderCTypeMetadataMacros(metadata))
+    {
+        emitLine(out, 0, line);
+    }
     out << "\n";
 }
 
@@ -527,13 +510,6 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     const auto         guard        = headerGuard(def.info);
     const auto         baseTypeName = ctx.cTypeName(def);
 
-    std::set<std::string> dependencies;
-    collectSectionDependencies(def.request, dependencies);
-    if (def.response)
-    {
-        collectSectionDependencies(*def.response, dependencies);
-    }
-
     out << "#ifndef " << guard << "\n";
     out << "#define " << guard << "\n\n";
     out << "#include <stddef.h>\n";
@@ -541,19 +517,9 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     out << "#include <stdbool.h>\n";
     out << "#include \"dsdl_runtime.h\"\n";
 
-    for (const auto& depKey : dependencies)
+    for (const auto& depRef : collectDefinitionCompositeDependencies(def))
     {
-        auto split0 = depKey.find(':');
-        auto split1 = depKey.find(':', split0 + 1);
-        if (split0 == std::string::npos || split1 == std::string::npos)
-        {
-            continue;
-        }
-        SemanticTypeRef ref;
-        ref.fullName     = depKey.substr(0, split0);
-        ref.majorVersion = static_cast<std::uint32_t>(std::stoul(depKey.substr(split0 + 1, split1 - split0 - 1)));
-        ref.minorVersion = static_cast<std::uint32_t>(std::stoul(depKey.substr(split1 + 1)));
-        if (const auto* dep = ctx.find(ref))
+        if (const auto* dep = ctx.find(depRef))
         {
             out << "#include \"" << ctx.relativeHeaderPath(*dep) << "\"\n";
         }
@@ -565,11 +531,13 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
         const auto requestType  = baseTypeName + "__Request";
         const auto responseType = baseTypeName + "__Response";
 
-        emitLine(out, 0, "#define " + baseTypeName + "_FULL_NAME_ \"" + def.info.fullName + "\"");
-        emitLine(out,
-                 0,
-                 "#define " + baseTypeName + "_FULL_NAME_AND_VERSION_ \"" + def.info.fullName + "." +
-                     std::to_string(def.info.majorVersion) + "." + std::to_string(def.info.minorVersion) + "\"");
+        for (const auto& line : renderCServiceAliasIdentityMacros(baseTypeName,
+                                                                  def.info.fullName,
+                                                                  def.info.majorVersion,
+                                                                  def.info.minorVersion))
+        {
+            emitLine(out, 0, line);
+        }
         out << "\n";
 
         emitSection(out, ctx, def, requestType, def.info.fullName + ".Request", "request", def.request);
@@ -577,40 +545,16 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
         {
             emitSection(out, ctx, def, responseType, def.info.fullName + ".Response", "response", *def.response);
         }
-
-        emitLine(out, 0, "typedef " + requestType + " " + baseTypeName + ";");
-        emitLine(out, 0, "#define " + baseTypeName + "_EXTENT_BYTES_ " + requestType + "_EXTENT_BYTES_");
-        emitLine(out,
-                 0,
-                 "#define " + baseTypeName + "_SERIALIZATION_BUFFER_SIZE_BYTES_ " + requestType +
-                     "_SERIALIZATION_BUFFER_SIZE_BYTES_");
+        for (const auto& line : renderCServiceAliasBridgeLines(baseTypeName, requestType))
+        {
+            emitLine(out, 0, line);
+        }
         out << "\n";
 
-        emitLine(out,
-                 0,
-                 "static inline int8_t " + baseTypeName + "__serialize_(const " + baseTypeName +
-                     "* const obj, uint8_t* const buffer, size_t* const "
-                     "inout_buffer_size_bytes)");
-        emitLine(out, 0, "{");
-        emitLine(out,
-                 1,
-                 "return " + requestType + "__serialize_((const " + requestType +
-                     "*)obj, buffer, "
-                     "inout_buffer_size_bytes);");
-        emitLine(out, 0, "}");
-        out << "\n";
-
-        emitLine(out,
-                 0,
-                 "static inline int8_t " + baseTypeName + "__deserialize_(" + baseTypeName +
-                     "* const out_obj, const uint8_t* buffer, size_t* const "
-                     "inout_buffer_size_bytes)");
-        emitLine(out, 0, "{");
-        emitLine(out,
-                 1,
-                 "return " + requestType + "__deserialize_((" + requestType +
-                     "*)out_obj, buffer, inout_buffer_size_bytes);");
-        emitLine(out, 0, "}");
+        for (const auto& line : renderCServiceAliasWrapperLines(baseTypeName, requestType))
+        {
+            emitLine(out, 0, line);
+        }
     }
     else
     {

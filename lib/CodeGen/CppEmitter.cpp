@@ -24,7 +24,6 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
-#include <set>
 #include <sstream>
 #include <unordered_map>
 #include <vector>
@@ -36,14 +35,17 @@
 
 #include "llvmdsdl/CodeGen/ArrayWirePlan.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
+#include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
 #include "llvmdsdl/CodeGen/HelperBindingRender.h"
 #include "llvmdsdl/CodeGen/HelperSymbolResolver.h"
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
+#include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/NamingPolicy.h"
-#include "llvmdsdl/CodeGen/NativeHelperContract.h"
+#include "llvmdsdl/CodeGen/HelperBindingNaming.h"
 #include "llvmdsdl/CodeGen/NativeEmitterTraversal.h"
+#include "llvmdsdl/CodeGen/NativeFunctionSkeleton.h"
 #include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 #include "llvmdsdl/CodeGen/TypeStorage.h"
@@ -290,60 +292,79 @@ public:
         }
         emitLine(out, 1, "const std::size_t capacity_bytes = *inout_buffer_size_bytes;");
         emitLine(out, 1, "std::size_t offset_bits = 0U;");
-        const auto renderIR = buildLoweredBodyRenderIR(section, sectionFacts, HelperBindingDirection::Serialize);
-        emitSerializeMlirHelperBindings(out, renderIR.helperBindings, 1);
-        std::string missingHelperRequirement;
-        if (!validateNativeSectionHelperContract(section,
-                                                 sectionFacts,
-                                                 HelperBindingDirection::Serialize,
-                                                 renderIR.helperBindings,
-                                                 &missingHelperRequirement))
+        const auto emitted = emitNativeFunctionSkeleton(
+            section,
+            sectionFacts,
+            HelperBindingDirection::Serialize,
+            NativeFunctionSkeletonCallbacks{
+                [this, &out](const SectionHelperBindingPlan& helperBindings) {
+                    emitSerializeMlirHelperBindings(out, helperBindings, 1);
+                },
+                [&out](const std::string& missingHelperRequirement) {
+                    emitLine(out, 1, "/* missing lowered helper contract: " + missingHelperRequirement + " */");
+                    emitLine(out,
+                             1,
+                             "return static_cast<std::int8_t>("
+                             "-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+                },
+                [this, &out](const SectionHelperBindingPlan& helperBindings) {
+                    const auto capacityHelper = helperBindingName(helperBindings.capacityCheck->symbol);
+                    const auto errCapacity    = nextName("err_capacity");
+                    emitLine(out,
+                             1,
+                             "const std::int8_t " + errCapacity + " = " + capacityHelper +
+                                 "(static_cast<std::int64_t>(capacity_bytes * 8U));");
+                    emitLine(out, 1, "if (" + errCapacity + " != static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS)) {");
+                    emitLine(out, 2, "return " + errCapacity + ";");
+                    emitLine(out, 1, "}");
+                },
+                [this, &out, &section, sectionFacts](const LoweredBodyRenderIR& renderIR) {
+                    NativeEmitterTraversalCallbacks callbacks;
+                    callbacks.onUnionDispatch = [this, &out, &section, sectionFacts, &renderIR](
+                                                    const std::vector<PlannedFieldStep>& unionBranches) {
+                        emitSerializeUnion(out,
+                                           section,
+                                           unionBranches,
+                                           "obj",
+                                           1,
+                                           sectionFacts,
+                                           renderIR.helperBindings);
+                    };
+                    callbacks.onFieldAlignment = [this, &out](const std::int64_t alignmentBits) {
+                        emitAlignSerialize(out, alignmentBits, 1);
+                    };
+                    callbacks.onField = [this, &out](const PlannedFieldStep& fieldStep) {
+                        const auto* const field = fieldStep.field;
+                        emitSerializeValue(out,
+                                           field->resolvedType,
+                                           "obj->" + codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, field->name),
+                                           1,
+                                           fieldStep.arrayLengthPrefixBits,
+                                           fieldStep.fieldFacts);
+                    };
+                    callbacks.onPaddingAlignment = [this, &out](const std::int64_t alignmentBits) {
+                        emitAlignSerialize(out, alignmentBits, 1);
+                    };
+                    callbacks.onPadding = [this, &out](const PlannedFieldStep& fieldStep) {
+                        const auto* const field = fieldStep.field;
+                        emitSerializePadding(out, field->resolvedType, 1);
+                    };
+                    return callbacks;
+                },
+                [this, &out]() {
+                    emitAlignSerialize(out, 8, 1);
+                    emitLine(out,
+                             1,
+                             "*inout_buffer_size_bytes = "
+                             "static_cast<std::size_t>(offset_bits / 8U);");
+                    emitLine(out, 1, "return static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS);");
+                }});
+        if (!emitted)
         {
-            emitLine(out, 1, "/* missing lowered helper contract: " + missingHelperRequirement + " */");
-            emitLine(out, 1, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
             emitLine(out, 0, "}");
             out << "\n";
             return;
         }
-        const auto capacityHelper = helperBindingName(renderIR.helperBindings.capacityCheck->symbol);
-        const auto errCapacity    = nextName("err_capacity");
-        emitLine(out,
-                 1,
-                 "const std::int8_t " + errCapacity + " = " + capacityHelper +
-                     "(static_cast<std::int64_t>(capacity_bytes * 8U));");
-        emitLine(out, 1, "if (" + errCapacity + " != static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS)) {");
-        emitLine(out, 2, "return " + errCapacity + ";");
-        emitLine(out, 1, "}");
-
-        NativeEmitterTraversalCallbacks callbacks;
-        callbacks.onUnionDispatch =
-            [this, &out, &section, sectionFacts, &renderIR](const std::vector<PlannedFieldStep>& unionBranches) {
-                emitSerializeUnion(out, section, unionBranches, "obj", 1, sectionFacts, renderIR.helperBindings);
-            };
-        callbacks.onFieldAlignment = [this, &out](const std::int64_t alignmentBits) {
-            emitAlignSerialize(out, alignmentBits, 1);
-        };
-        callbacks.onField = [this, &out](const PlannedFieldStep& fieldStep) {
-            const auto* const field = fieldStep.field;
-            emitSerializeValue(out,
-                               field->resolvedType,
-                               "obj->" + codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, field->name),
-                               1,
-                               fieldStep.arrayLengthPrefixBits,
-                               fieldStep.fieldFacts);
-        };
-        callbacks.onPaddingAlignment = [this, &out](const std::int64_t alignmentBits) {
-            emitAlignSerialize(out, alignmentBits, 1);
-        };
-        callbacks.onPadding = [this, &out](const PlannedFieldStep& fieldStep) {
-            const auto* const field = fieldStep.field;
-            emitSerializePadding(out, field->resolvedType, 1);
-        };
-        forEachNativeEmitterRenderStep(renderIR, callbacks);
-
-        emitAlignSerialize(out, 8, 1);
-        emitLine(out, 1, "*inout_buffer_size_bytes = static_cast<std::size_t>(offset_bits / 8U);");
-        emitLine(out, 1, "return static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS);");
         emitLine(out, 0, "}");
         out << "\n";
     }
@@ -384,54 +405,71 @@ public:
         emitLine(out, 1, "const std::size_t capacity_bytes = *inout_buffer_size_bytes;");
         emitLine(out, 1, "const std::size_t capacity_bits = capacity_bytes * 8U;");
         emitLine(out, 1, "std::size_t offset_bits = 0U;");
-        const auto renderIR = buildLoweredBodyRenderIR(section, sectionFacts, HelperBindingDirection::Deserialize);
-        emitDeserializeMlirHelperBindings(out, renderIR.helperBindings, 1);
-        std::string missingHelperRequirement;
-        if (!validateNativeSectionHelperContract(section,
-                                                 sectionFacts,
-                                                 HelperBindingDirection::Deserialize,
-                                                 renderIR.helperBindings,
-                                                 &missingHelperRequirement))
+        const auto emitted = emitNativeFunctionSkeleton(
+            section,
+            sectionFacts,
+            HelperBindingDirection::Deserialize,
+            NativeFunctionSkeletonCallbacks{
+                [this, &out](const SectionHelperBindingPlan& helperBindings) {
+                    emitDeserializeMlirHelperBindings(out, helperBindings, 1);
+                },
+                [&out](const std::string& missingHelperRequirement) {
+                    emitLine(out, 1, "/* missing lowered helper contract: " + missingHelperRequirement + " */");
+                    emitLine(out,
+                             1,
+                             "return static_cast<std::int8_t>("
+                             "-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+                },
+                nullptr,
+                [this, &out, &section, sectionFacts](const LoweredBodyRenderIR& renderIR) {
+                    NativeEmitterTraversalCallbacks callbacks;
+                    callbacks.onUnionDispatch = [this, &out, &section, sectionFacts, &renderIR](
+                                                    const std::vector<PlannedFieldStep>& unionBranches) {
+                        emitDeserializeUnion(out,
+                                             section,
+                                             unionBranches,
+                                             "out_obj",
+                                             1,
+                                             sectionFacts,
+                                             renderIR.helperBindings);
+                    };
+                    callbacks.onFieldAlignment = [this, &out](const std::int64_t alignmentBits) {
+                        emitAlignDeserialize(out, alignmentBits, 1);
+                    };
+                    callbacks.onField = [this, &out](const PlannedFieldStep& fieldStep) {
+                        const auto* const field = fieldStep.field;
+                        emitDeserializeValue(out,
+                                             field->resolvedType,
+                                             "out_obj->" +
+                                                 codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, field->name),
+                                             1,
+                                             fieldStep.arrayLengthPrefixBits,
+                                             fieldStep.fieldFacts);
+                    };
+                    callbacks.onPaddingAlignment = [this, &out](const std::int64_t alignmentBits) {
+                        emitAlignDeserialize(out, alignmentBits, 1);
+                    };
+                    callbacks.onPadding = [this, &out](const PlannedFieldStep& fieldStep) {
+                        const auto* const field = fieldStep.field;
+                        emitDeserializePadding(out, field->resolvedType, 1);
+                    };
+                    return callbacks;
+                },
+                [this, &out]() {
+                    emitAlignDeserialize(out, 8, 1);
+                    emitLine(out,
+                             1,
+                             "*inout_buffer_size_bytes = "
+                             "static_cast<std::size_t>(dsdl_runtime_choose_min(offset_bits, "
+                             "capacity_bits) / 8U);");
+                    emitLine(out, 1, "return static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS);");
+                }});
+        if (!emitted)
         {
-            emitLine(out, 1, "/* missing lowered helper contract: " + missingHelperRequirement + " */");
-            emitLine(out, 1, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
             emitLine(out, 0, "}");
             out << "\n";
             return;
         }
-
-        NativeEmitterTraversalCallbacks callbacks;
-        callbacks.onUnionDispatch =
-            [this, &out, &section, sectionFacts, &renderIR](const std::vector<PlannedFieldStep>& unionBranches) {
-                emitDeserializeUnion(out, section, unionBranches, "out_obj", 1, sectionFacts, renderIR.helperBindings);
-            };
-        callbacks.onFieldAlignment = [this, &out](const std::int64_t alignmentBits) {
-            emitAlignDeserialize(out, alignmentBits, 1);
-        };
-        callbacks.onField = [this, &out](const PlannedFieldStep& fieldStep) {
-            const auto* const field = fieldStep.field;
-            emitDeserializeValue(out,
-                                 field->resolvedType,
-                                 "out_obj->" + codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, field->name),
-                                 1,
-                                 fieldStep.arrayLengthPrefixBits,
-                                 fieldStep.fieldFacts);
-        };
-        callbacks.onPaddingAlignment = [this, &out](const std::int64_t alignmentBits) {
-            emitAlignDeserialize(out, alignmentBits, 1);
-        };
-        callbacks.onPadding = [this, &out](const PlannedFieldStep& fieldStep) {
-            const auto* const field = fieldStep.field;
-            emitDeserializePadding(out, field->resolvedType, 1);
-        };
-        forEachNativeEmitterRenderStep(renderIR, callbacks);
-
-        emitAlignDeserialize(out, 8, 1);
-        emitLine(out,
-                 1,
-                 "*inout_buffer_size_bytes = static_cast<std::size_t>(dsdl_runtime_choose_min(offset_bits, "
-                 "capacity_bits) / 8U);");
-        emitLine(out, 1, "return static_cast<std::int8_t>(DSDL_RUNTIME_SUCCESS);");
         emitLine(out, 0, "}");
         out << "\n";
     }
@@ -448,7 +486,7 @@ private:
 
     std::string helperBindingName(const std::string& helperSymbol) const
     {
-        return "mlir_" + codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, helperSymbol);
+        return renderHelperBindingIdentifier(CodegenNamingLanguage::Cpp, helperSymbol);
     }
 
     void emitSerializeMlirHelperBindings(std::ostringstream&             out,
@@ -1209,18 +1247,6 @@ std::string cppTypeFromFieldType(const SemanticFieldType& type, const EmitterCon
     return "std::uint8_t";
 }
 
-void collectSectionDependencies(const SemanticSection& section, std::set<std::string>& out)
-{
-    for (const auto& field : section.fields)
-    {
-        if (field.resolvedType.compositeType)
-        {
-            const auto& ref = *field.resolvedType.compositeType;
-            out.insert(loweredTypeKey(ref.fullName, ref.majorVersion, ref.minorVersion));
-        }
-    }
-}
-
 void emitArrayMetadata(std::ostringstream& out, const std::string& typeName, const SemanticSection& section)
 {
     for (const auto& field : section.fields)
@@ -1505,24 +1531,6 @@ void emitSection(std::ostringstream&              out,
     bodyEmitter.emitDeserializeFunction(out, typeName, section, sectionFacts);
 }
 
-const LoweredSectionFacts* findLoweredSectionFacts(const LoweredFactsMap&    loweredFacts,
-                                                   const SemanticDefinition& def,
-                                                   llvm::StringRef           sectionKey)
-{
-    const auto defIt =
-        loweredFacts.find(loweredTypeKey(def.info.fullName, def.info.majorVersion, def.info.minorVersion));
-    if (defIt == loweredFacts.end())
-    {
-        return nullptr;
-    }
-    const auto sectionIt = defIt->second.find(sectionKey.str());
-    if (sectionIt == defIt->second.end())
-    {
-        return nullptr;
-    }
-    return &sectionIt->second;
-}
-
 llvm::Expected<std::string> loadCRuntimeHeader()
 {
     const std::filesystem::path absoluteRuntimeHeader =
@@ -1568,13 +1576,6 @@ std::string renderHeader(const SemanticDefinition& def,
     const auto         guard        = headerGuard(def.info);
     const auto         baseTypeName = ctx.cppTypeName(def);
 
-    std::set<std::string> dependencies;
-    collectSectionDependencies(def.request, dependencies);
-    if (def.response)
-    {
-        collectSectionDependencies(*def.response, dependencies);
-    }
-
     out << "#ifndef " << guard << "\n";
     out << "#define " << guard << "\n\n";
     out << "#include <array>\n";
@@ -1588,19 +1589,9 @@ std::string renderHeader(const SemanticDefinition& def,
     }
     out << "#include \"dsdl_runtime.hpp\"\n";
 
-    for (const auto& depKey : dependencies)
+    for (const auto& depRef : collectDefinitionCompositeDependencies(def))
     {
-        auto split0 = depKey.find(':');
-        auto split1 = depKey.find(':', split0 + 1);
-        if (split0 == std::string::npos || split1 == std::string::npos)
-        {
-            continue;
-        }
-        SemanticTypeRef ref;
-        ref.fullName     = depKey.substr(0, split0);
-        ref.majorVersion = static_cast<std::uint32_t>(std::stoul(depKey.substr(split0 + 1, split1 - split0 - 1)));
-        ref.minorVersion = static_cast<std::uint32_t>(std::stoul(depKey.substr(split1 + 1)));
-        if (const auto* dep = ctx.find(ref))
+        if (const auto* dep = ctx.find(depRef))
         {
             out << "#include \"" << ctx.relativeHeaderPath(*dep) << "\"\n";
         }
@@ -1629,7 +1620,7 @@ std::string renderHeader(const SemanticDefinition& def,
                     def.info.fullName + ".Request",
                     def.request,
                     pmrMode,
-                    findLoweredSectionFacts(loweredFacts, def, "request"));
+                    lookupLoweredSectionFacts(loweredFacts, def, "request"));
         if (def.response)
         {
             emitSection(out,
@@ -1639,7 +1630,7 @@ std::string renderHeader(const SemanticDefinition& def,
                         def.info.fullName + ".Response",
                         *def.response,
                         pmrMode,
-                        findLoweredSectionFacts(loweredFacts, def, "response"));
+                        lookupLoweredSectionFacts(loweredFacts, def, "response"));
         }
 
         emitLine(out, 0, "using " + baseTypeName + " = " + requestType + ";");
@@ -1688,7 +1679,7 @@ std::string renderHeader(const SemanticDefinition& def,
                     def.info.fullName,
                     def.request,
                     pmrMode,
-                    findLoweredSectionFacts(loweredFacts, def, ""));
+                    lookupLoweredSectionFacts(loweredFacts, def, ""));
     }
 
     emitNamespaceClose(out, def.info.namespaceComponents);
