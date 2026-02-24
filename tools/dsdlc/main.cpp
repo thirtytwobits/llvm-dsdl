@@ -49,6 +49,7 @@
 #include "llvmdsdl/Semantics/Analyzer.h"
 #include "llvmdsdl/Semantics/Model.h"
 #include "llvmdsdl/Support/Diagnostics.h"
+#include "llvmdsdl/Version.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "llvm/Support/Error.h"
@@ -67,6 +68,7 @@ struct CliOptions final
     std::string outDir{"nunavut_out"};
 
     bool helpRequested{false};
+    bool versionRequested{false};
     bool noTargetNamespaces{false};
     bool noOverwrite{false};
     bool allowUnregulatedFixedPortId{false};
@@ -111,6 +113,11 @@ bool isHelpToken(llvm::StringRef arg)
     return arg == "--help" || arg == "-h";
 }
 
+bool isVersionToken(llvm::StringRef arg)
+{
+    return arg == "--version" || arg == "-V";
+}
+
 bool isCodegenLanguage(llvm::StringRef language)
 {
     return language == "c" || language == "cpp" || language == "rust" || language == "go" || language == "ts" ||
@@ -135,7 +142,8 @@ void printHelp()
                  << "  dsdlc - DSDL frontend, MLIR lowerer, and multi-language code generator\n\n"
                  << "SYNOPSIS\n"
                  << "  dsdlc --target-language <lang> [options] [target_files_or_root_namespace ...]\n"
-                 << "  dsdlc --help\n\n"
+                 << "  dsdlc --help\n"
+                 << "  dsdlc --version\n\n"
                  << "LANGUAGES\n"
                  << "  ast | mlir | c | cpp | rust | go | ts | python\n\n"
                  << "TARGET OPTIONS\n"
@@ -175,7 +183,9 @@ void printHelp()
                  << "      Emit semicolon-separated output file list (implies --dry-run).\n"
                  << "      When combined with --list-inputs, emits inputs first then one empty separator value.\n"
                  << "  --help, -h\n"
-                 << "      Print this help text.\n\n"
+                 << "      Print this help text.\n"
+                 << "  --version, -V\n"
+                 << "      Print tool version and exit.\n\n"
                  << "BACKEND OPTIONS\n"
                  << "  C++:    --cpp-profile <std|pmr|both>\n"
                  << "  Rust:   --rust-crate-name <name>\n"
@@ -326,6 +336,11 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
         if (isHelpToken(arg))
         {
             options.helpRequested = true;
+            continue;
+        }
+        if (isVersionToken(arg))
+        {
+            options.versionRequested = true;
             continue;
         }
 
@@ -892,6 +907,11 @@ int main(int argc, char** argv)
     {
         printHelp();
         return argc == 1 ? 1 : 0;
+    }
+    if (options.versionRequested)
+    {
+        llvm::outs() << "dsdlc " << llvmdsdl::kVersionString << "\n";
+        return 0;
     }
 
     if (options.targetLanguage.empty())

@@ -1,539 +1,304 @@
 # llvm-dsdl Design
 
-## 1. Program Design
+## 1. Purpose
 
-### 1.1 Goals
+`llvm-dsdl` is a compiler toolchain for [Cyphal DSDL](https://github.com/OpenCyphal/specification/tree/master/specification/dsdl), built to make one semantic interpretation of `.dsdl` definitions reusable across many target languages. DSDL describes message/service data contracts and wire behavior. In practice, this project turns those contracts into language artifacts that can serialize and deserialize bytes consistently.
 
-`llvm-dsdl` is designed to be a reproducible DSDL compiler with:
+The project deliberately combines three ideas:
 
-- Spec-first frontend behavior (single mode).
-- A typed semantic model that can support multiple backends.
-- An LLVM/MLIR foundation for long-term compiler evolution.
-- Multi-language code generation with shared wire semantics.
+- DSDL as the domain language and source of truth for data contracts.
+- LLVM/MLIR as compiler infrastructure for normalized IR and pass-managed transformations.
+- Multi-language emitters that share lowered wire-semantics rather than re-implementing rules backend-by-backend.
 
-The project currently supports:
+This repo currently ships three user-facing tools:
 
-- C (`dsdlc --target-language c`)
-- C++23 (`dsdlc --target-language cpp`, with `std` and `pmr` profiles)
-- Rust (`dsdlc --target-language rust`, with `std` and `no-std-alloc` profiles, runtime specialization `portable|fast`, and memory modes `max-inline|inline-then-pool`)
-- Go (`dsdlc --target-language go`)
-- TypeScript (`dsdlc --target-language ts`, with runtime specialization `portable|fast`)
-- Python (`dsdlc --target-language python`, with runtime specialization `portable|fast` and backend selection `auto|pure|accel`)
+- [`dsdlc`](tools/dsdlc/main.cpp): compile/codegen driver.
+- [`dsdl-opt`](tools/dsdl-opt/main.cpp): pass-driver over the custom dialect.
+- [`dsdld`](tools/dsdld/main.cpp): language server for editor workflows.
 
-for arbitrary DSDL root namespaces. Full-tree integration validation is currently
-centered on the `uavcan` regulated data types.
+Supported `dsdlc --target-language` values today are `ast`, `mlir`, `c`, `cpp`, `rust`, `go`, `ts`, and `python`.
 
-### 1.2 High-Level Architecture
+## 2. Realized Architecture
+
+The current architecture is not just a proposal; it is what the build and tests execute now. Frontend parsing and semantic analysis are shared once, lowered to a DSDL-specific MLIR representation, then consumed by backend codegen paths. The C path goes deepest through EmitC conversion; other language backends consume shared lowered contracts/facts and render native or scripted source.
 
 ```mermaid
 flowchart LR
-  A["DSDL files"] --> B["Frontend: discovery + lexer + parser"]
-  B --> C["AST"]
-  C --> D["Semantic analyzer + evaluator"]
-  D --> E["Semantic model"]
-  E --> F["MLIR DSDL lowering"]
-  F --> G["MLIR module"]
-  G --> H["C path: EmitC lowering + C output (per-definition impl TUs)"]
-  E --> K["Shared lowering facts + runtime/body plans + helper bindings + render IR + diagnostics text"]
-  G --> K
-  K --> I["C/C++/Rust/Go/TypeScript/Python emitters"]
-  I --> J["Generated language artifacts"]
+  A[".dsdl files"] --> B["Frontend\n(discovery + lexer + parser)"]
+  B --> C["ASTModule"]
+  C --> D["Semantic Analysis\n(type resolution + constants + layout)"]
+  D --> E["SemanticModule"]
+  E --> F["lowerToMLIR"]
+  F --> G["dsdl.schema + dsdl.serialization_plan\n(dsdl.align/dsdl.io)"]
+  G --> H["lower-dsdl-serialization\n(contract stamping + helper synthesis)"]
+  H --> I{"Backend path"}
+  I --> J["C: convert-dsdl-to-emitc\n+ emitc translation\n=> .c impl TUs"]
+  I --> K["C++/Rust/Go/TS/Python:\ncollect lowered facts\n+ shared planning\n=> native/scripted emitters"]
+  E --> L["Header/type/model emission"]
+  J --> M["Generated sources"]
+  K --> M
+  L --> M
 ```
 
-### 1.3 Pipeline Stages
-
-#### Frontend
-
-The frontend discovers `.dsdl` files, validates namespace and version/file naming
-conventions, tokenizes/parses, and builds AST with source locations.
-
-Primary modules:
-
-- `include/llvmdsdl/Frontend/*`
-- `lib/Frontend/*`
-
-#### Semantics
-
-Semantic analysis resolves type references, constants, directives, array bounds,
-union constraints, and bit-length/extent information. This stage produces a typed,
-resolved `SemanticModule` used by code generators.
-
-Primary modules:
+A useful way to read this diagram is: syntax and semantics happen once, wire-layout intent is normalized once, then that normalized intent is reused broadly.
 
-- `include/llvmdsdl/Semantics/*`
-- `lib/Semantics/*`
+## 3. Layered Modules
 
-#### IR / MLIR
+### 3.1 Frontend ([`include/llvmdsdl/Frontend`](./include/llvmdsdl/Frontend), [`lib/Frontend`](./lib/Frontend))
 
-The project defines a custom DSDL MLIR dialect and lowering hooks. This creates a
-compiler-grade intermediate representation suitable for validation/transforms and
-future target backends.
+The frontend is responsible for discovering definitions, parsing files, and preserving source context for diagnostics. It is intentionally strict about DSDL source structure because every later stage depends on deterministic AST shape and identity metadata.
 
-Primary modules:
+Key source files:
 
-- `include/llvmdsdl/IR/*`
-- `lib/IR/*`
-- `lib/Lowering/*`
-- `lib/Transforms/*`
-
-#### Code Generation
-
-Current generators are in `lib/CodeGen`:
-
-All non-C backends consume both the semantic model and MLIR-derived lowering
-facts/plans (for wire-semantics ordering/contracts) before rendering
-language-specific artifacts.
-
-- `CEmitter.cpp`
-  - Emits per-type C headers and runtime header.
-  - Emits per-definition C implementation translation units through EmitC lowering.
-- `CppEmitter.cpp`
-  - Emits namespace-based C++23 headers.
-  - Supports `std` and `pmr` profiles.
-- `RustEmitter.cpp`
-  - Emits crate/module layout and Rust SerDes/runtime integration.
-- `GoEmitter.cpp`
-  - Emits module/package layout and Go SerDes/runtime integration.
-- `TsEmitter.cpp`
-  - Emits TypeScript package/module layout and generated runtime-backed SerDes integration.
-- `PythonEmitter.cpp`
-  - Emits Python package/module layout, generated dataclasses, packaging metadata (`pyproject.toml`, `py.typed`), and runtime-backed SerDes integration.
-
-Shared generator-side convergence modules include:
-
-- `MlirLoweredFacts*`
-- `LoweredBodyPlan*`
-- `LoweredRenderIR*`
-- `NamingPolicy*` (shared keyword/sanitize/case projection policy)
-- `ConstantLiteralRender*` (shared literal syntax rendering)
-- `StorageTypeTokens*` (shared scalar storage token mapping for C/C++/Rust/Go)
-- `DefinitionIndex*` (shared semantic lookup index by lowered key)
-- `DefinitionPathProjection*` (shared versioned type/file path projection)
-- `DefinitionDependencies*` (shared native-backend composite dependency collection)
-- `CompositeImportGraph*` (shared scripted-backend composite import collection/projection)
-- `CHeaderRender*` (shared C metadata macro/service wrapper rendering helpers)
-- `HelperBindingNaming*` (shared lowered helper-binding identifier projection)
-- `LoweredFactsLookup*` (shared lowered section-facts lookup)
-- `RuntimeLoweredPlan*` (backend-neutral ordered runtime field/section planning)
-- `RuntimeHelperBindings*` (shared lowered helper-symbol lookup/resolution)
-- `ScriptedBodyPlan*` (TS/Python scripted section/field helper planning)
-- `NativeEmitterTraversal*` (shared lowered-step traversal callbacks for C++/Rust/Go)
-- `NativeHelperContract*` (shared section+field helper contract checks for C++/Rust/Go)
-- `CodegenDiagnosticText*` (shared cross-backend diagnostic text catalog)
-- helper/statement/binding planners in `lib/CodeGen/*Plan*` and `*Resolver*`
+- [`include/llvmdsdl/Frontend/AST.h`](include/llvmdsdl/Frontend/AST.h)
+- [`include/llvmdsdl/Frontend/Parser.h`](include/llvmdsdl/Frontend/Parser.h)
+- [`lib/Frontend/Discovery.cpp`](lib/Frontend/Discovery.cpp)
+- [`lib/Frontend/Lexer.cpp`](lib/Frontend/Lexer.cpp)
+- [`lib/Frontend/Parser.cpp`](lib/Frontend/Parser.cpp)
 
-Emitter responsibilities are intentionally constrained to:
+Primary entry point:
 
-- language syntax/module/file rendering,
-- runtime primitive call wiring, and
-- backend-specific API surface mapping.
+- `parseDefinitions(...) -> ASTModule`
 
-Wire-semantics orchestration (ordering, helper selection, validation rules, and
-diagnostic-text parity) is centralized in the shared planning/binding layers.
+### 3.2 Semantics ([`include/llvmdsdl/Semantics`](./include/llvmdsdl/Semantics), [`lib/Semantics`](./lib/Semantics))
 
-#### Runtime Layer
+Semantic analysis resolves references, evaluates constants, computes field/section layout properties, and builds the backend-facing `SemanticModule`. This is where the project moves from syntax to meaning. If frontend AST says what the source wrote, semantics says what it means on the wire.
 
-Runtime helpers encapsulate wire-level bit operations and numeric conversions:
+Key source files:
 
-- `runtime/dsdl_runtime.h` (C core)
-- `runtime/cpp/dsdl_runtime.hpp` (C++ wrapper)
-- `runtime/rust/dsdl_runtime.rs` (Rust runtime)
-- `runtime/go/dsdl_runtime.go` (Go runtime)
-- generated `dsdl_runtime.ts` (TypeScript runtime helper emitted by `dsdlc --target-language ts`)
-- generated `_dsdl_runtime.py` + `_runtime_loader.py` (Python runtime helpers emitted by `dsdlc --target-language python`)
-- generated `pyproject.toml` + `py.typed` (Python packaging metadata emitted by `dsdlc --target-language python`)
+- [`include/llvmdsdl/Semantics/Model.h`](include/llvmdsdl/Semantics/Model.h)
+- [`include/llvmdsdl/Semantics/Evaluator.h`](include/llvmdsdl/Semantics/Evaluator.h)
+- [`include/llvmdsdl/Semantics/BitLengthSet.h`](include/llvmdsdl/Semantics/BitLengthSet.h)
+- [`lib/Semantics/Analyzer.cpp`](lib/Semantics/Analyzer.cpp)
 
-Generated helper bindings sourced from lowered MLIR contracts provide
-scalar/array/union/delimiter/capacity semantics in all non-C backends
-(C++, Rust, Go, TypeScript, Python); low-level runtime primitives remain
-hand-maintained by design.
+Primary entry point:
 
-### 1.4 Tooling and Validation
+- `analyze(...) -> SemanticModule`
 
-- `dsdlc` is the main CLI frontend/driver.
-- `dsdl-opt` supports MLIR pass experimentation.
-- Integration tests verify full-tree generation and compile checks.
-- CMake workflow presets provide reproducible configure/build/test automation.
+### 3.3 IR Dialect ([`include/llvmdsdl/IR`](./include/llvmdsdl/IR), [`lib/IR`](./lib/IR))
 
----
+The custom `dsdl` dialect is the project’s canonical intermediate boundary. Instead of each backend consuming raw semantic objects directly, this project materializes explicit schema/serialization-plan operations first. That makes transformations inspectable and contract-checkable.
 
-## 2. Comparison: LLVM vs Nunavut+pydsdl vs Native Non-LLVM
+Relevant dialect files:
 
-This section compares three implementation approaches:
+- [`include/llvmdsdl/IR/DSDLOps.td`](include/llvmdsdl/IR/DSDLOps.td)
+- [`include/llvmdsdl/IR/DSDLTypes.td`](include/llvmdsdl/IR/DSDLTypes.td)
+- [`include/llvmdsdl/IR/DSDLAttrs.td`](include/llvmdsdl/IR/DSDLAttrs.td)
+- [`lib/IR/DSDLOps.cpp`](lib/IR/DSDLOps.cpp)
+- [`lib/IR/DSDLDialect.cpp`](lib/IR/DSDLDialect.cpp)
 
-1. **llvm-dsdl (LLVM/MLIR-based)**  
-2. **pydsdl + nunavut (Python reference ecosystem)**  
-3. **Native non-LLVM implementation (hypothetical C++ implementation without MLIR/LLVM)**
+Core ops currently in active use are `dsdl.schema`, `dsdl.field`, `dsdl.constant`, `dsdl.serialization_plan`, `dsdl.align`, and `dsdl.io`.
 
-### 2.1 Feature Matrix
+### 3.4 Semantic-to-MLIR Lowering ([`include/llvmdsdl/Lowering`](./include/llvmdsdl/Lowering), [`lib/Lowering`](./lib/Lowering))
 
-| Capability | llvm-dsdl (LLVM/MLIR) | pydsdl + nunavut | Native Non-LLVM (hypothetical) |
-|---|---|---|---|
-| Core language/runtime implementation | C++ | Python (+ templates) | C++ |
-| DSDL parser + semantics | Yes | Yes (mature reference behavior) | Yes (must build from scratch) |
-| Canonical compiler IR | Yes (custom MLIR dialect) | No compiler IR layer | Optional custom IR (must design/maintain) |
-| Pass manager and rewrite infra | Yes (MLIR passes/patterns) | No | Must implement custom pass infra |
-| Built-in verifier hooks | Yes (dialect/op verifiers) | Limited (library-level checks) | Must implement custom verifier framework |
-| Optimization framework | Yes (MLIR + LLVM ecosystem) | Minimal | Custom optimizer required |
-| Multi-target codegen scaling | Strong long-term fit | Template-dependent and target-specific | Medium; backend-specific effort |
-| Debug/inspection infrastructure | Strong (IR dump/pass pipelines) | Python-level debugging | Custom tooling required |
-| Build/dependency complexity | High | Low/medium | Medium |
-| Startup and iteration speed | Fast runtime binaries, slower compile/build | Fast scripting iteration | Medium |
-| Ecosystem interoperability | Excellent with compiler/toolchain stack | Excellent with existing OpenCyphal workflows | Depends on design |
-| Best fit | Long-term compiler platform | Proven generator stack and quick adoption | Lightweight custom stack |
+`lowerToMLIR(...)` converts semantic definitions into schema symbols and section plans. It includes enough attributes to describe field category, cast mode, array mode/capacity, alignment, union metadata, and bounded bit-length facts.
 
-### 2.2 What LLVM/MLIR Is Doing for Us Here
+Key file:
 
-In this project, LLVM/MLIR provides:
+- [`lib/Lowering/LowerToMLIR.cpp`](lib/Lowering/LowerToMLIR.cpp)
 
-- A **structured intermediate representation** for DSDL concepts.
-- **Pass composition** for transformation, canonicalization, and validation.
-- A path to **incremental lowering** from DSDL-level semantics to target-level code.
-- Existing conversion/translation infrastructure (e.g., EmitC path for C impl output).
-- Better long-term maintainability for advanced compiler features than ad-hoc
-  backend-specific code paths.
+This stage is the bridge where DSDL-specific semantic facts become compiler IR facts that passes can reason about.
 
-Without LLVM, the project would need to build and maintain its own:
+### 3.5 MLIR Transforms ([`include/llvmdsdl/Transforms`](./include/llvmdsdl/Transforms), [`lib/Transforms`](./lib/Transforms))
 
-- IR and verifier system.
-- Pass manager and transformation pipeline.
-- Canonicalization/rewrite engine.
-- Lowering framework for multiple backends.
+Transforms are where normalization and contract hardening happen. The pass set currently includes:
 
-### 2.3 Trade-Off Summary
+- `lower-dsdl-serialization`
+- `convert-dsdl-to-emitc`
+- optional `optimize-dsdl-lowered-serdes` pipeline
 
-#### llvm-dsdl (LLVM/MLIR)
+Key files:
 
-Pros:
+- [`include/llvmdsdl/Transforms/Passes.h`](include/llvmdsdl/Transforms/Passes.h)
+- [`include/llvmdsdl/Transforms/LoweredSerDesContract.h`](include/llvmdsdl/Transforms/LoweredSerDesContract.h)
+- [`lib/Transforms/Passes.cpp`](lib/Transforms/Passes.cpp)
+- [`lib/Transforms/ConvertDSDLToEmitC.cpp`](lib/Transforms/ConvertDSDLToEmitC.cpp)
 
-- Compiler-grade architecture with strong extensibility.
-- Better fit for multiple language backends and deeper optimization.
-- Strong validation and transformation model.
+The lowered contract attributes are an explicit handshake between producers and consumers. Backends validate contract version/producer and helper availability before rendering code. This is a major reliability property of the current design.
 
-Cons:
+### 3.6 Codegen ([`include/llvmdsdl/CodeGen`](./include/llvmdsdl/CodeGen), [`lib/CodeGen`](./lib/CodeGen))
 
-- More complexity (build, dependencies, contributor onboarding).
-- Higher initial implementation cost.
-
-#### pydsdl + nunavut
-
-Pros:
-
-- Mature, field-proven ecosystem in OpenCyphal workflows.
-- Very fast to get started.
-- Strong compatibility expectations for existing users.
-
-Cons:
-
-- Not centered around compiler IR/passes.
-- Harder to evolve into advanced optimization/transformation architecture.
-
-#### Native Non-LLVM C++ (No MLIR)
-
-Pros:
-
-- Simpler dependency profile than LLVM.
-- Potentially easier to keep minimal at small scope.
-
-Cons:
-
-- Significant custom infrastructure burden for anything beyond basic generation.
-- Long-term scaling cost for multi-language + optimization + analysis features.
-
----
-
-## 3. Future Expansion Enabled by LLVM/MLIR
-
-Because the project uses LLVM/MLIR, future work can go beyond “template-based
-codegen” into full compiler capabilities.
-
-### 3.1 Near-Term Opportunities
-
-- Move all language backends toward a shared MLIR-driven serialization plan.
-- Add stronger IR verifiers for union/extent/array correctness invariants.
-- Add target-specific lowering passes (C++/Rust) from common plan ops.
-- Improve diagnostics with IR-level provenance and source mapping.
-
-### 3.2 Mid-Term Opportunities
-
-- Backend optimization passes:
-  - dead-field elimination for constant/default paths,
-  - loop simplification for fixed-size arrays,
-  - inlining/specialization for nested composites.
-- Alternate runtime strategies generated from profile-aware lowering
-  (freestanding, PMR, `no_std + alloc`, etc.).
-- Cross-language consistency checks from one canonical IR.
-
-### 3.3 Long-Term Opportunities
-
-- Additional target languages (e.g., Rust `no_std`, C++, Zig, others) from shared IR.
-- Static analysis and linting passes directly on DSDL IR.
-- Formal conformance tools using IR-level property checks.
-- Advanced tooling (`dsdl-opt` pipelines, IR debugging, regression reduction).
-- Optional lowerings to other MLIR/LLVM dialects for specialized environments.
-
----
-
-## 4. Current State vs Target State
-
-Current:
-
-- Frontend + semantics are shared and mature enough for full `uavcan` generation.
-- C++/Rust generation is implemented and tested for full-tree generation.
-- Go generation is implemented and tested for full-tree generation.
-- C path already has an EmitC lowering route for implementation translation units.
-- Current implementation emits one `.c` translation unit per DSDL definition
-  (monolithic TU-only mode has been removed).
-- Go backend verification includes generation, determinism, module build, runtime
-  unit tests, and C/Go differential parity workflows.
-- Lowered SerDes contract versioning/producer checks are enforced between
-  `lower-dsdl-serialization` and `convert-dsdl-to-emitc`.
-- Shared lowered-fact collection drives backend wire-semantics decisions for
-  C++ (`std`/`pmr`), Rust (`std`/`no-std-alloc`), Go, TypeScript, and Python.
-- Shared runtime/body orchestration now has explicit convergence layers:
-  `RuntimeLoweredPlan`, `RuntimeHelperBindings`, `ScriptedBodyPlan`
-  (TypeScript/Python), `NativeEmitterTraversal` (C++/Rust/Go), and
-  `CodegenDiagnosticText`.
-- Shared language-agnostic render-IR (`LoweredRenderIR`) now drives core
-  per-section body step traversal (`field`, `padding`, `union-dispatch`) in
-  C++, Rust, Go, TypeScript, and Python emitters.
-- `dsdlc` and `dsdl-opt` support optional optimization on lowered SerDes IR via:
-  - CLI flag `--optimize-lowered-serdes`
-  - MLIR pass pipeline `optimize-dsdl-lowered-serdes`
-- Optimization-enabled parity gates are now part of integration coverage across:
-  - signed-narrow C/C++, C/Rust, C/Go,
-  - full `uavcan` C/C++, C/Rust, C/Go,
-  - differential parity.
-- Rust `no-std-alloc` profile is now generation- and compile-checked, with
-  dedicated `rust-no-std` integration labels/workflows and C/Rust parity gates
-  validating that profile changes do not alter wire behavior.
-- Rust runtime specialization is now configurable (`--rust-runtime-specialization`
-  `portable|fast`), with dedicated `rust-runtime-specialization` integration
-  labels/workflows, C/Rust parity gates, and semantic-diff gates ensuring
-  generated type semantics do not drift.
-- Rust memory-mode contract is now explicit through
-  `--rust-memory-mode <max-inline|inline-then-pool>` and
-  `--rust-inline-threshold-bytes <N>`, with generated `Cargo.toml` metadata
-  recording selected profile/specialization/memory-threshold settings.
-- Rust runtime foundations now include a `VarArray<T>` container abstraction,
-  pool-provider contract types, and fixture-backed runtime unit-test lanes for
-  `std` and `no-std-alloc` profiles.
-- Rust emitter integration now emits per-field pool class identifiers,
-  memory-contract constants, and decode-time pool-aware reserve routes while
-  preserving the generated public type API.
-- Rust allocation-failure taxonomy is contract-defined for non-std evolution:
-  malformed/truncated input errors remain separate from allocation failures, and
-  pool-mode allocation failures are surfaced deterministically with type-class
-  context in downstream runtime workstreams.
-- Rust integration coverage now includes memory-mode specific lanes for:
-  - signed-narrow and full-`uavcan` C/Rust differential parity,
-  - full-`uavcan` generation + cargo-check in `inline-then-pool` mode,
-  - memory-mode semantic-diff checks, and
-  - concurrent determinism checks.
-- Rust runtime failure-path coverage now includes deterministic tiny-pool OOM and
-  invalid-request contract tests, stable error-code mapping checks, and
-  non-mutating failure-path invariants for pool-backed reserve routes.
-- Rust benchmark coverage now includes an artifact-first runtime memory-mode lane
-  that compares generated `max-inline` and `inline-then-pool` crates across
-  small/medium/large payload families, with optional threshold gating and
-  embedded-profile recommendation output.
-- TypeScript generation (`dsdlc --target-language ts`) is now a first-class non-C-like target
-  track with lowered-schema validation, shared lowered render-order planning,
-  generated runtime support (`dsdl_runtime.ts`), and runtime-backed per-type
-  SerDes entrypoints across core semantic families.
-- Python generation (`dsdlc --target-language python`) is now a first-class non-C-like target
-  track with lowered-schema validation, shared lowered runtime planning,
-  generated dataclass-based SerDes entrypoints, and runtime backend selection
-  (`auto|pure|accel`) through generated loader/runtime modules.
-- TypeScript runtime specialization is now configurable
-  (`--ts-runtime-specialization` `portable|fast`), with dedicated
-  `ts-runtime-specialization` integration labels/workflows, C<->TS parity
-  gates, and semantic-diff gates ensuring generated type semantics remain
-  unchanged while runtime helper implementation strategy varies.
-- TypeScript integration coverage includes full-`uavcan` generation/determinism/
-typecheck/consumer-smoke/index-contract/runtime-execution gates
-  (`llvmdsdl-uavcan-ts-generation`,
-  `llvmdsdl-uavcan-ts-determinism`,
-  `llvmdsdl-uavcan-ts-typecheck`,
-  `llvmdsdl-uavcan-ts-consumer-smoke`,
-  `llvmdsdl-uavcan-ts-index-contract`,
-  `llvmdsdl-uavcan-ts-runtime-execution-smoke`), fallback-signature hardening
-  (`llvmdsdl-fixtures-ts-generation-hardening`), invariant-based C<->TS parity
-  (`llvmdsdl-c-ts-parity`, `llvmdsdl-signed-narrow-c-ts-parity`, optimized
-  variants), and broad runtime/parity fixture lanes.
-- Python integration coverage includes fixture-generation hardening, runtime
-  smoke (portable/fast + optimized lowering), backend selection behavior
-  (`auto|pure|accel`), full-`uavcan` generation/determinism gates, and a
-  Python runtime benchmark harness. CMake generation flow also includes
-  accelerator staging targets and optional wheel staging targets for generated
-  Python packages.
-
-Python validation taxonomy (parity with mature targets):
-
-- Generation and determinism:
-  - fixture hardening lane and full-tree `uavcan` generation/determinism lanes.
-- Runtime execution:
-  - fixture smoke lanes plus full-tree runtime execution lanes
-    (`portable`, `fast`, and optimized-lowering variants).
-- Differential parity:
-  - C<->Python parity families across runtime/service/array/bigint/float/utf8/
-    delimited/union/composite/truncated/padding-alignment classes.
-  - signed-narrow parity lanes (`portable`, optimized, and `fast` specialization).
-- Backend and specialization contracts:
-  - backend selector behavior (`auto|pure|accel`) and pure-vs-accel parity.
-  - CI-required accelerator gate lanes (`python-accel-required` label) that hard-fail
-    if the accelerator module is unavailable or parity/selection behavior regresses.
-  - explicit malformed-input contract test lane:
-    - portable pure runtime: tolerant zero-extend reads.
-    - fast pure runtime: byte-aligned out-of-range extract/copy rejects with `ValueError`.
-    - accel runtime: follows accelerator helper behavior (tolerant extract, strict copy range checks).
-  - seeded malformed-decode fuzz/property parity lane validating contract-constrained
-    subset behavior across `portable`, `fast`, and `accel`.
-  - specialization semantic-diff lane validating `portable` vs `fast` runtime
-    helper divergence without generated-type semantic drift.
-- Performance policy:
-  - benchmark lane emits per-family/per-mode reports by default and supports
-    optional threshold gating.
-  - Rust runtime benchmark lane emits per-family/per-mode encode/decode metrics
-    and estimated pool-route allocation-call counts for threshold tuning.
-
-Python runtime troubleshooting matrix:
-
-| Condition | Why it happens | Design-intended behavior |
-| --- | --- | --- |
-| `accel` mode import failure | accelerator module absent | fail fast in explicit `accel` mode; `auto` falls back to pure |
-| `auto` chooses `pure` | accelerator unavailable or not staged | preserve correctness first; performance path is opportunistic |
-| specialization mismatch (`portable` vs `fast`) | helper implementation drift | semantic-diff lane catches unintended API/wire drift |
-| benchmark threshold failures | host variance or stale thresholds | artifact-first policy allows baseline capture before enforcing gates |
-
-Target trajectory:
-
-- Continue using MLIR-first lowering plus render-IR convergence so backend logic
-  remains focused on syntax/runtime binding rather than semantic traversal.
-- Keep language/profile APIs stable while strengthening wire-level conformance and
-  differential validation.
-
-### 4.1 Intentional Backend-Specific Behavior
-
-At this stage, backend-specific behavior is intentionally limited to:
-
-- Language surface rendering (syntax, naming, file/module layout).
-- Runtime API binding (C runtime calls, C++ profile container selection, Rust/Go
-  module wiring).
-- Target container/profile choices (`std` vs `pmr`, Rust crate/profile/memory-mode
-  naming, Go module naming).
-
-Wire-semantics behavior (scalar normalization, array prefix/validation, union tag
-helpers, delimiter checks, capacity checks, section-plan ordering) is expected to
-be sourced from lowered MLIR contracts rather than backend-local fallback logic.
-
-TypeScript and Python now follow the same helper-binding architecture as
-C++/Rust/Go for these semantics; remaining backend-local runtime code in
-`runtime/` is intentionally limited to low-level bit/float/buffer primitives.
-
-### 4.2 Frontend Semantics
-
-- `dsdlc` enforces one spec-conformant semantic mode for Cyphal DSDL.
-- Non-conformant definitions are rejected with diagnostics; no permissive
-  compatibility fallback mode is supported.
-
----
-
-## 5. LSP Architecture (`dsdld`)
-
-`dsdld` is a first-class tool in this repository and reuses the core compiler
-stack rather than maintaining a separate parser/tokenizer implementation.
-
-### 5.1 High-Level LSP Flow
-
-```mermaid
-flowchart LR
-  A["Editor Client (VS Code / Neovim)"] --> B["JSON-RPC stdio transport"]
-  B --> C["Server dispatcher (lib/LSP/Server.cpp)"]
-  C --> D["Document overlays (DocumentStore)"]
-  C --> E["Analysis pipeline (AST + semantics reuse)"]
-  E --> F["Diagnostics + semantic tokens + nav/completion"]
-  E --> G["Lint engine + suppressions + autofix"]
-  E --> H["Workspace index + ranking signals"]
-  C --> I["Policy-gated AI actions + audit log"]
-  F --> A
-  G --> A
-  H --> A
-  I --> A
-```
-
-### 5.2 Request/Notification Model
-
-Core request handlers include:
-
-1. `initialize`, `shutdown`
-2. `textDocument/semanticTokens/full`
-3. `textDocument/hover`
-4. `textDocument/definition`
-5. `textDocument/references`
-6. `textDocument/documentSymbol`
-7. `textDocument/completion` and `completionItem/resolve`
-8. `textDocument/prepareRename` and `textDocument/rename`
-9. `textDocument/codeAction` and `codeAction/resolve`
-10. `workspace/symbol`
-
-Core notifications include:
-
-1. `textDocument/didOpen`
-2. `textDocument/didChange`
-3. `textDocument/didClose`
-4. `workspace/didChangeConfiguration`
-5. `$/cancelRequest`
-6. `exit`
-
-### 5.3 Shared Compiler Reuse
-
-The LSP path intentionally depends on the same codebase used by `dsdlc`:
-
-1. Frontend discovery/lexing/parsing to produce AST.
-2. Semantic analysis and evaluator for symbol/type resolution.
-3. Common diagnostics model with source locations.
-
-This prevents drift between batch compilation and editor-time behavior.
-
-### 5.4 Indexing And Ranking
-
-`dsdld` builds and maintains a workspace symbol index, with optional cache
-persistence and verification/repair workflows.
-
-Supporting docs:
-
-1. `docs/LSP_INDEX_SCHEMA.md`
-2. `docs/LSP_RANKING_MODEL.md`
-
-Ranking combines lexical features and adaptive usage signals for both completion
-and workspace-symbol queries.
-
-### 5.5 Linting
-
-Linting is deterministic, configurable, and supports:
-
-1. Workspace-level suppression
-2. Per-file suppression
-3. In-source suppression comments
-4. Optional plugin rule packs
-5. Autofix quick actions
-
-Lint authoring details are documented in:
-
-1. `docs/LSP_LINT_RULES.md`
-2. `docs/LSP_LINT_RULE_AUTHORING.md`
-
-### 5.6 AI Safety Model
-
-AI behavior is optional and policy-gated:
-
-1. Modes: `off`, `suggest`, `assist`, `apply_with_confirmation`
-2. Confirmation-gated edit materialization
-3. Safe tool allow-list
-4. Bounded context packing
-5. Redacted audit logging
-
-Operator guidance:
-
-1. `docs/LSP_AI_OPERATOR_GUIDE.md`
+Code generation is split into backend-specific rendering plus shared convergence layers. All backends receive both semantic and MLIR module inputs. Shared planners/helpers reduce divergence in behavior across languages.
+
+Representative shared layers:
+
+- [`include/llvmdsdl/CodeGen/MlirLoweredFacts.h`](include/llvmdsdl/CodeGen/MlirLoweredFacts.h)
+- [`include/llvmdsdl/CodeGen/LoweredRenderIR.h`](include/llvmdsdl/CodeGen/LoweredRenderIR.h)
+- [`include/llvmdsdl/CodeGen/RuntimeLoweredPlan.h`](include/llvmdsdl/CodeGen/RuntimeLoweredPlan.h)
+- [`include/llvmdsdl/CodeGen/RuntimeHelperBindings.h`](include/llvmdsdl/CodeGen/RuntimeHelperBindings.h)
+- [`include/llvmdsdl/CodeGen/NativeEmitterTraversal.h`](include/llvmdsdl/CodeGen/NativeEmitterTraversal.h)
+- [`include/llvmdsdl/CodeGen/NativeHelperContract.h`](include/llvmdsdl/CodeGen/NativeHelperContract.h)
+- [`include/llvmdsdl/CodeGen/ScriptedOperationPlan.h`](include/llvmdsdl/CodeGen/ScriptedOperationPlan.h)
+
+This structure is the core of the “shared semantics, multiple syntaxes” strategy.
+
+## 4. Backend Architecture (As Implemented)
+
+### 4.1 C backend (`emitC`)
+
+The C backend is currently the most MLIR-native path. For each selected definition, it runs lowering and conversion passes, then translates EmitC IR into C implementation text. The resulting `.c` translation units are paired with generated headers and the C runtime.
+
+Key file:
+
+- [`lib/CodeGen/CEmitter.cpp`](lib/CodeGen/CEmitter.cpp)
+
+Current path:
+
+1. Validate lowered contract coverage.
+2. Clone per-definition schema into a working module.
+3. Run pass pipeline (`lower-dsdl-serialization`, optional optimize, `convert-dsdl-to-emitc`, canonicalization/CSE, emitc conversions).
+4. Emit body using `mlir::emitc::translateToCpp(...)`.
+5. Emit matching `.h` API and `dsdl_runtime.h`.
+
+### 4.2 C++ backend (`emitCpp`)
+
+The C++ backend renders modern namespace-based APIs and supports `std`, `pmr`, and `both` profiles. It consumes shared lowered plans/contracts and then applies C++-specific syntax and API shaping.
+
+Key file:
+
+- [`lib/CodeGen/CppEmitter.cpp`](lib/CodeGen/CppEmitter.cpp)
+
+`pmr` mode adds allocator-aware surfaces while preserving wire semantics shared with other backends.
+
+### 4.3 Rust backend (`emitRust`)
+
+Rust codegen emits crate/module layout, profile metadata, and runtime-linked SerDes bodies. It supports `std` and `no-std-alloc`, runtime specialization modes, and configurable memory-mode contracts.
+
+Key file:
+
+- [`lib/CodeGen/RustEmitter.cpp`](lib/CodeGen/RustEmitter.cpp)
+
+The design emphasizes explicit memory/runtime contracts because Rust deployments span both desktop and constrained embedded environments.
+
+### 4.4 Go backend (`emitGo`)
+
+Go emission produces a module root, runtime package, and namespace-organized type files. It reuses native traversal/helper contract layers shared with C++ and Rust.
+
+Key file:
+
+- [`lib/CodeGen/GoEmitter.cpp`](lib/CodeGen/GoEmitter.cpp)
+
+### 4.5 TypeScript backend (`emitTs`)
+
+TypeScript emission is a scripted backend that uses runtime/body operation plans to produce typed model declarations and runtime-backed SerDes functions. It supports `portable` and `fast` runtime variants.
+
+Key file:
+
+- [`lib/CodeGen/TsEmitter.cpp`](lib/CodeGen/TsEmitter.cpp)
+
+### 4.6 Python backend (`emitPython`)
+
+Python emission generates dataclass models, package metadata, runtime modules, and runtime-loader behavior for `auto|pure|accel` backend selection. It mirrors the scripted-backend planning model used by TypeScript.
+
+Key file:
+
+- [`lib/CodeGen/PythonEmitter.cpp`](lib/CodeGen/PythonEmitter.cpp)
+
+## 5. Runtime Design
+
+Runtime primitives are intentionally hand-maintained so each language has a clear and testable baseline implementation of bit/number operations. Generated code calls these primitives rather than re-implementing low-level operations everywhere.
+
+Runtime sources:
+
+- C core: [`runtime/dsdl_runtime.h`](runtime/dsdl_runtime.h)
+- C++ wrapper: [`runtime/cpp/dsdl_runtime.hpp`](runtime/cpp/dsdl_runtime.hpp)
+- Rust runtime: [`runtime/rust/dsdl_runtime.rs`](runtime/rust/dsdl_runtime.rs)
+- Go runtime: [`runtime/go/dsdl_runtime.go`](runtime/go/dsdl_runtime.go)
+- Python runtimes and loader:
+  - [`runtime/python/_dsdl_runtime.py`](runtime/python/_dsdl_runtime.py)
+  - [`runtime/python/_dsdl_runtime_fast.py`](runtime/python/_dsdl_runtime_fast.py)
+  - [`runtime/python/_runtime_loader.py`](runtime/python/_runtime_loader.py)
+- Python accelerator source: [`runtime/python_accel/dsdl_runtime_accel.c`](runtime/python_accel/dsdl_runtime_accel.c)
+
+This split keeps wire-core semantics explicit and reviewable while still allowing backend-specific ergonomics.
+
+## 6. Tooling Architecture
+
+### 6.1 `dsdlc`
+
+`dsdlc` is the main workflow entry point for generation and inspection. It resolves targets, builds the semantic closure, lowers to MLIR, and dispatches backend emitters. It also supports dry-run/listing modes and depfile generation, which are important for deterministic build integration.
+
+Entry point:
+
+- [`tools/dsdlc/main.cpp`](tools/dsdlc/main.cpp)
+
+### 6.2 `dsdl-opt`
+
+`dsdl-opt` exists so developers can run and debug dialect/pipeline behavior directly through MLIR’s pass-driver tooling. This keeps pass development and contract debugging close to standard MLIR workflows.
+
+Entry point:
+
+- [`tools/dsdl-opt/main.cpp`](tools/dsdl-opt/main.cpp)
+
+### 6.3 `dsdld`
+
+`dsdld` provides editor-time services over JSON-RPC/LSP. It reuses core analysis infrastructure so diagnostics and symbol behavior remain aligned with compiler behavior.
+
+Entry points:
+
+- [`tools/dsdld/main.cpp`](tools/dsdld/main.cpp)
+- [`include/llvmdsdl/LSP/Server.h`](include/llvmdsdl/LSP/Server.h)
+- [`include/llvmdsdl/LSP/ServerConfig.h`](include/llvmdsdl/LSP/ServerConfig.h)
+
+## 7. Build and Automation Model
+
+The build is out-of-tree against installed LLVM/MLIR packages using CMake + Ninja Multi-Config. Presets and workflows are first-class in this repo, so build/test/generation lanes are reproducible and scriptable.
+
+Core build files:
+
+- [`CMakeLists.txt`](CMakeLists.txt)
+- [`CMakePresets.json`](CMakePresets.json)
+
+Workflow presets include `matrix-dev-llvm-env`, `matrix-dev-homebrew`, and `matrix-ci`. Generation convenience targets (`generate-uavcan-*`) are defined when a `uavcan` root is available in expected paths.
+
+## 8. Verification Strategy (Current)
+
+Verification is layered intentionally: unit tests for algorithmic components, lit tests for CLI/pass contracts, and integration tests for end-to-end generation/parity behavior.
+
+Test roots:
+
+- Unit: [`test/unit`](test/unit)
+- Lit: [`test/lit`](test/lit)
+- Integration: [`test/integration`](test/integration)
+
+Important characteristics of the current suite:
+
+- Contract checks between lowering and conversion are tested directly.
+- Multi-language generation outputs are smoke-tested and structurally validated.
+- Parity/malformed-input lanes enforce consistent behavior under invalid or adversarial decode paths.
+- CMake exposes coverage and convergence/parity report targets for ongoing hardening.
+
+## 9. Why LLVM/MLIR Here, Specifically
+
+This project uses [LLVM](https://llvm.org/) and [MLIR](https://mlir.llvm.org/) not because DSDL requires LLVM IR output, but because MLIR provides disciplined compiler infrastructure for representation, validation, and staged transformation.
+
+What this gives the project today:
+
+- A clear IR boundary (`dsdl` dialect) between semantic analysis and backend rendering.
+- Pass-managed normalization/hardening (`lower-dsdl-serialization`) rather than ad-hoc per-backend logic.
+- Contract versioning/producer checks across pipeline stages.
+- A concrete C emission path via [EmitC](https://mlir.llvm.org/docs/Dialects/EmitC/).
+- Shared lowered-facts extraction for non-C backends, improving cross-language consistency.
+
+In short, MLIR is already operational infrastructure in this repo, not unused scaffolding.
+
+## 10. Deliberate Tradeoffs and Current Boundaries
+
+This architecture is intentionally pragmatic. Some invariants are enforced in transform-contract code rather than op verifiers, and non-C backends still perform language-specific rendering outside direct EmitC translation. That is a conscious balance between convergence and delivery velocity.
+
+Current tradeoffs:
+
+- `dsdl` op verifiers are lightweight; transform contract checks are heavy.
+- C has the deepest direct MLIR-to-code path.
+- Other backends are MLIR-informed through shared lowered plans/facts, then rendered natively/scriptedly.
+- Runtime primitives remain hand-maintained to keep low-level behavior explicit.
+
+These decisions have produced a stable multi-backend compiler that can evolve incrementally toward deeper shared lowering while preserving deterministic behavior today.
+
+## 11. Additional Reading
+
+- Project walkthrough and quick run paths: [`README.md`](./README.md)
+- Contribution and reproducible build details: [`CONTRIBUTING.md`](./CONTRIBUTING.md)
+- Demo-focused workflow: [`DEMO.md`](./DEMO.md)
+- Language server usage: [`tools/dsdld/README.md`](./tools/dsdld/README.md)
+- Cyphal specification source: [OpenCyphal/specification](https://github.com/OpenCyphal/specification)

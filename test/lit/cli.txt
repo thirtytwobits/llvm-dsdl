@@ -1,4 +1,5 @@
 # RUN: %dsdlc --help 2>&1 | FileCheck %s --check-prefix=HELP
+# RUN: %dsdlc --version | FileCheck %s --check-prefix=VERSION
 # RUN: not %dsdlc %S/fixtures 2>&1 | FileCheck %s --check-prefix=MISSING_LANGUAGE
 # RUN: not %dsdlc --target-language unknown %S/fixtures 2>&1 | FileCheck %s --check-prefix=BAD_LANGUAGE
 # RUN: not %dsdlc --target-language ast --unknown %S/fixtures 2>&1 | FileCheck %s --check-prefix=UNKNOWN_ARG
@@ -19,6 +20,9 @@
 # HELP: -MD
 # HELP: --list-inputs
 # HELP: --list-outputs
+# HELP: --version, -V
+
+# VERSION: dsdlc [[MAJOR:[0-9]+]].[[MINOR:[0-9]+]].[[PATCH:[0-9]+]]
 
 # MISSING_LANGUAGE: --target-language is required
 # MISSING_LANGUAGE: Usage: dsdlc --target-language <ast|mlir|c|cpp|rust|go|ts|python> [options] [target_files_or_root_namespace ...]

@@ -10,8 +10,6 @@
 add_library(llvmdsdlIR
   DSDLDialect.cpp
   DSDLOps.cpp
-  DSDLTypes.cpp
-  DSDLAttrs.cpp
 )
 add_dependencies(llvmdsdlIR LLVMDSDLIRIncGen)
 

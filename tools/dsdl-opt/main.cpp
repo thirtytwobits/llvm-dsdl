@@ -16,6 +16,7 @@
 //===----------------------------------------------------------------------===//
 
 #include <llvm/Support/LogicalResult.h>
+#include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/EmitC/IR/EmitC.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -24,8 +25,10 @@
 
 #include "llvmdsdl/IR/DSDLDialect.h"
 #include "llvmdsdl/Transforms/Passes.h"
+#include "llvmdsdl/Version.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "llvm/Support/InitLLVM.h"
+#include "llvm/Support/raw_ostream.h"
 
 /// @brief Program entry point for `dsdl-opt`.
 ///
@@ -36,6 +39,15 @@
 int main(int argc, char** argv)
 {
     llvm::InitLLVM y(argc, argv);
+    for (int i = 1; i < argc; ++i)
+    {
+        const llvm::StringRef arg(argv[i]);
+        if (arg == "--version" || arg == "-V")
+        {
+            llvm::outs() << "dsdl-opt " << llvmdsdl::kVersionString << "\n";
+            return 0;
+        }
+    }
 
     mlir::DialectRegistry registry;
     registry.insert<mlir::dsdl::DSDLDialect,

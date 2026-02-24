@@ -19,6 +19,8 @@ include "mlir/IR/OpBase.td"
 def DSDL_Dialect : Dialect {
   let name = "dsdl";
   let cppNamespace = "::mlir::dsdl";
+  let useDefaultTypePrinterParser = 1;
+  let useDefaultAttributePrinterParser = 1;
 }
 
 #endif // LLVMDSDL_IR_DSDL_BASE_TD

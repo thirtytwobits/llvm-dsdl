@@ -23,7 +23,8 @@
       "inherits": "base",
       "cacheVariables": {
         "LLVM_DIR": "$env{LLVM_DIR}",
-        "MLIR_DIR": "$env{MLIR_DIR}"
+        "MLIR_DIR": "$env{MLIR_DIR}",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/matrix/dev-llvm-env/install"
       }
     },
     {
@@ -39,7 +40,8 @@
       "cacheVariables": {
         "LLVM_DIR": "/opt/homebrew/opt/llvm/lib/cmake/llvm",
         "MLIR_DIR": "/opt/homebrew/opt/llvm/lib/cmake/mlir",
-        "CMAKE_OSX_DEPLOYMENT_TARGET": "26.0"
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "26.0",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/matrix/dev-homebrew/install"
       }
     },
     {
@@ -48,7 +50,8 @@
       "description": "Multi-config CI preset with automatic LLVM/MLIR discovery from environment/system paths.",
       "inherits": "base",
       "cacheVariables": {
-        "LLVMDSDL_ENABLE_PYTHON_ACCELERATOR": "ON"
+        "LLVMDSDL_ENABLE_PYTHON_ACCELERATOR": "ON",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/matrix/ci/install"
       }
     }
   ],
@@ -76,6 +79,24 @@
       ]
     },
     {
+      "name": "install-bin-dev-llvm-env-release",
+      "displayName": "Install (dev-llvm-env, Release, binaries-only)",
+      "configurePreset": "dev-llvm-env",
+      "configuration": "Release",
+      "targets": [
+        "install-bin"
+      ]
+    },
+    {
+      "name": "install-dev-dev-llvm-env-release",
+      "displayName": "Install (dev-llvm-env, Release, dev files)",
+      "configurePreset": "dev-llvm-env",
+      "configuration": "Release",
+      "targets": [
+        "install-dev"
+      ]
+    },
+    {
       "name": "build-dev-homebrew-debug",
       "displayName": "Build (dev-homebrew, Debug)",
       "configurePreset": "dev-homebrew",
@@ -98,6 +119,24 @@
       ]
     },
     {
+      "name": "install-bin-dev-homebrew-release",
+      "displayName": "Install (dev-homebrew, Release, binaries-only)",
+      "configurePreset": "dev-homebrew",
+      "configuration": "Release",
+      "targets": [
+        "install-bin"
+      ]
+    },
+    {
+      "name": "install-dev-dev-homebrew-release",
+      "displayName": "Install (dev-homebrew, Release, dev files)",
+      "configurePreset": "dev-homebrew",
+      "configuration": "Release",
+      "targets": [
+        "install-dev"
+      ]
+    },
+    {
       "name": "build-ci-debug",
       "displayName": "Build (ci, Debug)",
       "configurePreset": "ci",
@@ -117,6 +156,42 @@
       "targets": [
         "all",
         "bundle-tools-self-contained"
+      ]
+    },
+    {
+      "name": "install-bin-ci-debug",
+      "displayName": "Install (ci, Debug, binaries-only)",
+      "configurePreset": "ci",
+      "configuration": "Debug",
+      "targets": [
+        "install-bin"
+      ]
+    },
+    {
+      "name": "install-dev-ci-debug",
+      "displayName": "Install (ci, Debug, dev files)",
+      "configurePreset": "ci",
+      "configuration": "Debug",
+      "targets": [
+        "install-dev"
+      ]
+    },
+    {
+      "name": "install-bin-ci-release",
+      "displayName": "Install (ci, Release, binaries-only)",
+      "configurePreset": "ci",
+      "configuration": "Release",
+      "targets": [
+        "install-bin"
+      ]
+    },
+    {
+      "name": "install-dev-ci-release",
+      "displayName": "Install (ci, Release, dev files)",
+      "configurePreset": "ci",
+      "configuration": "Release",
+      "targets": [
+        "install-dev"
       ]
     }
   ],
@@ -277,7 +352,7 @@
     {
       "name": "matrix-dev-llvm-env",
       "displayName": "Workflow (matrix dev-llvm-env)",
-      "description": "Configure once, then run Debug smoke, RelWithDebInfo full, and Release smoke+bundle.",
+      "description": "Configure once, then run Debug smoke, RelWithDebInfo full, and Release build+smoke+binaries-install+dev-install.",
       "steps": [
         {
           "type": "configure",
@@ -306,13 +381,21 @@
         {
           "type": "test",
           "name": "test-dev-llvm-env-smoke-release"
+        },
+        {
+          "type": "build",
+          "name": "install-bin-dev-llvm-env-release"
+        },
+        {
+          "type": "build",
+          "name": "install-dev-dev-llvm-env-release"
         }
       ]
     },
     {
       "name": "matrix-dev-homebrew",
       "displayName": "Workflow (matrix dev-homebrew)",
-      "description": "Configure once, then run Debug smoke, RelWithDebInfo full, and Release smoke+bundle.",
+      "description": "Configure once, then run Debug smoke, RelWithDebInfo full, and Release build+smoke+binaries-install+dev-install.",
       "steps": [
         {
           "type": "configure",
@@ -341,13 +424,21 @@
         {
           "type": "test",
           "name": "test-dev-homebrew-smoke-release"
+        },
+        {
+          "type": "build",
+          "name": "install-bin-dev-homebrew-release"
+        },
+        {
+          "type": "build",
+          "name": "install-dev-dev-homebrew-release"
         }
       ]
     },
     {
       "name": "matrix-ci",
       "displayName": "Workflow (matrix ci)",
-      "description": "Configure once, then run Debug smoke, RelWithDebInfo Python-accelerator required gate + full suite, and Release smoke+bundle.",
+      "description": "Configure once, then run Debug smoke, RelWithDebInfo Python-accelerator required gate + full suite, and Release build+smoke+binaries-install+dev-install.",
       "steps": [
         {
           "type": "configure",
@@ -380,6 +471,64 @@
         {
           "type": "test",
           "name": "test-ci-smoke-release"
+        },
+        {
+          "type": "build",
+          "name": "install-bin-ci-release"
+        },
+        {
+          "type": "build",
+          "name": "install-dev-ci-release"
+        }
+      ]
+    },
+    {
+      "name": "install-bin-release-ci",
+      "displayName": "Workflow (ci binary/release install)",
+      "description": "Configure once, build Release, run Release smoke tests, then install binaries only.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "ci"
+        },
+        {
+          "type": "build",
+          "name": "build-ci-release"
+        },
+        {
+          "type": "test",
+          "name": "test-ci-smoke-release"
+        },
+        {
+          "type": "build",
+          "name": "install-bin-ci-release"
+        }
+      ]
+    },
+    {
+      "name": "install-dev-debug-ci",
+      "displayName": "Workflow (ci binary/debug + dev install)",
+      "description": "Configure once, build Debug, run Debug smoke tests, then install debug binaries and development files.",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "ci"
+        },
+        {
+          "type": "build",
+          "name": "build-ci-debug"
+        },
+        {
+          "type": "test",
+          "name": "test-ci-smoke-debug"
+        },
+        {
+          "type": "build",
+          "name": "install-bin-ci-debug"
+        },
+        {
+          "type": "build",
+          "name": "install-dev-ci-debug"
         }
       ]
     }

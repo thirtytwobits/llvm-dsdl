@@ -1,6 +1,6 @@
 [package]
 name = "llvmdsdl_c_rust_parity"
-version = "0.1.0"
+version = "@LLVMDSDL_TOOL_VERSION@"
 edition = "2021"
 
 [dependencies]

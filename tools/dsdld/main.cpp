@@ -17,6 +17,8 @@
 
 #include "llvmdsdl/LSP/JsonRpcIO.h"
 #include "llvmdsdl/LSP/Server.h"
+#include "llvmdsdl/Version.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -26,6 +28,15 @@
 int main(int argc, char** argv)
 {
     llvm::InitLLVM y(argc, argv);
+    for (int i = 1; i < argc; ++i)
+    {
+        const llvm::StringRef arg(argv[i]);
+        if (arg == "--version" || arg == "-V")
+        {
+            llvm::outs() << "dsdld " << llvmdsdl::kVersionString << "\n";
+            return 0;
+        }
+    }
 
     llvmdsdl::lsp::JsonRpcStdioTransport transport(std::cin, std::cout);
     llvmdsdl::lsp::Server server(

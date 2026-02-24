@@ -1,4 +1,5 @@
 # RUN: rm -rf %t && mkdir -p %t
+# RUN: %dsdlc --version | FileCheck %s --check-prefix=CLI_VERSION
 # RUN: %dsdlc --target-language cpp %S/fixtures --cpp-profile both --outdir %t/cpp 2>&1 | FileCheck %s --check-prefix=CPP_SUMMARY
 # RUN: test -f %t/cpp/std/fixtures/vendor/Type_1_0.hpp
 # RUN: test -f %t/cpp/pmr/fixtures/vendor/Type_1_0.hpp
@@ -68,7 +69,9 @@
 # RUST_STD_SUMMARY: command: rust
 # RUST_STD_SUMMARY: files generated:
 # RUST_STD: name = "llvmdsdl_smoke_std"
+# RUST_STD: version = "{{[0-9]+\.[0-9]+\.[0-9]+}}"
 # RUST_STD: [package.metadata.llvmdsdl]
+# RUST_STD: generator-version = "{{[0-9]+\.[0-9]+\.[0-9]+}}"
 # RUST_STD: rust-profile = "std"
 # RUST_STD: rust-runtime-specialization = "portable"
 # RUST_STD: rust-memory-mode = "max-inline"
@@ -98,6 +101,7 @@
 # TS_PORTABLE_SUMMARY: Run summary:
 # TS_PORTABLE_SUMMARY: command: ts
 # TS_PORTABLE_SUMMARY: files generated:
+# TS_PORTABLE_PACKAGE: "generatorVersion": "{{[0-9]+\.[0-9]+\.[0-9]+}}"
 # TS_PORTABLE_PACKAGE: "tsRuntimeSpecialization": "portable"
 # TS_PORTABLE_RUNTIME: export function copyBits(
 # TS_PORTABLE_RUNTIME-NOT: dst.set(src.subarray
@@ -114,6 +118,7 @@
 # PY_PORTABLE_SUMMARY: Run summary:
 # PY_PORTABLE_SUMMARY: command: python
 # PY_PORTABLE_SUMMARY: files generated:
+# PY_PORTABLE_PACKAGE: "generatorVersion": "{{[0-9]+\.[0-9]+\.[0-9]+}}"
 # PY_PORTABLE_PACKAGE: "pythonRuntimeSpecialization": "portable"
 # PY_PORTABLE_RUNTIME-NOT: dst_start = dst_off_bits // 8
 
@@ -121,6 +126,8 @@
 # PY_FAST_SUMMARY: command: python
 # PY_FAST_SUMMARY: files generated:
 # PY_FAST_PACKAGE: "pythonRuntimeSpecialization": "fast"
+
+# CLI_VERSION: dsdlc [[MAJOR:[0-9]+]].[[MINOR:[0-9]+]].[[PATCH:[0-9]+]]
 # PY_FAST_RUNTIME: dst_start = dst_off_bits // 8
 # PY_PYPROJECT: [build-system]
 # PY_PYPROJECT: build-backend = "setuptools.build_meta"

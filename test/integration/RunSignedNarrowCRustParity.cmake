@@ -46,6 +46,23 @@ if(NOT EXISTS "${DSDLC}")
   message(FATAL_ERROR "dsdlc executable not found: ${DSDLC}")
 endif()
 
+execute_process(
+  COMMAND "${DSDLC}" --version
+  RESULT_VARIABLE dsdlc_version_result
+  OUTPUT_VARIABLE dsdlc_version_stdout
+  ERROR_VARIABLE dsdlc_version_stderr
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+if(NOT dsdlc_version_result EQUAL 0)
+  message(STATUS "dsdlc --version stdout:\n${dsdlc_version_stdout}")
+  message(STATUS "dsdlc --version stderr:\n${dsdlc_version_stderr}")
+  message(FATAL_ERROR "failed to query dsdlc tool version")
+endif()
+string(REGEX REPLACE "^dsdlc[ \t]+([0-9]+\\.[0-9]+\\.[0-9]+)$" "\\1" LLVMDSDL_TOOL_VERSION "${dsdlc_version_stdout}")
+if(NOT LLVMDSDL_TOOL_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+  message(FATAL_ERROR "unexpected dsdlc --version output: '${dsdlc_version_stdout}'")
+endif()
+
 if(NOT EXISTS "${C_COMPILER}")
   message(FATAL_ERROR "C compiler not found: ${C_COMPILER}")
 endif()

@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvmdsdl/LSP/Server.h"
+#include "llvmdsdl/Version.h"
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -803,7 +804,7 @@ bool Server::handleRequest(const llvm::json::Object& message, const llvm::String
              llvm::json::Object{
                  {"workspaceFolders", llvm::json::Object{{"supported", true}, {"changeNotifications", false}}}}},
         };
-        result["serverInfo"] = llvm::json::Object{{"name", "dsdld"}, {"version", "0.1.0"}};
+        result["serverInfo"] = llvm::json::Object{{"name", "dsdld"}, {"version", llvmdsdl::kVersionString}};
         sendResult(id, std::move(result));
         return false;
     }

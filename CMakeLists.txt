@@ -1,9 +1,34 @@
 cmake_minimum_required(VERSION 3.24)
 project(llvm-dsdl LANGUAGES C CXX)
+include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+set(LLVMDSDL_VERSION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
+if(NOT EXISTS "${LLVMDSDL_VERSION_FILE}")
+  message(FATAL_ERROR "Missing VERSION file: ${LLVMDSDL_VERSION_FILE}")
+endif()
+
+file(READ "${LLVMDSDL_VERSION_FILE}" LLVMDSDL_TOOL_VERSION_RAW)
+string(STRIP "${LLVMDSDL_TOOL_VERSION_RAW}" LLVMDSDL_TOOL_VERSION)
+if(NOT LLVMDSDL_TOOL_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+  message(FATAL_ERROR
+    "Invalid VERSION string '${LLVMDSDL_TOOL_VERSION}'. Expected semantic version: MAJOR.MINOR.PATCH")
+endif()
+
+string(REPLACE "." ";" LLVMDSDL_VERSION_PARTS "${LLVMDSDL_TOOL_VERSION}")
+list(GET LLVMDSDL_VERSION_PARTS 0 LLVMDSDL_VERSION_MAJOR)
+list(GET LLVMDSDL_VERSION_PARTS 1 LLVMDSDL_VERSION_MINOR)
+list(GET LLVMDSDL_VERSION_PARTS 2 LLVMDSDL_VERSION_PATCH)
+
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/include/llvmdsdl/Version.h.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/include/llvmdsdl/Version.h"
+  @ONLY
+)
+message(STATUS "llvm-dsdl tool version: ${LLVMDSDL_TOOL_VERSION}")
 
 # Some distro LLVM packages export LLVMSupport with zstd::libzstd_* targets but
 # do not bring zstd in transitively. Preload zstd to avoid unresolved imported
@@ -108,6 +133,14 @@ option(LLVMDSDL_ENABLE_LLVM_COVERAGE
 
 option(LLVMDSDL_ENABLE_PYTHON_ACCELERATOR
        "Build optional CPython runtime accelerator module for generated Python code"
+       OFF)
+
+option(LLVMDSDL_DISTCLEAN_REMOVE_NODE_MODULES
+       "Remove editors/vscode/dsdld-client/node_modules when running distclean"
+       OFF)
+
+option(LLVMDSDL_DISTCLEAN_REMOVE_VENV
+       "Remove repository .venv when running distclean"
        OFF)
 
 set(LLVMDSDL_COVERAGE_CTEST_ARGS
@@ -226,6 +259,19 @@ add_custom_target(check-include-what-you-use
   DEPENDS check-iwyu
 )
 
+add_custom_target(distclean
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DSOURCE_DIR=${LLVMDSDL_SOURCE_DIR}
+      -DBINARY_DIR=${LLVMDSDL_BINARY_DIR}
+      -DREMOVE_NODE_MODULES=${LLVMDSDL_DISTCLEAN_REMOVE_NODE_MODULES}
+      -DREMOVE_VENV=${LLVMDSDL_DISTCLEAN_REMOVE_VENV}
+      -P ${LLVMDSDL_SOURCE_DIR}/cmake/DistClean.cmake
+  USES_TERMINAL
+  VERBATIM
+  COMMENT "Removing generated build and local development artifacts"
+)
+
 if(LLVMDSDL_PYTHON3_EXE)
   add_custom_target(convergence-report
     COMMAND
@@ -308,6 +354,91 @@ add_subdirectory(lib)
 add_subdirectory(tools)
 add_subdirectory(examples/cyphal_ping_pong)
 add_subdirectory(examples/cyphal_yakut_register_demo)
+
+set(LLVMDSDL_INSTALLABLE_TOOLS
+    dsdlc
+    dsdl-opt
+    dsdld)
+
+set(LLVMDSDL_INSTALLABLE_LIBRARIES
+    llvmdsdlSupport
+    llvmdsdlFrontend
+    llvmdsdlSemantics
+    llvmdsdlIR
+    llvmdsdlLowering
+    llvmdsdlTransforms
+    llvmdsdlCodeGen
+    llvmdsdlLSP)
+
+set(LLVMDSDL_INSTALL_COMPONENT_BIN "bin")
+set(LLVMDSDL_INSTALL_COMPONENT_DEV "dev")
+
+install(
+  TARGETS ${LLVMDSDL_INSTALLABLE_TOOLS}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_BIN})
+
+install(
+  TARGETS ${LLVMDSDL_INSTALLABLE_LIBRARIES}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_DEV}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_DEV})
+
+install(
+  DIRECTORY ${LLVMDSDL_SOURCE_DIR}/include/llvmdsdl
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_DEV}
+  FILES_MATCHING
+    PATTERN "*.h"
+    PATTERN "*.td")
+
+set(LLVMDSDL_GENERATED_DIALECT_HEADERS
+    ${LLVMDSDL_BINARY_DIR}/include/llvmdsdl/IR/DSDLOps.h.inc
+    ${LLVMDSDL_BINARY_DIR}/include/llvmdsdl/IR/DSDLDialect.h.inc
+    ${LLVMDSDL_BINARY_DIR}/include/llvmdsdl/IR/DSDLTypes.h.inc
+    ${LLVMDSDL_BINARY_DIR}/include/llvmdsdl/IR/DSDLAttrs.h.inc)
+
+install(
+  FILES ${LLVMDSDL_GENERATED_DIALECT_HEADERS}
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/llvmdsdl/IR
+  COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_DEV})
+
+install(
+  FILES ${LLVMDSDL_BINARY_DIR}/include/llvmdsdl/Version.h
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/llvmdsdl
+  COMPONENT ${LLVMDSDL_INSTALL_COMPONENT_DEV})
+
+set(LLVMDSDL_INSTALL_CONFIG_ARGS)
+if(CMAKE_CONFIGURATION_TYPES)
+  list(APPEND LLVMDSDL_INSTALL_CONFIG_ARGS --config $<CONFIG>)
+elseif(CMAKE_BUILD_TYPE)
+  list(APPEND LLVMDSDL_INSTALL_CONFIG_ARGS --config ${CMAKE_BUILD_TYPE})
+endif()
+
+add_custom_target(install-bin
+  COMMAND
+    ${CMAKE_COMMAND}
+      --install ${LLVMDSDL_BINARY_DIR}
+      ${LLVMDSDL_INSTALL_CONFIG_ARGS}
+      --component ${LLVMDSDL_INSTALL_COMPONENT_BIN}
+  DEPENDS ${LLVMDSDL_INSTALLABLE_TOOLS}
+  USES_TERMINAL
+  VERBATIM
+  COMMENT "Installing llvm-dsdl binaries only"
+)
+
+add_custom_target(install-dev
+  COMMAND
+    ${CMAKE_COMMAND}
+      --install ${LLVMDSDL_BINARY_DIR}
+      ${LLVMDSDL_INSTALL_CONFIG_ARGS}
+      --component ${LLVMDSDL_INSTALL_COMPONENT_DEV}
+  DEPENDS ${LLVMDSDL_INSTALLABLE_LIBRARIES}
+  USES_TERMINAL
+  VERBATIM
+  COMMENT "Installing llvm-dsdl development files"
+)
 
 if(LLVMDSDL_ENABLE_PYTHON_ACCELERATOR)
   find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter Development.Module)
