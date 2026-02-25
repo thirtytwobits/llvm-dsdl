@@ -5,6 +5,9 @@
 # RUN: test -f %t/cpp/pmr/fixtures/vendor/Type_1_0.hpp
 # RUN: cat %t/cpp/std/fixtures/vendor/Type_1_0.hpp | FileCheck %s --check-prefix=CPP_STD
 # RUN: cat %t/cpp/pmr/fixtures/vendor/Type_1_0.hpp | FileCheck %s --check-prefix=CPP_PMR
+# RUN: %dsdlc --target-language cpp %S/fixtures --cpp-profile autosar --outdir %t/cpp-autosar 2>&1 | FileCheck %s --check-prefix=CPP_AUTOSAR_SUMMARY
+# RUN: test -f %t/cpp-autosar/fixtures/vendor/Helpers_1_0.hpp
+# RUN: cat %t/cpp-autosar/fixtures/vendor/Helpers_1_0.hpp | FileCheck %s --check-prefix=CPP_AUTOSAR
 
 # RUN: %dsdlc --target-language rust %S/fixtures --rust-profile std --rust-crate-name llvmdsdl_smoke_std --outdir %t/rust-std 2>&1 | FileCheck %s --check-prefix=RUST_STD_SUMMARY
 # RUN: test -f %t/rust-std/src/fixtures/vendor/helpers_1_0.rs
@@ -64,6 +67,12 @@
 
 # CPP_STD: #include <vector>
 # CPP_PMR: #include <memory_resource>
+# CPP_AUTOSAR_SUMMARY: Run summary:
+# CPP_AUTOSAR_SUMMARY: command: cpp
+# CPP_AUTOSAR_SUMMARY: files generated:
+# CPP_AUTOSAR: ::llvmdsdl::cpp::autosar::BoundedVector<
+# CPP_AUTOSAR-NOT: #include <vector>
+# CPP_AUTOSAR-NOT: #include <memory_resource>
 
 # RUST_STD_SUMMARY: Run summary:
 # RUST_STD_SUMMARY: command: rust

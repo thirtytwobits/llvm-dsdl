@@ -87,10 +87,16 @@ Generate C output:
 dsdlc --target-language c path/to/root_namespace --outdir out/c
 ```
 
-Generate C++ output (`std`, `pmr`, or both):
+Generate C++ output (`std`, `pmr`, `autosar`, or `both` where `both` means `std` + `pmr`):
 
 ```bash
 dsdlc --target-language cpp path/to/root_namespace --cpp-profile both --outdir out/cpp
+```
+
+Generate AUTOSAR-oriented C++14 output:
+
+```bash
+dsdlc --target-language cpp path/to/root_namespace --cpp-profile autosar --outdir out/cpp-autosar
 ```
 
 Generate Rust output:

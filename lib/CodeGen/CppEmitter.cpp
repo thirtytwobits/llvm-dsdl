@@ -158,7 +158,11 @@ void emitNamespaceOpen(std::ostringstream& out, const std::vector<std::string>& 
     {
         return;
     }
-    out << "namespace " << cppNamespacePath(components) << " {\n\n";
+    for (const auto& component : components)
+    {
+        out << "namespace " << codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, component) << " {\n";
+    }
+    out << "\n";
 }
 
 void emitNamespaceClose(std::ostringstream& out, const std::vector<std::string>& components)
@@ -167,7 +171,11 @@ void emitNamespaceClose(std::ostringstream& out, const std::vector<std::string>&
     {
         return;
     }
-    out << "\n} // namespace " << cppNamespacePath(components) << "\n";
+    out << "\n";
+    for (auto it = components.rbegin(); it != components.rend(); ++it)
+    {
+        out << "} // namespace " << codegenSanitizeIdentifier(CodegenNamingLanguage::Cpp, *it) << "\n";
+    }
 }
 
 class EmitterContext final
@@ -265,12 +273,29 @@ void emitLine(std::ostringstream& out, const int indent, const std::string& line
     out << std::string(static_cast<std::size_t>(indent) * 2U, ' ') << line << '\n';
 }
 
+enum class CppFlavor
+{
+    Std,
+    Pmr,
+    Autosar,
+};
+
+bool isPmrFlavor(const CppFlavor flavor)
+{
+    return flavor == CppFlavor::Pmr;
+}
+
+bool isAutosarFlavor(const CppFlavor flavor)
+{
+    return flavor == CppFlavor::Autosar;
+}
+
 class FunctionBodyEmitter final
 {
 public:
-    explicit FunctionBodyEmitter(const EmitterContext& ctx, const bool pmrMode)
+    explicit FunctionBodyEmitter(const EmitterContext& ctx, const CppFlavor flavor)
         : ctx_(ctx)
-        , pmrMode_(pmrMode)
+        , flavor_(flavor)
     {
     }
 
@@ -284,12 +309,12 @@ public:
                  "inline std::int8_t " + typeName + "__serialize_(const " + typeName +
                      "* const obj, std::uint8_t* const buffer, std::size_t* const "
                      "inout_buffer_size_bytes" +
-                     (pmrMode_ ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
+                     (isPmrFlavor(flavor_) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
         emitLine(out, 0, "{");
         emitLine(out, 1, "if ((obj == nullptr) || (buffer == nullptr) || (inout_buffer_size_bytes == nullptr)) {");
         emitLine(out, 2, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
         emitLine(out, 1, "}");
-        if (pmrMode_)
+        if (isPmrFlavor(flavor_))
         {
             emitLine(out,
                      1,
@@ -386,7 +411,7 @@ public:
                  "inline std::int8_t " + typeName + "__deserialize_(" + typeName +
                      "* const out_obj, const std::uint8_t* buffer, std::size_t* const "
                      "inout_buffer_size_bytes" +
-                     (pmrMode_ ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
+                     (isPmrFlavor(flavor_) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
         emitLine(out, 0, "{");
         emitLine(out,
                  1,
@@ -394,7 +419,7 @@ public:
                  "*inout_buffer_size_bytes))) {");
         emitLine(out, 2, "return static_cast<std::int8_t>(-DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
         emitLine(out, 1, "}");
-        if (pmrMode_)
+        if (isPmrFlavor(flavor_))
         {
             emitLine(out,
                      1,
@@ -483,7 +508,7 @@ public:
 
 private:
     const EmitterContext& ctx_;
-    bool                  pmrMode_{false};
+    CppFlavor             flavor_{CppFlavor::Std};
     std::size_t           id_{0};
 
     std::string nextName(const std::string& prefix)
@@ -1027,7 +1052,7 @@ private:
             emitLine(out, indent, "if (" + validateRc + " < 0) {");
             emitLine(out, indent + 1, "return " + validateRc + ";");
             emitLine(out, indent, "}");
-            if (pmrMode_)
+            if (isPmrFlavor(flavor_))
             {
                 const auto tmpVar = nextName("tmp");
                 emitLine(out,
@@ -1043,7 +1068,7 @@ private:
                 emitLine(out, indent, expr + ".resize(" + countVar + ");");
             }
 
-            if (pmrMode_ && type.scalarCategory == SemanticScalarCategory::Composite)
+            if (isPmrFlavor(flavor_) && type.scalarCategory == SemanticScalarCategory::Composite)
             {
                 const auto initIndex = nextName("i");
                 emitLine(out,
@@ -1129,8 +1154,9 @@ private:
         }
         emitLine(out,
                  indent,
-                 "std::int8_t " + errVar + " = " + nestedType + "__serialize_(&" + expr +
-                     ", &buffer[offset_bits / 8U], &" + sizeVar + (pmrMode_ ? ", effective_memory_resource" : "") +
+                     "std::int8_t " + errVar + " = " + nestedType + "__serialize_(&" + expr +
+                     ", &buffer[offset_bits / 8U], &" + sizeVar +
+                     (isPmrFlavor(flavor_) ? ", effective_memory_resource" : "") +
                      ");");
         emitLine(out, indent, "if (" + errVar + " < 0) {");
         emitLine(out, indent + 1, "return " + errVar + ";");
@@ -1199,7 +1225,8 @@ private:
             emitLine(out,
                      indent,
                      "const std::int8_t " + errVar + " = " + nestedType + "__deserialize_(&" + expr +
-                         ", &buffer[offset_bits / 8U], &" + consumed + (pmrMode_ ? ", effective_memory_resource" : "") +
+                         ", &buffer[offset_bits / 8U], &" + consumed +
+                         (isPmrFlavor(flavor_) ? ", effective_memory_resource" : "") +
                          ");");
             emitLine(out, indent, "if (" + errVar + " < 0) {");
             emitLine(out, indent + 1, "return " + errVar + ";");
@@ -1215,7 +1242,8 @@ private:
         emitLine(out,
                  indent,
                  "const std::int8_t " + errVar + " = " + nestedType + "__deserialize_(&" + expr +
-                     ", &buffer[offset_bits / 8U], &" + sizeVar + (pmrMode_ ? ", effective_memory_resource" : "") +
+                     ", &buffer[offset_bits / 8U], &" + sizeVar +
+                     (isPmrFlavor(flavor_) ? ", effective_memory_resource" : "") +
                      ");");
         emitLine(out, indent, "if (" + errVar + " < 0) {");
         emitLine(out, indent + 1, "return " + errVar + ";");
@@ -1274,19 +1302,19 @@ void emitArrayMetadata(std::ostringstream& out, const std::string& typeName, con
     }
 }
 
-void emitFunctionPrototypes(std::ostringstream& out, const std::string& typeName, const bool pmrMode)
+void emitFunctionPrototypes(std::ostringstream& out, const std::string& typeName, const CppFlavor flavor)
 {
     emitLine(out, 0, "struct " + typeName + ";");
     emitLine(out,
              0,
              "inline std::int8_t " + typeName + "__serialize_(const " + typeName +
                  "* obj, std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes" +
-                 (pmrMode ? ", ::llvmdsdl::cpp::MemoryResource* memory_resource" : "") + ");");
+                 (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* memory_resource" : "") + ");");
     emitLine(out,
              0,
              "inline std::int8_t " + typeName + "__deserialize_(" + typeName +
                  "* out_obj, const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes" +
-                 (pmrMode ? ", ::llvmdsdl::cpp::MemoryResource* memory_resource" : "") + ");");
+                 (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* memory_resource" : "") + ");");
     out << "\n";
 }
 
@@ -1297,7 +1325,7 @@ void emitSectionStruct(std::ostringstream&    out,
                        std::uint32_t          minorVersion,
                        const SemanticSection& section,
                        const EmitterContext&  ctx,
-                       const bool             pmrMode)
+                       const CppFlavor        flavor)
 {
     emitLine(out, 0, "struct " + typeName + " {");
 
@@ -1320,7 +1348,7 @@ void emitSectionStruct(std::ostringstream&    out,
         if (field.resolvedType.arrayKind == ArrayKind::None)
         {
             emitLine(out, 1, baseType + " " + member + "{};");
-            if (pmrMode && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
+            if (isPmrFlavor(flavor) && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
             {
                 compositeScalarMembers.push_back(member);
             }
@@ -1344,7 +1372,7 @@ void emitSectionStruct(std::ostringstream&    out,
                          "std::array<" + baseType + ", " + std::to_string(field.resolvedType.arrayCapacity) + "U> " +
                              member + "{};");
             }
-            if (pmrMode && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
+            if (isPmrFlavor(flavor) && field.resolvedType.scalarCategory == SemanticScalarCategory::Composite)
             {
                 compositeFixedArrayMembers.push_back(member);
             }
@@ -1352,7 +1380,7 @@ void emitSectionStruct(std::ostringstream&    out,
             continue;
         }
 
-        if (pmrMode)
+        if (isPmrFlavor(flavor))
         {
             emitLine(out,
                      1,
@@ -1365,6 +1393,15 @@ void emitSectionStruct(std::ostringstream&    out,
             {
                 compositeVariableArrayMembers.push_back(member);
             }
+        }
+        else if (isAutosarFlavor(flavor))
+        {
+            emitLine(out,
+                     1,
+                     "::llvmdsdl::cpp::autosar::BoundedVector<" +
+                         std::string(field.resolvedType.scalarCategory == SemanticScalarCategory::Bool ? "bool"
+                                                                                                       : baseType) +
+                         ", " + std::to_string(field.resolvedType.arrayCapacity) + "U> " + member + "{};");
         }
         else
         {
@@ -1384,7 +1421,7 @@ void emitSectionStruct(std::ostringstream&    out,
         ++emitted;
     }
 
-    if (pmrMode)
+    if (isPmrFlavor(flavor))
     {
         emitLine(out,
                  1,
@@ -1465,9 +1502,10 @@ void emitSectionStruct(std::ostringstream&    out,
 
     emitLine(out,
              1,
-             "[[nodiscard]] inline std::int8_t serialize(std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes) "
+             "LLVMDSDL_NODISCARD inline std::int8_t serialize(std::uint8_t* buffer, std::size_t* "
+             "inout_buffer_size_bytes) "
              "const {");
-    if (pmrMode)
+    if (isPmrFlavor(flavor))
     {
         emitLine(out,
                  2,
@@ -1481,9 +1519,9 @@ void emitSectionStruct(std::ostringstream&    out,
 
     emitLine(out,
              1,
-             "[[nodiscard]] inline std::int8_t deserialize(const std::uint8_t* buffer, std::size_t* "
+             "LLVMDSDL_NODISCARD inline std::int8_t deserialize(const std::uint8_t* buffer, std::size_t* "
              "inout_buffer_size_bytes) {");
-    if (pmrMode)
+    if (isPmrFlavor(flavor))
     {
         emitLine(out,
                  2,
@@ -1495,11 +1533,11 @@ void emitSectionStruct(std::ostringstream&    out,
     }
     emitLine(out, 1, "}");
 
-    if (pmrMode)
+    if (isPmrFlavor(flavor))
     {
         emitLine(out,
                  1,
-                 "[[nodiscard]] inline std::int8_t serialize(std::uint8_t* buffer, std::size_t* "
+                 "LLVMDSDL_NODISCARD inline std::int8_t serialize(std::uint8_t* buffer, std::size_t* "
                  "inout_buffer_size_bytes, ::llvmdsdl::cpp::MemoryResource* memory_resource) const {");
         emitLine(out,
                  2,
@@ -1508,7 +1546,7 @@ void emitSectionStruct(std::ostringstream&    out,
 
         emitLine(out,
                  1,
-                 "[[nodiscard]] inline std::int8_t deserialize(const std::uint8_t* buffer, std::size_t* "
+                 "LLVMDSDL_NODISCARD inline std::int8_t deserialize(const std::uint8_t* buffer, std::size_t* "
                  "inout_buffer_size_bytes, ::llvmdsdl::cpp::MemoryResource* memory_resource) {");
         emitLine(out,
                  2,
@@ -1526,14 +1564,14 @@ void emitSection(std::ostringstream&              out,
                  const std::string&               typeName,
                  const std::string&               fullName,
                  const SemanticSection&           section,
-                 const bool                       pmrMode,
+                 const CppFlavor                  flavor,
                  const LoweredSectionFacts* const sectionFacts)
 {
     (void) def;
-    emitFunctionPrototypes(out, typeName, pmrMode);
-    emitSectionStruct(out, typeName, fullName, def.info.majorVersion, def.info.minorVersion, section, ctx, pmrMode);
+    emitFunctionPrototypes(out, typeName, flavor);
+    emitSectionStruct(out, typeName, fullName, def.info.majorVersion, def.info.minorVersion, section, ctx, flavor);
 
-    FunctionBodyEmitter bodyEmitter(ctx, pmrMode);
+    FunctionBodyEmitter bodyEmitter(ctx, flavor);
     bodyEmitter.emitSerializeFunction(out, typeName, section, sectionFacts);
     bodyEmitter.emitDeserializeFunction(out, typeName, section, sectionFacts);
 }
@@ -1556,14 +1594,17 @@ llvm::Expected<std::string> loadCRuntimeHeader()
     return content.str();
 }
 
-llvm::Expected<std::string> loadCppRuntimeHeader()
+llvm::Expected<std::string> loadCppRuntimeHeader(const CppFlavor flavor)
 {
-    const std::filesystem::path absoluteRuntimeHeader =
-        std::filesystem::path(LLVMDSDL_SOURCE_DIR) / "runtime" / "cpp" / "dsdl_runtime.hpp";
+    const std::filesystem::path relativeRuntimeHeader = isAutosarFlavor(flavor)
+                                                            ? std::filesystem::path("runtime") / "cpp" / "autosar" /
+                                                                  "dsdl_runtime.hpp"
+                                                            : std::filesystem::path("runtime") / "cpp" / "dsdl_runtime.hpp";
+    const std::filesystem::path absoluteRuntimeHeader = std::filesystem::path(LLVMDSDL_SOURCE_DIR) / relativeRuntimeHeader;
     std::ifstream in(absoluteRuntimeHeader.string());
     if (!in)
     {
-        in.open("runtime/cpp/dsdl_runtime.hpp");
+        in.open(relativeRuntimeHeader.string());
     }
     if (!in)
     {
@@ -1576,7 +1617,7 @@ llvm::Expected<std::string> loadCppRuntimeHeader()
 
 std::string renderHeader(const SemanticDefinition& def,
                          const EmitterContext&     ctx,
-                         const bool                pmrMode,
+                         const CppFlavor           flavor,
                          const LoweredFactsMap&    loweredFacts)
 {
     std::ostringstream out;
@@ -1591,8 +1632,11 @@ std::string renderHeader(const SemanticDefinition& def,
     out << "#include <cstddef>\n";
     out << "#include <cstdint>\n";
     out << "#include <utility>\n";
-    out << "#include <vector>\n";
-    if (pmrMode)
+    if (!isAutosarFlavor(flavor))
+    {
+        out << "#include <vector>\n";
+    }
+    if (isPmrFlavor(flavor))
     {
         out << "#include <memory_resource>\n";
     }
@@ -1615,10 +1659,10 @@ std::string renderHeader(const SemanticDefinition& def,
 
         emitLine(out,
                  0,
-                 "inline constexpr const char* " + baseTypeName + "_FULL_NAME = \"" + def.info.fullName + "\";");
+                 "constexpr const char* " + baseTypeName + "_FULL_NAME = \"" + def.info.fullName + "\";");
         emitLine(out,
                  0,
-                 "inline constexpr const char* " + baseTypeName + "_FULL_NAME_AND_VERSION = \"" + def.info.fullName +
+                 "constexpr const char* " + baseTypeName + "_FULL_NAME_AND_VERSION = \"" + def.info.fullName +
                      "." + std::to_string(def.info.majorVersion) + "." + std::to_string(def.info.minorVersion) + "\";");
         out << "\n";
 
@@ -1628,7 +1672,7 @@ std::string renderHeader(const SemanticDefinition& def,
                     requestType,
                     def.info.fullName + ".Request",
                     def.request,
-                    pmrMode,
+                    flavor,
                     lookupLoweredSectionFacts(loweredFacts, def, "request"));
         if (def.response)
         {
@@ -1638,17 +1682,17 @@ std::string renderHeader(const SemanticDefinition& def,
                         responseType,
                         def.info.fullName + ".Response",
                         *def.response,
-                        pmrMode,
+                        flavor,
                         lookupLoweredSectionFacts(loweredFacts, def, "response"));
         }
 
         emitLine(out, 0, "using " + baseTypeName + " = " + requestType + ";");
         emitLine(out,
                  0,
-                 "inline constexpr std::size_t " + baseTypeName + "_EXTENT_BYTES = " + requestType + "::EXTENT_BYTES;");
+                 "constexpr std::size_t " + baseTypeName + "_EXTENT_BYTES = " + requestType + "::EXTENT_BYTES;");
         emitLine(out,
                  0,
-                 "inline constexpr std::size_t " + baseTypeName + "_SERIALIZATION_BUFFER_SIZE_BYTES = " + requestType +
+                 "constexpr std::size_t " + baseTypeName + "_SERIALIZATION_BUFFER_SIZE_BYTES = " + requestType +
                      "::SERIALIZATION_BUFFER_SIZE_BYTES;");
         out << "\n";
 
@@ -1657,12 +1701,13 @@ std::string renderHeader(const SemanticDefinition& def,
                  "inline std::int8_t " + baseTypeName + "__serialize_(const " + baseTypeName +
                      "* const obj, std::uint8_t* const buffer, std::size_t* const "
                      "inout_buffer_size_bytes" +
-                     (pmrMode ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
+                     (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
         emitLine(out, 0, "{");
         emitLine(out,
                  1,
                  "return " + requestType + "__serialize_(reinterpret_cast<const " + requestType +
-                     "*>(obj), buffer, inout_buffer_size_bytes" + (pmrMode ? ", memory_resource" : "") + ");");
+                     "*>(obj), buffer, inout_buffer_size_bytes" +
+                     (isPmrFlavor(flavor) ? ", memory_resource" : "") + ");");
         emitLine(out, 0, "}");
         out << "\n";
 
@@ -1671,12 +1716,13 @@ std::string renderHeader(const SemanticDefinition& def,
                  "inline std::int8_t " + baseTypeName + "__deserialize_(" + baseTypeName +
                      "* const out_obj, const std::uint8_t* buffer, std::size_t* const "
                      "inout_buffer_size_bytes" +
-                     (pmrMode ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
+                     (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* const memory_resource" : "") + ")");
         emitLine(out, 0, "{");
         emitLine(out,
                  1,
                  "return " + requestType + "__deserialize_(reinterpret_cast<" + requestType +
-                     "*>(out_obj), buffer, inout_buffer_size_bytes" + (pmrMode ? ", memory_resource" : "") + ");");
+                     "*>(out_obj), buffer, inout_buffer_size_bytes" +
+                     (isPmrFlavor(flavor) ? ", memory_resource" : "") + ");");
         emitLine(out, 0, "}");
     }
     else
@@ -1687,7 +1733,7 @@ std::string renderHeader(const SemanticDefinition& def,
                     baseTypeName,
                     def.info.fullName,
                     def.request,
-                    pmrMode,
+                    flavor,
                     lookupLoweredSectionFacts(loweredFacts, def, ""));
     }
 
@@ -1698,7 +1744,7 @@ std::string renderHeader(const SemanticDefinition& def,
 
 llvm::Error emitProfile(const SemanticModule&                  semantic,
                         const std::filesystem::path&           outRoot,
-                        const bool                             pmrMode,
+                        const CppFlavor                        flavor,
                         const LoweredFactsMap&                 loweredFacts,
                         const CppEmitOptions&                  options,
                         const std::unordered_set<std::string>& selectedTypeKeys)
@@ -1715,7 +1761,7 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
         return err;
     }
 
-    auto cppRuntime = loadCppRuntimeHeader();
+    auto cppRuntime = loadCppRuntimeHeader(flavor);
     if (!cppRuntime)
     {
         return cppRuntime.takeError();
@@ -1741,7 +1787,7 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
             dir /= ns;
         }
         if (auto err = writeGeneratedFile(dir / headerFileName(def.info),
-                                          renderHeader(def, ctx, pmrMode, loweredFacts),
+                                          renderHeader(def, ctx, flavor, loweredFacts),
                                           options.writePolicy))
         {
             return err;
@@ -1780,18 +1826,22 @@ llvm::Error emitCpp(const SemanticModule& semantic,
 
     if (options.profile == CppProfile::Std)
     {
-        return emitProfile(semantic, outRoot, false, loweredFacts, options, selectedTypeKeys);
+        return emitProfile(semantic, outRoot, CppFlavor::Std, loweredFacts, options, selectedTypeKeys);
     }
     if (options.profile == CppProfile::Pmr)
     {
-        return emitProfile(semantic, outRoot, true, loweredFacts, options, selectedTypeKeys);
+        return emitProfile(semantic, outRoot, CppFlavor::Pmr, loweredFacts, options, selectedTypeKeys);
+    }
+    if (options.profile == CppProfile::Autosar)
+    {
+        return emitProfile(semantic, outRoot, CppFlavor::Autosar, loweredFacts, options, selectedTypeKeys);
     }
 
-    if (auto err = emitProfile(semantic, outRoot / "std", false, loweredFacts, options, selectedTypeKeys))
+    if (auto err = emitProfile(semantic, outRoot / "std", CppFlavor::Std, loweredFacts, options, selectedTypeKeys))
     {
         return err;
     }
-    return emitProfile(semantic, outRoot / "pmr", true, loweredFacts, options, selectedTypeKeys);
+    return emitProfile(semantic, outRoot / "pmr", CppFlavor::Pmr, loweredFacts, options, selectedTypeKeys);
 }
 
 }  // namespace llvmdsdl

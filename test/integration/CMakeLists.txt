@@ -601,6 +601,45 @@ if(CMAKE_C_COMPILER AND CMAKE_CXX_COMPILER)
     PROPERTIES
       LABELS "integration;fixtures;cpp;differential"
   )
+
+  add_test(
+    NAME llvmdsdl-signed-narrow-cpp-autosar-c-parity
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/signed-narrow-cpp-autosar-c-parity-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCPP_PROFILE=autosar
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunSignedNarrowCppCParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-signed-narrow-cpp-autosar-c-parity
+    PROPERTIES
+      LABELS "integration;fixtures;cpp;differential;autosar"
+  )
+
+  add_test(
+    NAME llvmdsdl-signed-narrow-cpp-autosar-c-parity-optimized
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DDSDLC=$<TARGET_FILE:dsdlc>
+        -DDSDLC_EXTRA_ARGS=--optimize-lowered-serdes
+        -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/signed-narrow-cpp-autosar-c-parity-optimized-out
+        -DC_COMPILER=${CMAKE_C_COMPILER}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCPP_PROFILE=autosar
+        -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/RunSignedNarrowCppCParity.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-signed-narrow-cpp-autosar-c-parity-optimized
+    PROPERTIES
+      LABELS "integration;fixtures;cpp;differential;optimized;autosar"
+  )
 else()
   message(STATUS "Skipping signed_narrow C/C++ parity tests: C/C++ compiler unavailable")
 endif()
@@ -2638,6 +2677,47 @@ set_tests_properties(
   llvmdsdl-uavcan-cpp-pmr-c-parity-optimized
   PROPERTIES
     LABELS "integration;uavcan;cpp;differential;slow;optimized"
+)
+
+add_test(
+  NAME llvmdsdl-uavcan-cpp-autosar-c-parity
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-cpp-autosar-c-parity-out
+      -DC_COMPILER=${CMAKE_C_COMPILER}
+      -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+      -DCPP_PROFILE=autosar
+      -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunCppCParity.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-uavcan-cpp-autosar-c-parity
+  PROPERTIES
+    LABELS "integration;uavcan;cpp;differential;slow;autosar"
+)
+
+add_test(
+  NAME llvmdsdl-uavcan-cpp-autosar-c-parity-optimized
+  COMMAND
+    ${CMAKE_COMMAND}
+      -DDSDLC=$<TARGET_FILE:dsdlc>
+      -DDSDLC_EXTRA_ARGS=--optimize-lowered-serdes
+      -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+      -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/uavcan-cpp-autosar-c-parity-optimized-out
+      -DC_COMPILER=${CMAKE_C_COMPILER}
+      -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+      -DCPP_PROFILE=autosar
+      -DSOURCE_ROOT=${LLVMDSDL_SOURCE_DIR}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/RunCppCParity.cmake
+)
+
+set_tests_properties(
+  llvmdsdl-uavcan-cpp-autosar-c-parity-optimized
+  PROPERTIES
+    LABELS "integration;uavcan;cpp;differential;slow;optimized;autosar"
 )
 
 if(CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)

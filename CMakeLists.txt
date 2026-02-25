@@ -598,6 +598,9 @@ if(LLVMDSDL_UAVCAN_ROOT)
   llvmdsdl_add_uavcan_codegen_target(generate-uavcan-cpp-pmr
                                      cpp-pmr
                                      --target-language cpp --cpp-profile pmr)
+  llvmdsdl_add_uavcan_codegen_target(generate-uavcan-cpp-autosar
+                                     cpp-autosar
+                                     --target-language cpp --cpp-profile autosar)
   llvmdsdl_add_uavcan_codegen_target(generate-uavcan-cpp-both
                                      cpp-both
                                      --target-language cpp --cpp-profile both)
@@ -719,6 +722,7 @@ if(LLVMDSDL_UAVCAN_ROOT)
                    generate-uavcan-cpp-both
                    generate-uavcan-cpp-std
                    generate-uavcan-cpp-pmr
+                   generate-uavcan-cpp-autosar
                    generate-uavcan-rust-std
                    generate-uavcan-rust-no-std-alloc
                    generate-uavcan-rust-runtime-fast

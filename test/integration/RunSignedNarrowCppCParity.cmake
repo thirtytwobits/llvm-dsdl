@@ -21,8 +21,25 @@ endif()
 if(NOT DEFINED CPP_PROFILE OR "${CPP_PROFILE}" STREQUAL "")
   set(CPP_PROFILE "std")
 endif()
-if(NOT (CPP_PROFILE STREQUAL "std" OR CPP_PROFILE STREQUAL "pmr"))
-  message(FATAL_ERROR "CPP_PROFILE must be one of: std, pmr")
+if(NOT (CPP_PROFILE STREQUAL "std" OR CPP_PROFILE STREQUAL "pmr" OR CPP_PROFILE STREQUAL "autosar"))
+  message(FATAL_ERROR "CPP_PROFILE must be one of: std, pmr, autosar")
+endif()
+
+if(CPP_PROFILE STREQUAL "autosar")
+  set(cxx_std_flag -std=c++14)
+  set(cxx_warning_flags
+      -Wall
+      -Wextra
+      -Wpedantic
+      -Wconversion
+      -Wsign-conversion
+      -Werror)
+else()
+  set(cxx_std_flag -std=c++23)
+  set(cxx_warning_flags
+      -Wall
+      -Wextra
+      -Werror)
 endif()
 
 if(NOT DEFINED FIXTURE_ROOT OR "${FIXTURE_ROOT}" STREQUAL "")
@@ -93,10 +110,8 @@ set(main_obj "${build_out}/signed_narrow_cpp_c_parity_main.o")
 execute_process(
   COMMAND
     "${CXX_COMPILER}"
-      -std=c++23
-      -Wall
-      -Wextra
-      -Werror
+      ${cxx_std_flag}
+      ${cxx_warning_flags}
       -I "${c_out}"
       -I "${cpp_out}"
       -c "${parity_main}"

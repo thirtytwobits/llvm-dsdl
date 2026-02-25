@@ -46,6 +46,9 @@ enum class CppProfile
 
     /// @brief Emit both `std` and `pmr` profiles.
     Both,
+
+    /// @brief Emit AUTOSAR-oriented C++14 profile.
+    Autosar,
 };
 
 /// @brief Configuration options for C++ code generation.

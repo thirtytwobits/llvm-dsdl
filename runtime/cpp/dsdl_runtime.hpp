@@ -8,10 +8,10 @@
 //===----------------------------------------------------------------------===//
 ///
 /// @file
-/// C++ convenience wrappers for the C DSDL runtime.
+/// C++ convenience wrappers for the shared C runtime used by generated DSDL bindings.
 ///
-/// This header re-exports the C runtime and provides a small PMR-oriented API
-/// used by generated C++ bindings.
+/// This header re-exports the C runtime and provides common helpers plus an
+/// optional PMR-oriented API used by generated std/pmr C++ bindings.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -19,16 +19,43 @@
 #define LLVMDSDL_CPP_RUNTIME_HPP
 
 #include <cstddef>
-#include <memory_resource>
+
+#if defined(__cplusplus) && (__cplusplus >= 201703L) && defined(__has_include)
+#  if __has_include(<memory_resource>)
+#    include <memory_resource>
+#    define LLVMDSDL_CPP_HAS_MEMORY_RESOURCE 1
+#  else
+#    define LLVMDSDL_CPP_HAS_MEMORY_RESOURCE 0
+#  endif
+#else
+#  define LLVMDSDL_CPP_HAS_MEMORY_RESOURCE 0
+#endif
+
+#if defined(__cplusplus) && (__cplusplus >= 201703L)
+#  if defined(__has_cpp_attribute)
+#    if __has_cpp_attribute(nodiscard)
+#      define LLVMDSDL_NODISCARD [[nodiscard]]
+#    else
+#      define LLVMDSDL_NODISCARD
+#    endif
+#  else
+#    define LLVMDSDL_NODISCARD [[nodiscard]]
+#  endif
+#else
+#  define LLVMDSDL_NODISCARD
+#endif
 
 extern "C"
 {
 #include "dsdl_runtime.h"
 }
 
-namespace llvmdsdl::cpp
+namespace llvmdsdl
+{
+namespace cpp
 {
 
+#if LLVMDSDL_CPP_HAS_MEMORY_RESOURCE
 /// @brief Alias for the polymorphic memory-resource abstraction.
 using MemoryResource = std::pmr::memory_resource;
 
@@ -45,7 +72,9 @@ inline constexpr MemoryResource* null_memory_resource() noexcept
 {
     return nullptr;
 }
+#endif
 
-}  // namespace llvmdsdl::cpp
+}  // namespace cpp
+}  // namespace llvmdsdl
 
 #endif  // LLVMDSDL_CPP_RUNTIME_HPP

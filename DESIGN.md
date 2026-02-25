@@ -152,13 +152,17 @@ Current path:
 
 ### 4.2 C++ backend (`emitCpp`)
 
-The C++ backend renders modern namespace-based APIs and supports `std`, `pmr`, and `both` profiles. It consumes shared lowered plans/contracts and then applies C++-specific syntax and API shaping.
+The C++ backend renders modern namespace-based APIs and supports `std`, `pmr`, `autosar`, and `both` profiles. It consumes shared lowered plans/contracts and then applies C++-specific syntax and API shaping.
 
 Key file:
 
 - [`lib/CodeGen/CppEmitter.cpp`](lib/CodeGen/CppEmitter.cpp)
 
 `pmr` mode adds allocator-aware surfaces while preserving wire semantics shared with other backends.
+
+`autosar` mode provides a C++14-compatible surface with deterministic bounded variable-array storage (no heap-backed containers in generated type fields).
+
+`both` remains a convenience output that emits only the `std` and `pmr` trees.
 
 ### 4.3 Rust backend (`emitRust`)
 

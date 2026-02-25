@@ -33,10 +33,45 @@ if(NOT gen_result EQUAL 0)
   message(FATAL_ERROR "uavcan C++ generation failed")
 endif()
 
-foreach(profile std pmr)
+execute_process(
+  COMMAND
+    "${DSDLC}" --target-language cpp
+      "${UAVCAN_ROOT}"
+      --cpp-profile autosar
+      --outdir "${OUT_DIR}/autosar"
+  RESULT_VARIABLE autosar_gen_result
+  OUTPUT_VARIABLE autosar_gen_stdout
+  ERROR_VARIABLE autosar_gen_stderr
+)
+if(NOT autosar_gen_result EQUAL 0)
+  message(STATUS "dsdlc autosar stdout:\n${autosar_gen_stdout}")
+  message(STATUS "dsdlc autosar stderr:\n${autosar_gen_stderr}")
+  message(FATAL_ERROR "uavcan C++ AUTOSAR generation failed")
+endif()
+
+foreach(profile std pmr autosar)
+  if(profile STREQUAL "autosar")
+    set(profile_root "${OUT_DIR}/${profile}")
+    set(cxx_std_flag -std=c++14)
+    set(cxx_warning_flags
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wconversion
+        -Wsign-conversion
+        -Werror)
+  else()
+    set(profile_root "${OUT_DIR}/${profile}")
+    set(cxx_std_flag -std=c++23)
+    set(cxx_warning_flags
+        -Wall
+        -Wextra
+        -Werror)
+  endif()
+
   foreach(required
-      "${OUT_DIR}/${profile}/dsdl_runtime.h"
-      "${OUT_DIR}/${profile}/dsdl_runtime.hpp")
+      "${profile_root}/dsdl_runtime.h"
+      "${profile_root}/dsdl_runtime.hpp")
     if(NOT EXISTS "${required}")
       message(FATAL_ERROR "Missing required generated file: ${required}")
     endif()
@@ -45,7 +80,7 @@ foreach(profile std pmr)
   file(GLOB_RECURSE dsdl_files "${UAVCAN_ROOT}/*.dsdl")
   list(LENGTH dsdl_files dsdl_count)
 
-  file(GLOB_RECURSE generated_headers "${OUT_DIR}/${profile}/*.hpp")
+  file(GLOB_RECURSE generated_headers "${profile_root}/*.hpp")
   set(filtered_headers "")
   foreach(h IN LISTS generated_headers)
     get_filename_component(name "${h}" NAME)
@@ -234,13 +269,13 @@ foreach(profile std pmr)
       "C++ header count mismatch (${profile}): dsdl=${dsdl_count}, generated=${header_count}")
   endif()
 
-  set(scratch_dir "${OUT_DIR}/${profile}/.compile-check")
+  set(scratch_dir "${profile_root}/.compile-check")
   file(MAKE_DIRECTORY "${scratch_dir}")
 
   set(index 0)
   foreach(h IN LISTS filtered_headers)
     math(EXPR index "${index} + 1")
-    file(RELATIVE_PATH rel_header "${OUT_DIR}/${profile}" "${h}")
+    file(RELATIVE_PATH rel_header "${profile_root}" "${h}")
 
     set(tu "${scratch_dir}/tu_${index}.cpp")
     set(obj "${scratch_dir}/tu_${index}.o")
@@ -249,12 +284,10 @@ foreach(profile std pmr)
     execute_process(
       COMMAND
         "${CXX_COMPILER}"
-          -std=c++23
-          -Wall
-          -Wextra
-          -Werror
+          ${cxx_std_flag}
+          ${cxx_warning_flags}
           -I
-          "${OUT_DIR}/${profile}"
+          "${profile_root}"
           "${tu}"
           -c
           -o "${obj}"
@@ -271,4 +304,4 @@ foreach(profile std pmr)
   endforeach()
 endforeach()
 
-message(STATUS "uavcan C++ generation check passed for std and pmr profiles")
+message(STATUS "uavcan C++ generation check passed for std, pmr, and autosar profiles")

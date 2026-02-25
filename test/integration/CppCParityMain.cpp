@@ -83,7 +83,7 @@ int runCase(const char* const name,
             std::int8_t (*cppSerialize)(const CppObj*, std::uint8_t*, std::size_t*),
             const bool compareBytes = true)
 {
-    static_assert(std::is_trivially_copyable_v<CObj>);
+    static_assert(std::is_trivially_copyable<CObj>::value, "C object must be trivially copyable");
 
     constexpr std::size_t kMaxIoBuffer = 2048U;
     std::uint8_t          input[kMaxIoBuffer];

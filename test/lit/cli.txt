@@ -22,6 +22,7 @@
 # HELP: --list-inputs
 # HELP: --list-outputs
 # HELP: --version, -V
+# HELP: --cpp-profile <std|pmr|both|autosar>
 
 # VERSION: dsdlc [[MAJOR:[0-9]+]].[[MINOR:[0-9]+]].[[PATCH:[0-9]+]]
 

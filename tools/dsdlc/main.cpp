@@ -26,7 +26,6 @@
 #include <limits>
 #include <optional>
 #include <queue>
-#include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -191,7 +190,7 @@ void printHelp()
                  << "  --version, -V\n"
                  << "      Print tool version and exit.\n\n"
                  << "BACKEND OPTIONS\n"
-                 << "  C++:    --cpp-profile <std|pmr|both>\n"
+                 << "  C++:    --cpp-profile <std|pmr|both|autosar>\n"
                  << "  Rust:   --rust-crate-name <name>\n"
                  << "          --rust-profile <std|no-std-alloc>\n"
                  << "          --rust-runtime-specialization <portable|fast>\n"
@@ -476,6 +475,10 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
             else if (*value == "both")
             {
                 options.cppProfile = llvmdsdl::CppProfile::Both;
+            }
+            else if (*value == "autosar")
+            {
+                options.cppProfile = llvmdsdl::CppProfile::Autosar;
             }
             else
             {
