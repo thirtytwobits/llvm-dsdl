@@ -42,6 +42,7 @@ bool runTypeStorageTests();
 bool runStorageTypeTokensTests();
 bool runLoweredContractVersionTests();
 bool runLoweredMetadataHardeningTests();
+bool runUavcanEmbeddedCatalogTests();
 bool runLspDocumentStoreTests();
 bool runLspRequestSchedulerTests();
 bool runLspAnalysisTests();
@@ -90,6 +91,7 @@ int main()
     ok      = runStorageTypeTokensTests() && ok;
     ok      = runLoweredContractVersionTests() && ok;
     ok      = runLoweredMetadataHardeningTests() && ok;
+    ok      = runUavcanEmbeddedCatalogTests() && ok;
     ok      = runLspDocumentStoreTests() && ok;
     ok      = runLspRequestSchedulerTests() && ok;
     ok      = runLspAnalysisTests() && ok;

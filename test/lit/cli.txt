@@ -17,6 +17,7 @@
 # HELP: --lookup-dir, -I <dir>
 # HELP: --outdir, -O <dir>
 # HELP: --allow-unregulated-fixed-port-id
+# HELP: --no-embedded-uavcan
 # HELP: -MD
 # HELP: --list-inputs
 # HELP: --list-outputs

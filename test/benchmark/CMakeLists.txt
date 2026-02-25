@@ -14,8 +14,6 @@ endif()
 
 set(LLVMDSDL_COMPLEX_BENCHMARK_ROOT
     "${LLVMDSDL_SOURCE_DIR}/test/benchmark/complex/civildrone")
-set(LLVMDSDL_COMPLEX_BENCHMARK_LOCAL_UAVCAN_LOOKUP_ROOT
-    "${LLVMDSDL_SOURCE_DIR}/test/benchmark/complex/uavcan")
 set(LLVMDSDL_COMPLEX_BENCHMARK_PRDT_UAVCAN_LOOKUP_ROOT
     "${LLVMDSDL_SOURCE_DIR}/submodules/public_regulated_data_types/uavcan")
 set(LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT
@@ -35,6 +33,8 @@ set(LLVMDSDL_COMPLEX_BENCHMARK_REPORT_CHECK_CI
     "${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/check-ci-oom-report.json")
 set(LLVMDSDL_COMPLEX_BENCHMARK_REPORT_CHECK_DEV
     "${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/check-dev-ab-report.json")
+set(LLVMDSDL_COMPLEX_BENCHMARK_REPORT_EMBEDC_COMPARE
+    "${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/embedc-compare-report.json")
 set(LLVMDSDL_COMPLEX_BENCHMARK_THRESHOLDS_GENERATED
     "${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/complex_codegen_thresholds.generated.json")
 set(LLVMDSDL_LSP_BENCHMARK_OUT_DIR
@@ -47,16 +47,12 @@ set(LLVMDSDL_LSP_BENCHMARK_INDEX_REPORT
     "${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}/index-cold-warm-report.json")
 
 set(LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS)
-if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_LOCAL_UAVCAN_LOOKUP_ROOT}")
-  list(APPEND LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS
-       --lookup-dir "${LLVMDSDL_COMPLEX_BENCHMARK_LOCAL_UAVCAN_LOOKUP_ROOT}")
-elseif(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_PRDT_UAVCAN_LOOKUP_ROOT}")
+if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_PRDT_UAVCAN_LOOKUP_ROOT}")
   list(APPEND LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS
        --lookup-dir "${LLVMDSDL_COMPLEX_BENCHMARK_PRDT_UAVCAN_LOOKUP_ROOT}")
 else()
   message(WARNING
-    "Benchmark uavcan lookup root missing at both "
-    "${LLVMDSDL_COMPLEX_BENCHMARK_LOCAL_UAVCAN_LOOKUP_ROOT} and "
+    "Benchmark uavcan lookup root missing at "
     "${LLVMDSDL_COMPLEX_BENCHMARK_PRDT_UAVCAN_LOOKUP_ROOT}; "
     "uavcan namespace resolution may fail if not present under benchmark root.")
 endif()
@@ -115,7 +111,7 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
         ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
         record
         --dsdlc $<TARGET_FILE:dsdlc>
-        ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+        --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
         ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
         --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}
         --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_REPORT_RECORD}
@@ -129,6 +125,35 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
     VERBATIM
     COMMENT "Recording complex multi-language codegen benchmark timings"
   )
+
+  if(LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS)
+    add_custom_target(benchmark-codegen-embedc-compare
+      COMMAND ${CMAKE_COMMAND} -E rm -rf "${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/embedc-compare-generated"
+      COMMAND ${CMAKE_COMMAND} -E make_directory "${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/embedc-compare-generated"
+      COMMAND
+        ${Python3_EXECUTABLE}
+          ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
+          record
+          --dsdlc $<TARGET_FILE:dsdlc>
+          --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+          ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
+          --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/embedc-compare-generated
+          --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_REPORT_EMBEDC_COMPARE}
+          --iterations ${LLVMDSDL_CODEGEN_BENCHMARK_ITERATIONS}
+          --languages embedC,noEmbedC
+          --per-language-timeout-sec ${LLVMDSDL_CODEGEN_BENCHMARK_PER_LANGUAGE_TIMEOUT_SEC}
+          --status-interval-sec ${LLVMDSDL_CODEGEN_BENCHMARK_STATUS_INTERVAL_SEC}
+          --max-rss-mib ${LLVMDSDL_CODEGEN_BENCHMARK_MAX_RSS_MIB}
+      DEPENDS dsdlc
+      USES_TERMINAL
+      VERBATIM
+      COMMENT "Recording C benchmark A/B with embedded UAVCAN catalog vs --no-embedded-uavcan"
+    )
+  else()
+    message(STATUS
+      "Skipping benchmark-codegen-embedc-compare target: no uavcan lookup root "
+      "available for noEmbedC lane.")
+  endif()
 
   add_custom_target(benchmark-codegen-init-thresholds
     COMMAND
@@ -156,7 +181,7 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
           ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
           check
           --dsdlc $<TARGET_FILE:dsdlc>
-          ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+          --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
           ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
           --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}
           --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_REPORT_CHECK_CI}
@@ -181,7 +206,7 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
           ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
           check
           --dsdlc $<TARGET_FILE:dsdlc>
-          ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+          --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
           ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
           --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}
           --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_REPORT_CHECK_DEV}
@@ -206,7 +231,7 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
             ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
             check
             --dsdlc $<TARGET_FILE:dsdlc>
-            ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+            --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
             ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
             --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}/ctest-ci-oom
             --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/ctest-check-ci-oom-report.json
@@ -232,7 +257,7 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
               ${LLVMDSDL_COMPLEX_BENCHMARK_SCRIPT}
               check
               --dsdlc $<TARGET_FILE:dsdlc>
-              ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+              --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
               ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
               --out-base-dir ${LLVMDSDL_COMPLEX_BENCHMARK_GENERATED_DIR}/ctest-ci-oom-${lang}
               --report-json ${LLVMDSDL_COMPLEX_BENCHMARK_OUT_DIR}/ctest-check-ci-oom-${lang}-report.json
@@ -272,7 +297,7 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
         ${LLVMDSDL_LSP_BENCHMARK_SCRIPT}
         replay
         --dsdld $<TARGET_FILE:dsdld>
-        ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+        --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
         ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
         --index-cache-dir ${LLVMDSDL_LSP_BENCHMARK_INDEX_CACHE_DIR}
         --report-json ${LLVMDSDL_LSP_BENCHMARK_REPLAY_REPORT}
@@ -294,7 +319,7 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
         ${LLVMDSDL_LSP_BENCHMARK_SCRIPT}
         index-bench
         --dsdld $<TARGET_FILE:dsdld>
-        ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+        --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
         ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
         --index-cache-dir ${LLVMDSDL_LSP_BENCHMARK_INDEX_CACHE_DIR}
         --report-json ${LLVMDSDL_LSP_BENCHMARK_INDEX_REPORT}
@@ -316,7 +341,7 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
           ${LLVMDSDL_LSP_BENCHMARK_SCRIPT}
           replay
           --dsdld $<TARGET_FILE:dsdld>
-          ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+          --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
           ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
           --index-cache-dir ${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}/ctest-replay-index-cache
           --report-json ${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}/ctest-replay-report.json
@@ -338,7 +363,7 @@ if(EXISTS "${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}")
           ${LLVMDSDL_LSP_BENCHMARK_SCRIPT}
           index-bench
           --dsdld $<TARGET_FILE:dsdld>
-          ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
+          --root-namespace-dir ${LLVMDSDL_COMPLEX_BENCHMARK_ROOT}
           ${LLVMDSDL_COMPLEX_BENCHMARK_LOOKUP_ARGS}
           --index-cache-dir ${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}/ctest-index-cache
           --report-json ${LLVMDSDL_LSP_BENCHMARK_OUT_DIR}/ctest-index-report.json

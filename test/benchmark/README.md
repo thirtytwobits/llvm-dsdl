@@ -16,6 +16,9 @@ multi-language code generation throughput.
   - `go`
   - `ts`
   - `python`
+  - optional C A/B experiment lanes:
+    - `embedC`: embedded `uavcan` MLIR catalog enabled (no lookup dirs passed to `dsdlc`)
+    - `noEmbedC`: embedded `uavcan` MLIR catalog disabled (`--no-embedded-uavcan`)
 - `benchmark_lsp.py` benchmarks `dsdld` request latency for:
   - mixed request replay (`replay`)
   - workspace index cold/warm runs (`index-bench`)
@@ -41,6 +44,7 @@ CMake utility targets are available:
 - `benchmark-codegen-init-thresholds`
 - `benchmark-codegen-check-dev-ab`
 - `benchmark-codegen-check-ci-oom`
+- `benchmark-codegen-embedc-compare`
 - `benchmark-lsp-replay`
 - `benchmark-lsp-index-cold-warm`
 
@@ -88,8 +92,8 @@ Direct harness usage (example: Python only):
 ```bash
 python3 test/benchmark/benchmark_codegen.py record \
   --dsdlc build/matrix/dev-homebrew/tools/dsdlc/RelWithDebInfo/dsdlc \
-  test/benchmark/complex/civildrone \
-  --lookup-dir test/benchmark/complex/uavcan \
+  --root-namespace-dir test/benchmark/complex/civildrone \
+  --lookup-dir submodules/public_regulated_data_types/uavcan \
   --out-base-dir build/matrix/dev-homebrew/test/benchmark/complex-codegen/generated \
   --report-json build/matrix/dev-homebrew/test/benchmark/complex-codegen/python-only-record.json \
   --languages python \
@@ -107,6 +111,27 @@ cmake -S . -B build/matrix/dev-homebrew \
   -DLLVMDSDL_CODEGEN_BENCHMARK_LANGUAGES=python \
   -DLLVMDSDL_CODEGEN_BENCHMARK_STATUS_INTERVAL_SEC=10
 cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target benchmark-codegen-record -j1
+```
+
+### Compare `embedC` vs `noEmbedC`
+
+Run a side-by-side C-only benchmark on the complex dataset:
+
+```bash
+python3 test/benchmark/benchmark_codegen.py record \
+  --dsdlc build/matrix/dev-homebrew/tools/dsdlc/RelWithDebInfo/dsdlc \
+  --root-namespace-dir test/benchmark/complex/civildrone \
+  --lookup-dir submodules/public_regulated_data_types/uavcan \
+  --out-base-dir build/matrix/dev-homebrew/test/benchmark/complex-codegen/embedc-compare-generated \
+  --report-json build/matrix/dev-homebrew/test/benchmark/complex-codegen/embedc-compare-report.json \
+  --languages embedC,noEmbedC \
+  --iterations 3
+```
+
+Or use the CMake convenience target:
+
+```bash
+cmake --build build/matrix/dev-homebrew --config RelWithDebInfo --target benchmark-codegen-embedc-compare -j1
 ```
 
 ## LSP Benchmarks

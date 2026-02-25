@@ -1,0 +1,19 @@
+# RUN: %dsdlc --target-language mlir %S/fixtures_embedded_uavcan/demo 2>/dev/null | FileCheck %s --check-prefix=MLIR_EMBEDDED
+# RUN: rm -rf %t.c && %dsdlc --target-language c %S/fixtures_embedded_uavcan/demo --outdir %t.c >/dev/null 2>&1
+# RUN: test -f %t.c/demo/UsesHeartbeat_1_0.h
+# RUN: test -f %t.c/uavcan/node/Heartbeat_1_0.h
+# RUN: %dsdlc --target-language c --list-inputs %S/fixtures_embedded_uavcan/demo 2>/dev/null | FileCheck %s --check-prefix=LIST_INPUTS
+# RUN: rm -rf %t.md && %dsdlc --target-language c -MD --outdir %t.md %S/fixtures_embedded_uavcan/demo >/dev/null 2>&1
+# RUN: cat %t.md/demo/UsesHeartbeat_1_0.h.d | FileCheck %s --check-prefix=DEPFILE_LOCAL
+# RUN: not %dsdlc --target-language c --no-embedded-uavcan %S/fixtures_embedded_uavcan/demo --outdir %t.no 2>&1 | FileCheck %s --check-prefix=NO_EMBEDDED_FAIL
+
+# MLIR_EMBEDDED: full_name = "demo.UsesHeartbeat"
+# MLIR_EMBEDDED: full_name = "uavcan.node.Heartbeat"
+
+# LIST_INPUTS: UsesHeartbeat.1.0.dsdl
+# LIST_INPUTS-NOT: embedded-uavcan
+
+# DEPFILE_LOCAL: UsesHeartbeat.1.0.dsdl
+# DEPFILE_LOCAL-NOT: embedded-uavcan
+
+# NO_EMBEDDED_FAIL: unresolved composite type: uavcan.node.Heartbeat.1.0

@@ -23,7 +23,7 @@ downstream lowering/codegen passes.
 Benchmark runs should use:
 
 - `test/benchmark/complex/civildrone`
-- `--lookup-dir test/benchmark/complex/uavcan`
+- `--lookup-dir submodules/public_regulated_data_types/uavcan`
 
 ## Regeneration
 
@@ -52,5 +52,5 @@ bash test/benchmark/complex/generate_complex_dsdl.sh
 cmake --build --preset build-dev-homebrew-debug --target dsdlc
 build/matrix/dev-homebrew/tools/dsdlc/Debug/dsdlc --target-language ast \
   test/benchmark/complex/civildrone \
-  --lookup-dir test/benchmark/complex/uavcan >/dev/null
+  --lookup-dir submodules/public_regulated_data_types/uavcan >/dev/null
 ```

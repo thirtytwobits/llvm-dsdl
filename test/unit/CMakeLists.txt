@@ -35,6 +35,7 @@ add_executable(llvmdsdl-unit-tests
   StorageTypeTokensTests.cpp
   LoweredContractVersionTests.cpp
   LoweredMetadataHardeningTests.cpp
+  UavcanEmbeddedCatalogTests.cpp
   LspDocumentStoreTests.cpp
   LspRequestSchedulerTests.cpp
   LspAnalysisTests.cpp

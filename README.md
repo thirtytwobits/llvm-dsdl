@@ -139,10 +139,16 @@ dsdlc --target-language c path/to/root_namespace \
 
 `dsdlc` also reads `DSDL_INCLUDE_PATH` and `CYPHAL_PATH`.
 
+For the standard `uavcan.*` namespace, `dsdlc` ships an embedded catalog for
+`mlir` and codegen targets (`c`, `cpp`, `rust`, `go`, `ts`, `python`). Types
+that reference core `uavcan` definitions resolve without needing external
+`uavcan` source roots. Use `--no-embedded-uavcan` to disable this behavior.
+
 ### Useful options
 
 - `--outdir <dir>`: output directory (default: `nunavut_out`)
 - `--no-overwrite`: fail if output file exists
+- `--no-embedded-uavcan`: disable embedded `uavcan` catalog for `mlir`/codegen
 - `--dry-run`: validate/plan without writing files
 - `--list-inputs`: print semicolon-separated resolved input set
 - `--list-outputs`: print semicolon-separated output files

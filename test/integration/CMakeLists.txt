@@ -200,6 +200,43 @@ if(PYTHON_EXECUTABLE)
       LABELS "integration;convergence"
   )
 
+  if(EXISTS "${LLVMDSDL_UAVCAN_ROOT}")
+    add_test(
+      NAME llvmdsdl-embedded-uavcan-catalog-guard
+      COMMAND
+        ${CMAKE_COMMAND}
+          -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+          -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
+          -DDSDLC=$<TARGET_FILE:dsdlc>
+          -DUAVCAN_ROOT=${LLVMDSDL_UAVCAN_ROOT}
+          -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunEmbeddedUavcanCatalogGuard.cmake
+    )
+
+    set_tests_properties(
+      llvmdsdl-embedded-uavcan-catalog-guard
+      PROPERTIES
+        LABELS "integration;uavcan;release-blocking"
+    )
+
+    add_test(
+      NAME llvmdsdl-embedded-uavcan-catalog-guard-selftest
+      COMMAND
+        ${CMAKE_COMMAND}
+          -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+          -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
+          -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunEmbeddedUavcanCatalogGuardSelftest.cmake
+    )
+
+    set_tests_properties(
+      llvmdsdl-embedded-uavcan-catalog-guard-selftest
+      PROPERTIES
+        LABELS "integration;uavcan"
+    )
+  else()
+    message(STATUS
+      "Skipping embedded UAVCAN catalog guard tests: ${LLVMDSDL_UAVCAN_ROOT} missing")
+  endif()
+
   add_test(
     NAME llvmdsdl-parity-matrix-coverage
     COMMAND

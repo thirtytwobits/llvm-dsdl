@@ -32,9 +32,10 @@ class LanguageSpec:
 
     key: str
     args: list[str]
+    use_lookup_dirs: bool = True
 
 
-LANGUAGE_SPECS: list[LanguageSpec] = [
+DEFAULT_LANGUAGE_SPECS: list[LanguageSpec] = [
     LanguageSpec("c", ["--target-language", "c"]),
     LanguageSpec("cpp", ["--target-language", "cpp", "--cpp-profile", "both"]),
     LanguageSpec(
@@ -46,17 +47,29 @@ LANGUAGE_SPECS: list[LanguageSpec] = [
     LanguageSpec("python", ["--target-language", "python", "--py-package", "civildrone_bench_py"]),
 ]
 
+EXPERIMENT_LANGUAGE_SPECS: list[LanguageSpec] = [
+    LanguageSpec("embedC", ["--target-language", "c"], use_lookup_dirs=False),
+    LanguageSpec("noEmbedC", ["--target-language", "c", "--no-embedded-uavcan"], use_lookup_dirs=True),
+]
+
+LANGUAGE_SPECS: list[LanguageSpec] = DEFAULT_LANGUAGE_SPECS + EXPERIMENT_LANGUAGE_SPECS
+LANGUAGE_KEY_ALIASES = {
+    "embedc": "embedC",
+    "noembedc": "noEmbedC",
+}
+
 
 def parse_selected_specs(language_arg: str) -> list[LanguageSpec]:
     if not language_arg or language_arg.strip().lower() == "all":
-        return list(LANGUAGE_SPECS)
+        return list(DEFAULT_LANGUAGE_SPECS)
     requested = [x.strip() for x in language_arg.split(",") if x.strip()]
     by_key = {spec.key: spec for spec in LANGUAGE_SPECS}
     selected: list[LanguageSpec] = []
     for key in requested:
-        if key not in by_key:
+        resolved_key = LANGUAGE_KEY_ALIASES.get(key.lower(), key)
+        if resolved_key not in by_key:
             raise KeyError(f"unknown language key '{key}', expected one of: {', '.join(sorted(by_key))}")
-        selected.append(by_key[key])
+        selected.append(by_key[resolved_key])
     return selected
 
 
@@ -131,8 +144,9 @@ def run_language(
         if optimize_lowered_serdes:
             command.append("--optimize-lowered-serdes")
         command.extend(spec.args)
-        for lookup_dir in lookup_dirs:
-            command.extend(["--lookup-dir", str(lookup_dir)])
+        if spec.use_lookup_dirs:
+            for lookup_dir in lookup_dirs:
+                command.extend(["--lookup-dir", str(lookup_dir)])
         command.extend(["--outdir", str(run_out_dir), str(root_namespace_dir)])
 
         print(
@@ -269,6 +283,7 @@ def run_suite(args: argparse.Namespace) -> dict[str, Any]:
     root_namespace_dir = Path(args.root_namespace_dir).resolve()
     lookup_dirs = [Path(value).resolve() for value in args.lookup_dir]
     out_base_dir = Path(args.out_base_dir).resolve()
+    selected_specs = parse_selected_specs(args.languages)
     out_base_dir.mkdir(parents=True, exist_ok=True)
 
     if not dsdlc.exists():
@@ -282,16 +297,16 @@ def run_suite(args: argparse.Namespace) -> dict[str, Any]:
             "root namespace dir points at a wrapper directory containing multiple namespaces. "
             "Use --root-namespace-dir <...>/civildrone and --lookup-dir <...>/uavcan."
         )
-    if root_namespace_dir.name == "civildrone" and not lookup_dirs:
+    if root_namespace_dir.name == "civildrone" and not lookup_dirs and any(spec.use_lookup_dirs for spec in selected_specs):
         raise ValueError(
             "benchmark root points to civildrone without lookup roots; pass --lookup-dir "
-            "test/benchmark/complex/uavcan (or submodules/public_regulated_data_types/uavcan)."
+            "submodules/public_regulated_data_types/uavcan, "
+            "or run only no-lookup lanes like embedC."
         )
     for lookup_dir in lookup_dirs:
         if not lookup_dir.exists():
             raise FileNotFoundError(f"lookup dir not found: {lookup_dir}")
 
-    selected_specs = parse_selected_specs(args.languages)
     language_results: dict[str, dict[str, Any]] = {}
     suite_start = time.perf_counter()
     for spec in selected_specs:
@@ -526,7 +541,12 @@ def add_common_runtime_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--languages",
         default="all",
-        help="Comma-separated language keys to benchmark (default: all). Keys: c,cpp,rust,go,ts,python.",
+        help=(
+            "Comma-separated language keys to benchmark. "
+            "default=all (c,cpp,rust,go,ts,python). "
+            "Optional experiment keys: embedC (embedded-uavcan C lane), "
+            "noEmbedC (C lane with --no-embedded-uavcan)."
+        ),
     )
     parser.add_argument(
         "--optimize-lowered-serdes",

@@ -295,6 +295,7 @@ Current tradeoffs:
 - C remains the deepest direct MLIR-to-code path (`convert-dsdl-to-emitc` + EmitC translation).
 - Non-C backends still render language syntax natively/scriptedly, but semantic planning/orchestration is shared.
 - Runtime primitives are hand-maintained on purpose; semantic wrappers above primitives are generated and drift-checked.
+- Standard `uavcan` dependency resolution for `mlir`/codegen uses an embedded, drift-checked MLIR catalog; `ast` remains source-only.
 - Guardrails are intentionally strict: convergence/parity/malformed/determinism and runtime/architecture gates are release-blocking.
 
 This gives the project a stable multi-backend compiler with one canonical semantic flow and explicit boundaries for where backend-specific code is allowed.

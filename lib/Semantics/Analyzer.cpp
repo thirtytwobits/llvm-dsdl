@@ -225,6 +225,13 @@ public:
             const auto& d = module_.definitions[i];
             indexByKey_.emplace(typeKey(d.info.fullName, d.info.majorVersion, d.info.minorVersion), i);
         }
+        if (options_.externalSemanticCatalog != nullptr)
+        {
+            for (const auto& def : options_.externalSemanticCatalog->definitions)
+            {
+                externalByKey_.emplace(typeKey(def.info.fullName, def.info.majorVersion, def.info.minorVersion), &def);
+            }
+        }
     }
 
     llvm::Expected<SemanticModule> run()
@@ -267,6 +274,14 @@ private:
     std::vector<State>                             state_;
     std::vector<std::optional<SemanticDefinition>> results_;
     std::unordered_map<std::string, std::size_t>   indexByKey_;
+    std::unordered_map<std::string, const SemanticDefinition*> externalByKey_;
+
+    struct ResolvedCompositeDefinition final
+    {
+        std::string                    candidateName;
+        const SemanticDefinition*      definition{nullptr};
+        std::optional<std::size_t>     localIndex;
+    };
 
     std::optional<std::size_t> resolveDefinitionIndex(const std::string& fullName,
                                                       std::uint32_t      major,
@@ -294,10 +309,10 @@ private:
         return out.str();
     }
 
-    std::optional<std::pair<std::size_t, std::string>> resolveCompositeType(const DiscoveredDefinition& owner,
-                                                                            const VersionedTypeExprAST& type,
-                                                                            const SourceLocation&       location,
-                                                                            bool                        reportError)
+    std::optional<ResolvedCompositeDefinition> resolveCompositeType(const DiscoveredDefinition& owner,
+                                                                    const VersionedTypeExprAST& type,
+                                                                    const SourceLocation&       location,
+                                                                    bool                        reportError)
     {
         std::vector<std::string> candidates;
 
@@ -334,7 +349,13 @@ private:
             auto idx = resolveDefinitionIndex(candidate, type.major, type.minor);
             if (idx)
             {
-                return std::make_pair(*idx, candidate);
+                return ResolvedCompositeDefinition{candidate, nullptr, *idx};
+            }
+
+            const auto extIt = externalByKey_.find(typeKey(candidate, type.major, type.minor));
+            if (extIt != externalByKey_.end())
+            {
+                return ResolvedCompositeDefinition{candidate, extIt->second, std::nullopt};
             }
         }
 
@@ -483,13 +504,26 @@ private:
                 return out;
             }
 
-            auto* resolvedDef = analyzeOne(resolved->first);
-            if (!resolvedDef || !*resolvedDef)
+            const SemanticDefinition* def = nullptr;
+            if (resolved->localIndex)
+            {
+                auto* resolvedDef = analyzeOne(*resolved->localIndex);
+                if (!resolvedDef || !*resolvedDef)
+                {
+                    return out;
+                }
+                def = &(**resolvedDef);
+            }
+            else
+            {
+                def = resolved->definition;
+            }
+
+            if (def == nullptr)
             {
                 return out;
             }
-            const auto& def = **resolvedDef;
-            if (def.isService)
+            if (def->isService)
             {
                 diagnostics_.error(type.location, "service types are not valid field types");
                 return out;
@@ -499,13 +533,13 @@ private:
             layout.alignment               = 8;
             layout.resolved.scalarCategory = SemanticScalarCategory::Composite;
             layout.resolved.alignmentBits  = 8;
-            layout.resolved.compositeType  = SemanticTypeRef{def.info.fullName,
-                                                            def.info.namespaceComponents,
-                                                            def.info.shortName,
-                                                            def.info.majorVersion,
-                                                            def.info.minorVersion};
+            layout.resolved.compositeType  = SemanticTypeRef{def->info.fullName,
+                                                            def->info.namespaceComponents,
+                                                            def->info.shortName,
+                                                            def->info.majorVersion,
+                                                            def->info.minorVersion};
 
-            const auto& sec                     = def.request;
+            const auto& sec                     = def->request;
             layout.resolved.compositeSealed     = sec.sealed;
             layout.resolved.compositeExtentBits = sec.extentBits.value_or(sec.offsetAtEnd.max());
             if (sec.sealed)
@@ -731,19 +765,34 @@ private:
                 return std::nullopt;
             }
 
-            auto* resolvedDef = analyzeOne(resolved->first);
-            if (!resolvedDef || !*resolvedDef)
+            const SemanticDefinition* def = nullptr;
+            if (resolved->localIndex)
             {
-                diagnostics_.error(location, "failed to analyze dependent type: " + resolved->second);
-                return std::nullopt;
+                auto* resolvedDef = analyzeOne(*resolved->localIndex);
+                if (!resolvedDef || !*resolvedDef)
+                {
+                    diagnostics_.error(location, "failed to analyze dependent type: " + resolved->candidateName);
+                    return std::nullopt;
+                }
+                def = &(**resolvedDef);
             }
-            const auto& def = **resolvedDef;
-            if (def.isService)
+            else
             {
-                return unsupported("service types do not expose value attributes: " + resolved->second);
+                def = resolved->definition;
             }
 
-            const auto& sec = def.request;
+            if (def == nullptr)
+            {
+                diagnostics_.error(location, "failed to analyze dependent type: " + resolved->candidateName);
+                return std::nullopt;
+            }
+
+            if (def->isService)
+            {
+                return unsupported("service types do not expose value attributes: " + resolved->candidateName);
+            }
+
+            const auto& sec = def->request;
             if (attributeName == "_extent_")
             {
                 return Value{Rational(sec.extentBits.value_or(sec.offsetAtEnd.max()), 1)};

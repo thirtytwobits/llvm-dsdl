@@ -1,0 +1,152 @@
+//===----------------------------------------------------------------------===//
+//
+// Part of the OpenCyphal project, under the MIT licence
+// SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+
+#include <iostream>
+#include <unordered_set>
+
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/EmitC/IR/EmitC.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/DialectRegistry.h>
+#include <llvm/Support/Error.h>
+
+#include "llvmdsdl/CodeGen/UavcanEmbeddedCatalog.h"
+#include "llvmdsdl/IR/DSDLDialect.h"
+#include "llvmdsdl/Support/Diagnostics.h"
+
+namespace
+{
+
+const llvmdsdl::SemanticDefinition* findDefinition(const llvmdsdl::SemanticModule& module,
+                                                   const std::string&               fullName,
+                                                   const std::uint32_t              major,
+                                                   const std::uint32_t              minor)
+{
+    for (const auto& def : module.definitions)
+    {
+        if (def.info.fullName == fullName && def.info.majorVersion == major && def.info.minorVersion == minor)
+        {
+            return &def;
+        }
+    }
+    return nullptr;
+}
+
+}  // namespace
+
+bool runUavcanEmbeddedCatalogTests()
+{
+    mlir::DialectRegistry registry;
+    registry.insert<mlir::dsdl::DSDLDialect,
+                    mlir::func::FuncDialect,
+                    mlir::arith::ArithDialect,
+                    mlir::scf::SCFDialect,
+                    mlir::emitc::EmitCDialect>();
+
+    mlir::MLIRContext context(registry);
+    context.getOrLoadDialect<mlir::dsdl::DSDLDialect>();
+
+    llvmdsdl::DiagnosticEngine diagnostics;
+    auto                       loaded = llvmdsdl::loadUavcanEmbeddedCatalog(context, diagnostics);
+    if (!loaded)
+    {
+        std::cerr << "failed to load embedded UAVCAN catalog\n";
+        llvm::consumeError(loaded.takeError());
+        return false;
+    }
+    if (diagnostics.hasErrors())
+    {
+        std::cerr << "embedded UAVCAN catalog load emitted diagnostics\n";
+        return false;
+    }
+
+    const auto& catalog = *loaded;
+
+    if (catalog.semantic.definitions.size() < 100U)
+    {
+        std::cerr << "embedded UAVCAN catalog has unexpectedly few semantic definitions\n";
+        return false;
+    }
+
+    if (!catalog.typeKeys.contains("uavcan.node.Heartbeat:1:0"))
+    {
+        std::cerr << "embedded UAVCAN catalog missing sentinel key uavcan.node.Heartbeat:1:0\n";
+        return false;
+    }
+
+    const auto* heartbeat = findDefinition(catalog.semantic, "uavcan.node.Heartbeat", 1U, 0U);
+    if (heartbeat == nullptr)
+    {
+        std::cerr << "embedded UAVCAN catalog missing semantic definition uavcan.node.Heartbeat.1.0\n";
+        return false;
+    }
+    if (!llvmdsdl::isEmbeddedUavcanSyntheticPath(heartbeat->info.filePath))
+    {
+        std::cerr << "embedded UAVCAN semantic definition did not use synthetic source path\n";
+        return false;
+    }
+
+    const auto* registerValue = findDefinition(catalog.semantic, "uavcan.register.Value", 1U, 0U);
+    if (registerValue == nullptr || !registerValue->request.isUnion)
+    {
+        std::cerr << "embedded UAVCAN catalog failed to preserve union metadata for uavcan.register.Value.1.0\n";
+        return false;
+    }
+
+    const auto* getInfo = findDefinition(catalog.semantic, "uavcan.node.GetInfo", 1U, 0U);
+    if (getInfo == nullptr || !getInfo->isService || !getInfo->response)
+    {
+        std::cerr << "embedded UAVCAN catalog failed to preserve service request/response for uavcan.node.GetInfo.1.0\n";
+        return false;
+    }
+
+    auto destination = mlir::ModuleOp::create(mlir::UnknownLoc::get(&context));
+
+    std::unordered_set<std::string> selected;
+    selected.insert("uavcan.node.Heartbeat:1:0");
+
+    if (auto err = llvmdsdl::appendEmbeddedUavcanSchemasForKeys(catalog, destination, selected, diagnostics))
+    {
+        std::cerr << "failed to append embedded UAVCAN schema to destination module\n";
+        llvm::consumeError(std::move(err));
+        return false;
+    }
+
+    bool sawHeartbeatSchema = false;
+    for (mlir::Operation& op : destination.getBodyRegion().front())
+    {
+        if (op.getName().getStringRef() != "dsdl.schema")
+        {
+            continue;
+        }
+
+        const auto fullName = op.getAttrOfType<mlir::StringAttr>("full_name");
+        const auto major    = op.getAttrOfType<mlir::IntegerAttr>("major");
+        const auto minor    = op.getAttrOfType<mlir::IntegerAttr>("minor");
+        if (!fullName || !major || !minor)
+        {
+            continue;
+        }
+
+        if (fullName.getValue() == "uavcan.node.Heartbeat" && major.getInt() == 1 && minor.getInt() == 0)
+        {
+            sawHeartbeatSchema = true;
+            break;
+        }
+    }
+
+    if (!sawHeartbeatSchema)
+    {
+        std::cerr << "appended embedded UAVCAN module missing heartbeat schema\n";
+        return false;
+    }
+
+    return true;
+}

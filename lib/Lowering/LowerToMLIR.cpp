@@ -320,6 +320,14 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
             planState.addAttribute("c_deserialize_symbol", builder.getStringAttr(sectionCTypeName + "__deserialize_"));
             planState.addAttribute("min_bits", builder.getI64IntegerAttr(section.minBitLength));
             planState.addAttribute("max_bits", builder.getI64IntegerAttr(section.maxBitLength));
+            if (section.sealed)
+            {
+                planState.addAttribute("sealed", builder.getUnitAttr());
+            }
+            if (section.extentBits)
+            {
+                planState.addAttribute("extent_bits", builder.getI64IntegerAttr(*section.extentBits));
+            }
             if (section.isUnion)
             {
                 planState.addAttribute("is_union", builder.getUnitAttr());
@@ -380,6 +388,10 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                 {
                     const auto& ref = *field.resolvedType.compositeType;
                     ioState.addAttribute("composite_full_name", builder.getStringAttr(ref.fullName));
+                    ioState.addAttribute("composite_major",
+                                         builder.getI64IntegerAttr(static_cast<std::int64_t>(ref.majorVersion)));
+                    ioState.addAttribute("composite_minor",
+                                         builder.getI64IntegerAttr(static_cast<std::int64_t>(ref.minorVersion)));
                     ioState.addAttribute("composite_c_type_name", builder.getStringAttr(cTypeNameFromRef(ref)));
                     ioState.addAttribute("composite_sealed", builder.getBoolAttr(field.resolvedType.compositeSealed));
                     ioState.addAttribute("composite_extent_bits",

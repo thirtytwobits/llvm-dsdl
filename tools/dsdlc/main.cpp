@@ -40,6 +40,7 @@
 #include "llvmdsdl/CodeGen/PythonEmitter.h"
 #include "llvmdsdl/CodeGen/RustEmitter.h"
 #include "llvmdsdl/CodeGen/TsEmitter.h"
+#include "llvmdsdl/CodeGen/UavcanEmbeddedCatalog.h"
 #include "llvmdsdl/Frontend/ASTPrinter.h"
 #include "llvmdsdl/Frontend/Parser.h"
 #include "llvmdsdl/Frontend/SourceLocation.h"
@@ -73,6 +74,7 @@ struct CliOptions final
     bool noOverwrite{false};
     bool allowUnregulatedFixedPortId{false};
     bool omitDependencies{false};
+    bool noEmbeddedUavcan{false};
     bool optimizeLoweredSerDes{false};
     bool dryRun{false};
     bool listOutputs{false};
@@ -171,6 +173,8 @@ void printHelp()
                  << "      Allow fixed port IDs outside regulated ranges.\n"
                  << "  --omit-dependencies\n"
                  << "      Emit only explicit targets; dependencies are still resolved and analyzed.\n"
+                 << "  --no-embedded-uavcan\n"
+                 << "      Disable automatic embedded uavcan dependency catalog for mlir/codegen targets.\n"
                  << "  --verbose, -v\n"
                  << "      Increase verbosity (-v, -vv).\n"
                  << "  --dry-run, -d\n"
@@ -408,6 +412,11 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
         if (arg == "--omit-dependencies")
         {
             options.omitDependencies = true;
+            continue;
+        }
+        if (arg == "--no-embedded-uavcan")
+        {
+            options.noEmbeddedUavcan = true;
             continue;
         }
         if (arg == "--dry-run" || arg == "-d")
@@ -842,11 +851,44 @@ std::vector<std::string> collectInputFilesForClosure(const llvmdsdl::SemanticMod
         {
             continue;
         }
+        if (llvmdsdl::isEmbeddedUavcanSyntheticPath(def.info.filePath))
+        {
+            continue;
+        }
         out.push_back(normalizePathForCompare(def.info.filePath));
     }
 
     std::sort(out.begin(), out.end());
     out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
+}
+
+llvmdsdl::SemanticModule mergeSemanticModulesPreferPrimary(const llvmdsdl::SemanticModule& primary,
+                                                           const llvmdsdl::SemanticModule& secondary)
+{
+    llvmdsdl::SemanticModule out;
+    out.definitions.reserve(primary.definitions.size() + secondary.definitions.size());
+
+    std::unordered_set<std::string> seen;
+    seen.reserve(primary.definitions.size() + secondary.definitions.size());
+
+    for (const auto& def : primary.definitions)
+    {
+        const auto key = llvmdsdl::definitionTypeKey(def.info);
+        if (seen.insert(key).second)
+        {
+            out.definitions.push_back(def);
+        }
+    }
+    for (const auto& def : secondary.definitions)
+    {
+        const auto key = llvmdsdl::definitionTypeKey(def.info);
+        if (seen.insert(key).second)
+        {
+            out.definitions.push_back(def);
+        }
+    }
+
     return out;
 }
 
@@ -993,9 +1035,44 @@ int main(int argc, char** argv)
         }
     }
 
+    const bool useEmbeddedUavcan = !options.noEmbeddedUavcan &&
+                                   (options.targetLanguage == "mlir" || isCodegenLanguage(options.targetLanguage));
+
+    mlir::DialectRegistry registry;
+    registry.insert<mlir::dsdl::DSDLDialect,
+                    mlir::func::FuncDialect,
+                    mlir::arith::ArithDialect,
+                    mlir::scf::SCFDialect,
+                    mlir::emitc::EmitCDialect>();
+    mlir::MLIRContext context(registry);
+    context.getOrLoadDialect<mlir::dsdl::DSDLDialect>();
+    context.getOrLoadDialect<mlir::func::FuncDialect>();
+    context.getOrLoadDialect<mlir::arith::ArithDialect>();
+    context.getOrLoadDialect<mlir::scf::SCFDialect>();
+    context.getOrLoadDialect<mlir::emitc::EmitCDialect>();
+
+    std::optional<llvmdsdl::UavcanEmbeddedCatalog> embeddedCatalog;
+    if (useEmbeddedUavcan)
+    {
+        logVerbose(1, "loading embedded uavcan catalog");
+        auto loadedCatalog = llvmdsdl::loadUavcanEmbeddedCatalog(context, diagnostics);
+        if (!loadedCatalog)
+        {
+            llvm::errs() << llvm::toString(loadedCatalog.takeError()) << "\n";
+            printDiagnostics(diagnostics);
+            return 1;
+        }
+        embeddedCatalog.emplace(std::move(*loadedCatalog));
+    }
+
     logVerbose(1, "running semantic analysis");
     llvmdsdl::AnalyzeOptions analyzeOptions;
     analyzeOptions.allowUnregulatedFixedPortId = options.allowUnregulatedFixedPortId;
+    if (embeddedCatalog)
+    {
+        analyzeOptions.externalSemanticCatalog = &embeddedCatalog->semantic;
+    }
+
     auto semantic = llvmdsdl::analyze(*ast, diagnostics, analyzeOptions);
     if (!semantic)
     {
@@ -1004,7 +1081,11 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    const auto explicitKeys = collectExplicitKeys(*semantic);
+    const auto localSemantic = *semantic;
+    const auto mergedSemantic =
+        embeddedCatalog ? mergeSemanticModulesPreferPrimary(localSemantic, embeddedCatalog->semantic) : localSemantic;
+
+    const auto explicitKeys = collectExplicitKeys(localSemantic);
     if (explicitKeys.empty())
     {
         diagnostics.error({"<cli>", 1, 1}, "no explicit targets were resolved in the analyzed semantic graph");
@@ -1012,11 +1093,12 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    const auto closureKeys = computeDependencyClosure(*semantic, explicitKeys);
+    const auto closureKeys = computeDependencyClosure(mergedSemantic, explicitKeys);
     const auto selectedKeys = options.omitDependencies ? explicitKeys : closureKeys;
 
-    const auto closureSemantic = filterSemanticModule(*semantic, closureKeys);
-    const auto inputsForListing = collectInputFilesForClosure(*semantic, closureKeys);
+    const auto closureSemantic = filterSemanticModule(mergedSemantic, closureKeys);
+    const auto localClosureSemantic = filterSemanticModule(localSemantic, closureKeys);
+    const auto inputsForListing = collectInputFilesForClosure(mergedSemantic, closureKeys);
 
     auto finish = [&](llvm::StringRef outputRoot, std::vector<std::string> generatedOutputs, const bool forceFailure = false) {
         generatedOutputs = dedupSorted(std::move(generatedOutputs));
@@ -1042,27 +1124,23 @@ int main(int argc, char** argv)
         return finish("stdout", {});
     }
 
-    mlir::DialectRegistry registry;
-    registry.insert<mlir::dsdl::DSDLDialect,
-                    mlir::func::FuncDialect,
-                    mlir::arith::ArithDialect,
-                    mlir::scf::SCFDialect,
-                    mlir::emitc::EmitCDialect>();
-    mlir::MLIRContext context(registry);
-    context.getOrLoadDialect<mlir::dsdl::DSDLDialect>();
-    context.getOrLoadDialect<mlir::func::FuncDialect>();
-    context.getOrLoadDialect<mlir::arith::ArithDialect>();
-    context.getOrLoadDialect<mlir::scf::SCFDialect>();
-    context.getOrLoadDialect<mlir::emitc::EmitCDialect>();
-
     if (options.targetLanguage == "mlir")
     {
-        const auto selectedSemantic = filterSemanticModule(closureSemantic, selectedKeys);
+        const auto selectedSemantic = filterSemanticModule(localSemantic, selectedKeys);
         auto       mlirModule       = llvmdsdl::lowerToMLIR(selectedSemantic, context, diagnostics);
         if (!mlirModule)
         {
             printDiagnostics(diagnostics);
             return 1;
+        }
+        if (embeddedCatalog)
+        {
+            if (auto err =
+                    llvmdsdl::appendEmbeddedUavcanSchemasForKeys(*embeddedCatalog, *mlirModule, selectedKeys, diagnostics))
+            {
+                llvm::errs() << llvm::toString(std::move(err)) << "\n";
+                return finish("stdout", {}, true);
+            }
         }
         if (!options.listInputs && !options.listOutputs)
         {
@@ -1073,11 +1151,20 @@ int main(int argc, char** argv)
     }
 
     logVerbose(1, "lowering semantic model to MLIR");
-    auto mlirModule = llvmdsdl::lowerToMLIR(closureSemantic, context, diagnostics);
+    auto mlirModule = llvmdsdl::lowerToMLIR(localClosureSemantic, context, diagnostics);
     if (!mlirModule)
     {
         printDiagnostics(diagnostics);
         return 1;
+    }
+    if (embeddedCatalog)
+    {
+        if (auto err =
+                llvmdsdl::appendEmbeddedUavcanSchemasForKeys(*embeddedCatalog, *mlirModule, closureKeys, diagnostics))
+        {
+            llvm::errs() << llvm::toString(std::move(err)) << "\n";
+            return finish(resolveOutputRoot(options.outDir), {}, true);
+        }
     }
 
     std::vector<std::string> selectedTypeKeys(selectedKeys.begin(), selectedKeys.end());

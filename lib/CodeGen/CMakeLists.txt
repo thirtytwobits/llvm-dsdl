@@ -44,6 +44,7 @@ add_library(llvmdsdlCodeGen
   TsEmitter.cpp
   TypeStorage.cpp
   WireLayoutFacts.cpp
+  UavcanEmbeddedCatalog.cpp
 )
 
 target_link_libraries(llvmdsdlCodeGen
@@ -53,6 +54,7 @@ target_link_libraries(llvmdsdlCodeGen
   MLIRFuncToEmitC
   MLIRArithToEmitC
   MLIRSCFToEmitC
+  MLIRParser
   MLIRTargetCpp
   MLIRTransforms
 )
