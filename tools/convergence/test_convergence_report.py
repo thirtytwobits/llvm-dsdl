@@ -206,25 +206,12 @@ class ConvergenceReportRegressionTest(unittest.TestCase):
             self.assertIn("fallback_free_semantic_execution", backend["classifications"], msg=backend_name)
 
     def test_expected_shared_regression_is_detected(self) -> None:
-        baseline = _load_json(self.baseline_path)
-        expected = baseline["expected"]["c"]
-        expected["malformed_input_diagnostic_text"] = "shared"
-
-        with tempfile.TemporaryDirectory(prefix="llvmdsdl-convergence-test-") as tmp_dir:
-            bad_baseline = Path(tmp_dir) / "baseline.json"
-            output_json = Path(tmp_dir) / "report.json"
-            output_md = Path(tmp_dir) / "report.md"
-            _write_json(bad_baseline, baseline)
-            result = self._run_report(
-                baseline_path=bad_baseline,
-                check_regressions=True,
-                output_json=output_json,
-                output_md=output_md,
-            )
-
-        self.assertNotEqual(result.returncode, 0, msg="expected regression failure for mismatched shared class")
-        self.assertIn("convergence regression:", result.stderr)
-        self.assertIn("malformed_input_diagnostic_text", result.stderr)
+        self._assert_classification_mutation_regression(
+            relative_path="lib/Transforms/ConvertDSDLToEmitC.cpp",
+            present_token="codegen_diagnostic_text::malformedUnionTagCategory()",
+            replacement_token="codegen_diagnostic_text::malformedUnionTagCategory_REMOVED()",
+            expected_class_id="malformed_input_diagnostic_text",
+        )
 
     def test_project_floor_regression_is_detected(self) -> None:
         baseline = _load_json(self.baseline_path)

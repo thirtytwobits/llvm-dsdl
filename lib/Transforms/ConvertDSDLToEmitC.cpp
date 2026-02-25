@@ -44,6 +44,7 @@
 #include "llvmdsdl/Transforms/LoweredSerDesContract.h"
 #include "llvmdsdl/Transforms/LoweredSerDesContractValidation.h"
 #include "llvmdsdl/Transforms/Passes.h"
+#include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
 #include <mlir/Dialect/EmitC/IR/EmitC.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
@@ -553,6 +554,11 @@ void emitLine(std::ostringstream& out, const int indent, const std::string& line
     out << line << "\n";
 }
 
+void emitMalformedCategoryComment(std::ostringstream& out, const int indent, const std::string& category)
+{
+    emitLine(out, indent, "/* " + category + " */");
+}
+
 bool supportsTypedFieldStep(const PlanStep& step)
 {
     if (step.kind != PlanStepKind::Field)
@@ -772,6 +778,7 @@ bool emitSerializeArrayField(std::ostringstream& out,
         else
         {
             emitLine(out, indent, "if (" + expr + ".count > " + capacityExpr + ") {");
+            emitMalformedCategoryComment(out, indent + 1, codegen_diagnostic_text::malformedArrayLengthCategory());
             emitLine(out, indent + 1, "return -(int8_t)DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH;");
             emitLine(out, indent, "}");
         }
@@ -859,6 +866,7 @@ bool emitDeserializeArrayField(std::ostringstream& out,
         else
         {
             emitLine(out, indent, "if (" + expr + ".count > " + capacityExpr + ") {");
+            emitMalformedCategoryComment(out, indent + 1, codegen_diagnostic_text::malformedArrayLengthCategory());
             emitLine(out, indent + 1, "return -(int8_t)DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_ARRAY_LENGTH;");
             emitLine(out, indent, "}");
         }
@@ -937,6 +945,7 @@ bool emitSerializeField(std::ostringstream& out,
                          "((int64_t)_size_bytes_" + std::to_string(index) + ", (int64_t)_remaining_bytes_" +
                          std::to_string(index) + ");");
             emitLine(out, indent, "if (_delim_chk_" + std::to_string(index) + " < 0) {");
+            emitMalformedCategoryComment(out, indent + 1, codegen_diagnostic_text::malformedDelimiterHeaderCategory());
             emitLine(out, indent + 1, "return _delim_chk_" + std::to_string(index) + ";");
             emitLine(out, indent, "}");
             emitLine(out, indent, "offset_bits += _size_bytes_" + std::to_string(index) + " * 8U;");
@@ -1107,6 +1116,7 @@ bool emitDeserializeField(std::ostringstream& out,
                          "((int64_t)_size_bytes_" + std::to_string(index) + ", (int64_t)_remaining_bytes_" +
                          std::to_string(index) + ");");
             emitLine(out, indent, "if (_delim_chk_" + std::to_string(index) + " < 0) {");
+            emitMalformedCategoryComment(out, indent + 1, codegen_diagnostic_text::malformedDelimiterHeaderCategory());
             emitLine(out, indent + 1, "return _delim_chk_" + std::to_string(index) + ";");
             emitLine(out, indent, "}");
             emitLine(out,
@@ -1279,6 +1289,7 @@ std::string renderTypedSerializeFunction(llvm::StringRef              functionNa
                  "const uint64_t _tag_value = (uint64_t)" + unionTagSerializeSymbol.str() + "((int64_t)(obj->_tag_));");
         emitLine(out, 1, "const int8_t _err_union_tag = " + unionTagValidateSymbol.str() + "((int64_t)_tag_value);");
         emitLine(out, 1, "if (_err_union_tag < 0) {");
+        emitMalformedCategoryComment(out, 2, codegen_diagnostic_text::malformedUnionTagCategory());
         emitLine(out, 2, "return _err_union_tag;");
         emitLine(out, 1, "}");
         emitLine(out,
@@ -1320,6 +1331,7 @@ std::string renderTypedSerializeFunction(llvm::StringRef              functionNa
             emitLine(out, 1, "}");
         }
         emitLine(out, 1, "else {");
+        emitMalformedCategoryComment(out, 2, codegen_diagnostic_text::malformedUnionTagCategory());
         emitLine(out, 2, "return -(int8_t)DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG;");
         emitLine(out, 1, "}");
     }
@@ -1419,6 +1431,7 @@ std::string renderTypedDeserializeFunction(llvm::StringRef              function
                  "const uint64_t _tag_value = (uint64_t)" + unionTagDeserializeSymbol.str() + "((int64_t)_tag_wire);");
         emitLine(out, 1, "const int8_t _err_union_tag = " + unionTagValidateSymbol.str() + "((int64_t)_tag_value);");
         emitLine(out, 1, "if (_err_union_tag < 0) {");
+        emitMalformedCategoryComment(out, 2, codegen_diagnostic_text::malformedUnionTagCategory());
         emitLine(out, 2, "return _err_union_tag;");
         emitLine(out, 1, "}");
         emitLine(out, 1, "out_obj->_tag_ = (uint8_t)_tag_value;");
@@ -1453,6 +1466,7 @@ std::string renderTypedDeserializeFunction(llvm::StringRef              function
             emitLine(out, 1, "}");
         }
         emitLine(out, 1, "else {");
+        emitMalformedCategoryComment(out, 2, codegen_diagnostic_text::malformedUnionTagCategory());
         emitLine(out, 2, "return -(int8_t)DSDL_RUNTIME_ERROR_REPRESENTATION_BAD_UNION_TAG;");
         emitLine(out, 1, "}");
     }

@@ -21,7 +21,7 @@
       "delimited_payload_validate": "shared",
       "section_capacity_precheck": "shared",
       "alignment_padding_orchestration": "shared",
-      "malformed_input_diagnostic_text": "backend-local",
+      "malformed_input_diagnostic_text": "shared",
       "lowered_contract_validation": "shared",
       "helper_binding_completeness": "shared",
       "verifier_first_invariants": "shared",

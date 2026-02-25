@@ -210,10 +210,19 @@ def _detect_traits(repo_root: Path, cfg: Dict[str, object], text: str) -> Dict[s
             traits["semantic_gate"] = traits["semantic_gate_helper_checks"] and traits["semantic_gate_fallback_checks"]
 
     if kind == "c":
+        convert_emitc_text = _load_text(repo_root, "lib/Transforms/ConvertDSDLToEmitC.cpp")
         traits["lower_pass"] = _has_any(text, [r"createLowerDSDLSerializationPass\("])
         traits["convert_pass"] = _has_any(text, [r"createConvertDSDLToEmitCPass\("])
         traits["schema_scan"] = _has_any(text, [r"dsdl\.schema", r"schemaByHeaderPath"])
         traits["schema_selection_guard"] = _has_any(text, [r"schema selection failed"])
+        traits["diagnostic_catalog"] = _has_all(
+            convert_emitc_text,
+            [
+                r"codegen_diagnostic_text::malformedArrayLengthCategory\(",
+                r"codegen_diagnostic_text::malformedUnionTagCategory\(",
+                r"codegen_diagnostic_text::malformedDelimiterHeaderCategory\(",
+            ],
+        )
         traits["emitc_pipeline"] = traits["lower_pass"] and traits["convert_pass"]
         return traits
 
@@ -416,7 +425,10 @@ def _classifications(kind: str, traits: Dict[str, bool], global_traits: Dict[str
         if traits["emitc_pipeline"]:
             for name, _ in SEMANTIC_CLASSES[:8]:
                 classes[name] = "shared"
-        classes["malformed_input_diagnostic_text"] = "backend-local"
+        if traits.get("diagnostic_catalog", False):
+            classes["malformed_input_diagnostic_text"] = "shared"
+        else:
+            classes["malformed_input_diagnostic_text"] = "backend-local"
         if traits["emitc_pipeline"] and traits["schema_scan"] and traits["schema_selection_guard"]:
             classes["lowered_contract_validation"] = "shared"
     elif kind == "native":
