@@ -47,8 +47,9 @@ HEADER = """//===---------------------------------------------------------------
 namespace llvmdsdl::uavcan_embedded_mlir
 {{
 inline constexpr std::size_t kEmbeddedUavcanSchemaCount = {schema_count}U;
-inline constexpr const char  kEmbeddedUavcanMlirSha256[] = "{sha256}";
-inline constexpr const char  kEmbeddedUavcanMlirText[] = R"{delimiter}(
+inline constexpr const char  kEmbeddedUavcanMlirSha256[] =
+    "{sha256}";
+inline constexpr const char kEmbeddedUavcanMlirText[] = R"{delimiter}(
 {mlir_text}){delimiter}";
 }}  // namespace llvmdsdl::uavcan_embedded_mlir
 """

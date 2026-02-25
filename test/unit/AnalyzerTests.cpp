@@ -219,5 +219,76 @@ bool runAnalyzerTests()
         return false;
     }
 
+    const std::string          docText = "# type docs\n"
+                                         "uint8 field # field docs\n"
+                                         "uint8 CONST = 1 # const docs\n"
+                                         "@sealed\n";
+    llvmdsdl::DiagnosticEngine docParseDiag;
+    llvmdsdl::Lexer            docLexer("uavcan.test.Docs.1.0.dsdl", docText);
+    auto                       docTokens = docLexer.lex();
+    llvmdsdl::Parser           docParser("uavcan.test.Docs.1.0.dsdl", std::move(docTokens), docParseDiag);
+    auto                       docDef = docParser.parseDefinition();
+    if (!docDef)
+    {
+        llvm::consumeError(docDef.takeError());
+        std::cerr << "doc fixture parse failed unexpectedly\n";
+        return false;
+    }
+    if (docParseDiag.hasErrors())
+    {
+        std::cerr << "doc fixture parse diagnostics contained errors\n";
+        return false;
+    }
+
+    llvmdsdl::DiscoveredDefinition docDiscovered;
+    docDiscovered.filePath            = "uavcan/test/Docs.1.0.dsdl";
+    docDiscovered.rootNamespacePath   = "uavcan";
+    docDiscovered.fullName            = "uavcan.test.Docs";
+    docDiscovered.shortName           = "Docs";
+    docDiscovered.namespaceComponents = {"uavcan", "test"};
+    docDiscovered.majorVersion        = 1;
+    docDiscovered.minorVersion        = 0;
+    docDiscovered.text                = docText;
+
+    llvmdsdl::ASTModule docModule;
+    docModule.definitions.push_back(llvmdsdl::ParsedDefinition{docDiscovered, *docDef});
+
+    llvmdsdl::DiagnosticEngine docSemDiag;
+    auto                       docSemantic = llvmdsdl::analyze(docModule, docSemDiag);
+    if (!docSemantic)
+    {
+        llvm::consumeError(docSemantic.takeError());
+        std::cerr << "analyzer unexpectedly failed on docs fixture\n";
+        return false;
+    }
+    if (docSemDiag.hasErrors())
+    {
+        std::cerr << "analyzer produced diagnostics for docs fixture\n";
+        return false;
+    }
+    if (docSemantic->definitions.empty())
+    {
+        std::cerr << "docs fixture produced no semantic definitions\n";
+        return false;
+    }
+    const auto& docDefinition = docSemantic->definitions.front();
+    if (docDefinition.doc.lines.size() != 1 || docDefinition.doc.lines[0].text != "type docs")
+    {
+        std::cerr << "definition docs did not propagate into semantic model\n";
+        return false;
+    }
+    if (docDefinition.request.fields.empty() || docDefinition.request.fields.front().doc.lines.size() != 1 ||
+        docDefinition.request.fields.front().doc.lines[0].text != "field docs")
+    {
+        std::cerr << "field docs did not propagate into semantic model\n";
+        return false;
+    }
+    if (docDefinition.request.constants.empty() || docDefinition.request.constants.front().doc.lines.size() != 1 ||
+        docDefinition.request.constants.front().doc.lines[0].text != "const docs")
+    {
+        std::cerr << "constant docs did not propagate into semantic model\n";
+        return false;
+    }
+
     return true;
 }

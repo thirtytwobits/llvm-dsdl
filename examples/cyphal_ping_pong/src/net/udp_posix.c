@@ -116,11 +116,16 @@ int16_t udpTxSend(UDPTxHandle* const self,
     {
         return 1;
     }
-    if ((errno == EAGAIN) || (errno == EWOULDBLOCK))
+    if (send_result < 0)
     {
-        return 0;
+        const int err = errno;
+        if ((err == EAGAIN) || (err == EWOULDBLOCK))
+        {
+            return 0;
+        }
+        return (int16_t) -err;
     }
-    return (int16_t) -errno;
+    return -EIO;
 }
 
 void udpTxClose(UDPTxHandle* const self)

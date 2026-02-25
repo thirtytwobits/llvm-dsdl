@@ -1553,10 +1553,10 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                                  "convert-dsdl-to-emitc");
                 break;
             case LoweredContractEnvelopeViolationKind::UnsupportedMajorVersion:
-                module.emitError("unsupported lowered SerDes contract major version: " +
-                                 loweredSerDesUnsupportedMajorVersionDiagnosticDetail(
-                                     envelopeViolation->encodedVersion) +
-                                 "; run matching lower-dsdl-serialization before convert-dsdl-to-emitc");
+                module.emitError(
+                    "unsupported lowered SerDes contract major version: " +
+                    loweredSerDesUnsupportedMajorVersionDiagnosticDetail(envelopeViolation->encodedVersion) +
+                    "; run matching lower-dsdl-serialization before convert-dsdl-to-emitc");
                 break;
             case LoweredContractEnvelopeViolationKind::ProducerMismatch:
                 module.emitError("lowered SerDes contract producer mismatch: expected '" +
@@ -1615,10 +1615,10 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                                           "lower-dsdl-serialization before convert-dsdl-to-emitc");
                         break;
                     case LoweredContractEnvelopeViolationKind::UnsupportedMajorVersion:
-                        child.emitOpError("unsupported lowered contract major version: " +
-                                          loweredSerDesUnsupportedMajorVersionDiagnosticDetail(
-                                              envelopeViolation->encodedVersion) +
-                                          "; run matching lower-dsdl-serialization before convert-dsdl-to-emitc");
+                        child.emitOpError(
+                            "unsupported lowered contract major version: " +
+                            loweredSerDesUnsupportedMajorVersionDiagnosticDetail(envelopeViolation->encodedVersion) +
+                            "; run matching lower-dsdl-serialization before convert-dsdl-to-emitc");
                         break;
                     case LoweredContractEnvelopeViolationKind::ProducerMismatch:
                         child.emitOpError("missing lowered contract producer marker; run "

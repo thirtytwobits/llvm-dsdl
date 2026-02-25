@@ -48,8 +48,9 @@ bool runRuntimeLoweredPlanTests()
             return false;
         }
         const auto& runtimeOrdered = *runtimeOrderedOrErr;
-        if (runtimeOrdered.size() != 2U || runtimeOrdered[0].field == nullptr || runtimeOrdered[0].field->name != "payload" ||
-            !runtimeOrdered[0].arrayLengthPrefixBits || *runtimeOrdered[0].arrayLengthPrefixBits != 12U)
+        if (runtimeOrdered.size() != 2U || runtimeOrdered[0].field == nullptr ||
+            runtimeOrdered[0].field->name != "payload" || !runtimeOrdered[0].arrayLengthPrefixBits ||
+            *runtimeOrdered[0].arrayLengthPrefixBits != 12U)
         {
             std::cerr << "runtime lowered ordered steps metadata mismatch\n";
             return false;
@@ -64,8 +65,7 @@ bool runRuntimeLoweredPlanTests()
         }
         const auto& runtimePlan = *runtimePlanOrErr;
         if (runtimePlan.contractVersion != llvmdsdl::kWireOperationContractVersion || runtimePlan.isUnion ||
-            runtimePlan.fields.size() != 2U ||
-            runtimePlan.fields[0].semanticFieldName != "payload" ||
+            runtimePlan.fields.size() != 2U || runtimePlan.fields[0].semanticFieldName != "payload" ||
             runtimePlan.fields[0].arrayKind != llvmdsdl::RuntimeArrayKind::Variable ||
             runtimePlan.fields[0].arrayLengthPrefixBits != 12)
         {

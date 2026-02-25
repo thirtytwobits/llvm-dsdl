@@ -173,12 +173,12 @@ private:
         }
     }
 
-    std::mutex                                            mutex_;
-    std::condition_variable                               cv_;
-    std::deque<WorkItem>                                  queue_;
+    std::mutex                                                         mutex_;
+    std::condition_variable                                            cv_;
+    std::deque<WorkItem>                                               queue_;
     std::unordered_map<std::string, std::shared_ptr<std::atomic_bool>> requestStates_;
-    bool                                                  stopping_{false};
-    std::thread                                           worker_;
+    bool                                                               stopping_{false};
+    std::thread                                                        worker_;
 };
 
 RequestScheduler::RequestScheduler()
@@ -188,9 +188,9 @@ RequestScheduler::RequestScheduler()
 
 RequestScheduler::~RequestScheduler() = default;
 
-bool RequestScheduler::enqueue(std::string requestKey,
-                               std::string method,
-                               RequestTask task,
+bool RequestScheduler::enqueue(std::string       requestKey,
+                               std::string       method,
+                               RequestTask       task,
                                RequestCompletion completion)
 {
     return impl_->enqueue(std::move(requestKey), std::move(method), std::move(task), std::move(completion));

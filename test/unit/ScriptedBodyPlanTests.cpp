@@ -36,12 +36,12 @@ bool runScriptedBodyPlanTests()
         runtimePlan.maxBits = 64;
 
         llvmdsdl::RuntimeFieldPlan payloadPlan;
-        payloadPlan.semanticFieldName    = "payload";
-        payloadPlan.fieldName            = "payload";
-        payloadPlan.kind                 = llvmdsdl::RuntimeFieldKind::Unsigned;
-        payloadPlan.arrayKind            = llvmdsdl::RuntimeArrayKind::Variable;
+        payloadPlan.semanticFieldName     = "payload";
+        payloadPlan.fieldName             = "payload";
+        payloadPlan.kind                  = llvmdsdl::RuntimeFieldKind::Unsigned;
+        payloadPlan.arrayKind             = llvmdsdl::RuntimeArrayKind::Variable;
         payloadPlan.arrayLengthPrefixBits = 12;
-        payloadPlan.arrayCapacity        = 4;
+        payloadPlan.arrayCapacity         = 4;
         runtimePlan.fields.push_back(payloadPlan);
 
         llvmdsdl::RuntimeFieldPlan valuePlan;
@@ -52,23 +52,22 @@ bool runScriptedBodyPlanTests()
         runtimePlan.fields.push_back(valuePlan);
 
         llvmdsdl::LoweredSectionFacts facts;
-        facts.capacityCheckHelper          = "capacity";
-        facts.unionTagValidateHelper       = "union_validate";
-        facts.serUnionTagHelper            = "union_ser";
-        facts.deserUnionTagHelper          = "union_deser";
-        facts.fieldsByName["payload"].serUnsignedHelper          = "payload_scalar_ser";
-        facts.fieldsByName["payload"].deserUnsignedHelper        = "payload_scalar_deser";
-        facts.fieldsByName["payload"].serArrayLengthPrefixHelper = "payload_prefix_ser";
+        facts.capacityCheckHelper                                  = "capacity";
+        facts.unionTagValidateHelper                               = "union_validate";
+        facts.serUnionTagHelper                                    = "union_ser";
+        facts.deserUnionTagHelper                                  = "union_deser";
+        facts.fieldsByName["payload"].serUnsignedHelper            = "payload_scalar_ser";
+        facts.fieldsByName["payload"].deserUnsignedHelper          = "payload_scalar_deser";
+        facts.fieldsByName["payload"].serArrayLengthPrefixHelper   = "payload_prefix_ser";
         facts.fieldsByName["payload"].deserArrayLengthPrefixHelper = "payload_prefix_deser";
         facts.fieldsByName["payload"].arrayLengthValidateHelper    = "payload_validate";
         facts.fieldsByName["value"].serSignedHelper                = "value_scalar_ser";
         facts.fieldsByName["value"].deserSignedHelper              = "value_scalar_deser";
 
-        const auto scripted = llvmdsdl::buildScriptedSectionBodyPlan(
-            section,
-            runtimePlan,
-            &facts,
-            [](const std::string& symbol) { return "bound_" + symbol; });
+        const auto scripted =
+            llvmdsdl::buildScriptedSectionBodyPlan(section, runtimePlan, &facts, [](const std::string& symbol) {
+                return "bound_" + symbol;
+            });
 
         if (scripted.sectionHelpers.capacityCheck != "bound_capacity" ||
             scripted.sectionHelpers.unionTagValidate != "bound_union_validate" ||
@@ -84,7 +83,8 @@ bool runScriptedBodyPlanTests()
             return false;
         }
         if (scripted.fields[0].field.semanticFieldName != "payload" || !scripted.fields[0].arrayPrefixOverride ||
-            *scripted.fields[0].arrayPrefixOverride != 12U || scripted.fields[0].helpers.serScalar != "bound_payload_scalar_ser" ||
+            *scripted.fields[0].arrayPrefixOverride != 12U ||
+            scripted.fields[0].helpers.serScalar != "bound_payload_scalar_ser" ||
             scripted.fields[0].helpers.deserScalar != "bound_payload_scalar_deser" ||
             scripted.fields[0].helpers.serArrayPrefix != "bound_payload_prefix_ser" ||
             scripted.fields[0].helpers.deserArrayPrefix != "bound_payload_prefix_deser" ||

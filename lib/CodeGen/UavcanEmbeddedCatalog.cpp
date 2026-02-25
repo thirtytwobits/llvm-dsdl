@@ -71,7 +71,7 @@ std::string typeKey(llvm::StringRef fullName, std::uint32_t major, std::uint32_t
 
 std::vector<std::string> splitTypeName(llvm::StringRef fullName)
 {
-    std::vector<std::string> out;
+    std::vector<std::string>               out;
     llvm::SmallVector<llvm::StringRef, 16> parts;
     fullName.split(parts, '.', -1, false);
     out.reserve(parts.size());
@@ -139,6 +139,30 @@ std::optional<Value> parseConstantValue(const llvm::StringRef text)
     return Value{Rational(*lhs, *rhs)};
 }
 
+AttachedDoc parseDocAttr(const mlir::StringAttr docAttr)
+{
+    AttachedDoc out;
+    if (!docAttr)
+    {
+        return out;
+    }
+
+    const std::string text  = docAttr.getValue().str();
+    std::size_t       start = 0U;
+    while (start <= text.size())
+    {
+        const std::size_t newline = text.find('\n', start);
+        const std::size_t end     = newline == std::string::npos ? text.size() : newline;
+        out.lines.push_back(AttachedDocLine{{"<embedded-uavcan>", 1, 1}, text.substr(start, end - start)});
+        if (newline == std::string::npos)
+        {
+            break;
+        }
+        start = newline + 1U;
+    }
+    return out;
+}
+
 TypeExprAST parseConstantType(llvm::StringRef text)
 {
     TypeExprAST out;
@@ -165,8 +189,8 @@ TypeExprAST parseConstantType(llvm::StringRef text)
         {
             return fallback;
         }
-        const auto digitsStart = pos + std::strlen(prefix);
-        std::size_t digitsEnd  = digitsStart;
+        const auto  digitsStart = pos + std::strlen(prefix);
+        std::size_t digitsEnd   = digitsStart;
         while (digitsEnd < normalized.size() && std::isdigit(static_cast<unsigned char>(normalized[digitsEnd])) != 0)
         {
             ++digitsEnd;
@@ -229,7 +253,7 @@ TypeExprAST parseConstantType(llvm::StringRef text)
     {
         VoidTypeExprAST padding;
         padding.bitLength = parseBitLength("void", 1U);
-        out.scalar         = padding;
+        out.scalar        = padding;
         return out;
     }
 
@@ -320,12 +344,12 @@ BitLengthSet makeBitLengthSet(const std::int64_t minBits, const std::int64_t max
     return BitLengthSet(std::set<std::int64_t>{minBits, maxBits});
 }
 
-bool parseSectionPlan(mlir::Operation&       plan,
-                      const std::string&     sectionName,
-                      const bool             defaultSealed,
-                      const std::int64_t     defaultExtentBits,
-                      SemanticSection&       section,
-                      DiagnosticEngine&      diagnostics)
+bool parseSectionPlan(mlir::Operation&   plan,
+                      const std::string& sectionName,
+                      const bool         defaultSealed,
+                      const std::int64_t defaultExtentBits,
+                      SemanticSection&   section,
+                      DiagnosticEngine&  diagnostics)
 {
     if (const auto isUnion = plan.getAttrOfType<mlir::UnitAttr>("is_union"))
     {
@@ -397,9 +421,10 @@ bool parseSectionPlan(mlir::Operation&       plan,
         }
 
         SemanticField field;
-        field.name      = nameAttr.getValue().str();
-        field.isPadding = kindAttr.getValue() == "padding";
+        field.name        = nameAttr.getValue().str();
+        field.isPadding   = kindAttr.getValue() == "padding";
         field.sectionName = sectionName;
+        field.doc         = parseDocAttr(step.getAttrOfType<mlir::StringAttr>("doc"));
 
         const auto scalarCategoryAttr = step.getAttrOfType<mlir::StringAttr>("scalar_category");
         const auto castModeAttr       = step.getAttrOfType<mlir::StringAttr>("cast_mode");
@@ -413,15 +438,15 @@ bool parseSectionPlan(mlir::Operation&       plan,
 
         field.resolvedType.scalarCategory =
             scalarCategoryAttr ? parseScalarCategory(scalarCategoryAttr.getValue()) : SemanticScalarCategory::Void;
-        field.resolvedType.castMode = castModeAttr ? parseCastMode(castModeAttr.getValue()) : CastMode::Saturated;
-        field.resolvedType.arrayKind = arrayKindAttr ? parseArrayKind(arrayKindAttr.getValue()) : ArrayKind::None;
-        field.resolvedType.bitLength = bitLengthAttr ? static_cast<std::uint32_t>(bitLengthAttr.getInt()) : 0U;
+        field.resolvedType.castMode      = castModeAttr ? parseCastMode(castModeAttr.getValue()) : CastMode::Saturated;
+        field.resolvedType.arrayKind     = arrayKindAttr ? parseArrayKind(arrayKindAttr.getValue()) : ArrayKind::None;
+        field.resolvedType.bitLength     = bitLengthAttr ? static_cast<std::uint32_t>(bitLengthAttr.getInt()) : 0U;
         field.resolvedType.arrayCapacity = capacityAttr ? static_cast<std::int64_t>(capacityAttr.getInt()) : 0;
         field.resolvedType.arrayLengthPrefixBits = prefixAttr ? static_cast<std::int64_t>(prefixAttr.getInt()) : 0;
-        field.resolvedType.alignmentBits = alignAttr ? static_cast<std::int64_t>(alignAttr.getInt()) : 1;
+        field.resolvedType.alignmentBits         = alignAttr ? static_cast<std::int64_t>(alignAttr.getInt()) : 1;
 
-        const auto stepMinBits = minBitsAttr ? static_cast<std::int64_t>(minBitsAttr.getInt()) : 0;
-        const auto stepMaxBits = maxBitsAttr ? static_cast<std::int64_t>(maxBitsAttr.getInt()) : stepMinBits;
+        const auto stepMinBits          = minBitsAttr ? static_cast<std::int64_t>(minBitsAttr.getInt()) : 0;
+        const auto stepMaxBits          = maxBitsAttr ? static_cast<std::int64_t>(maxBitsAttr.getInt()) : stepMinBits;
         field.resolvedType.bitLengthSet = makeBitLengthSet(stepMinBits, stepMaxBits);
 
         if (const auto unionIndex = step.getAttrOfType<mlir::IntegerAttr>("union_option_index"))
@@ -435,10 +460,10 @@ bool parseSectionPlan(mlir::Operation&       plan,
 
         if (const auto compositeName = step.getAttrOfType<mlir::StringAttr>("composite_full_name"))
         {
-            const auto majorAttr = step.getAttrOfType<mlir::IntegerAttr>("composite_major");
-            const auto minorAttr = step.getAttrOfType<mlir::IntegerAttr>("composite_minor");
-            std::uint32_t major  = 0U;
-            std::uint32_t minor  = 0U;
+            const auto    majorAttr = step.getAttrOfType<mlir::IntegerAttr>("composite_major");
+            const auto    minorAttr = step.getAttrOfType<mlir::IntegerAttr>("composite_minor");
+            std::uint32_t major     = 0U;
+            std::uint32_t minor     = 0U;
             if (majorAttr)
             {
                 major = static_cast<std::uint32_t>(std::max<std::int64_t>(0, majorAttr.getInt()));
@@ -447,7 +472,7 @@ bool parseSectionPlan(mlir::Operation&       plan,
             {
                 minor = static_cast<std::uint32_t>(std::max<std::int64_t>(0, minorAttr.getInt()));
             }
-            field.resolvedType.compositeType = parseTypeRef(compositeName.getValue(), major, minor);
+            field.resolvedType.compositeType   = parseTypeRef(compositeName.getValue(), major, minor);
             field.resolvedType.compositeSealed = step.getAttrOfType<mlir::BoolAttr>("composite_sealed")
                                                      ? step.getAttrOfType<mlir::BoolAttr>("composite_sealed").getValue()
                                                      : true;
@@ -468,9 +493,7 @@ bool parseSectionPlan(mlir::Operation&       plan,
     return true;
 }
 
-bool parseSemanticDefinition(mlir::Operation&      schema,
-                             SemanticDefinition&    out,
-                             DiagnosticEngine&      diagnostics)
+bool parseSemanticDefinition(mlir::Operation& schema, SemanticDefinition& out, DiagnosticEngine& diagnostics)
 {
     const auto fullNameAttr = schema.getAttrOfType<mlir::StringAttr>("full_name");
     const auto majorAttr    = schema.getAttrOfType<mlir::IntegerAttr>("major");
@@ -500,6 +523,7 @@ bool parseSemanticDefinition(mlir::Operation&      schema,
     out.info.filePath          = syntheticFilePath(fullName, major, minor);
     out.info.rootNamespacePath = "<embedded-uavcan>";
     out.info.text              = "";
+    out.doc                    = parseDocAttr(schema.getAttrOfType<mlir::StringAttr>("doc"));
 
     if (const auto fixedPortId = schema.getAttrOfType<mlir::IntegerAttr>("fixed_port_id"))
     {
@@ -508,7 +532,7 @@ bool parseSemanticDefinition(mlir::Operation&      schema,
 
     out.isService = schema.hasAttr("service");
 
-    const bool requestSealed = schema.hasAttr("sealed");
+    const bool   requestSealed     = schema.hasAttr("sealed");
     std::int64_t requestExtentBits = -1;
     if (const auto extentBits = schema.getAttrOfType<mlir::IntegerAttr>("extent_bits"))
     {
@@ -549,15 +573,16 @@ bool parseSemanticDefinition(mlir::Operation&      schema,
                 return false;
             }
 
-            const bool sectionSealed = sectionName == "request" || sectionName.empty() ? requestSealed : false;
+            const bool         sectionSealed = sectionName == "request" || sectionName.empty() ? requestSealed : false;
             const std::int64_t sectionExtent = sectionName == "request" || sectionName.empty() ? requestExtentBits : -1;
             if (!parseSectionPlan(child, sectionName, sectionSealed, sectionExtent, it->second.section, diagnostics))
             {
                 return false;
             }
 
-            it->second.section.deprecated = schema.hasAttr("deprecated") &&
-                                            (sectionName.empty() || sectionName == "request" || sectionName == "response");
+            it->second.section.deprecated =
+                schema.hasAttr("deprecated") &&
+                (sectionName.empty() || sectionName == "request" || sectionName == "response");
             it->second.seenPlan = true;
             continue;
         }
@@ -576,8 +601,8 @@ bool parseSemanticDefinition(mlir::Operation&      schema,
                 it = sections.emplace(sectionName, SectionBundle{}).first;
             }
 
-            const auto nameAttr = child.getAttrOfType<mlir::StringAttr>("name");
-            const auto typeAttr = child.getAttrOfType<mlir::StringAttr>("type_name");
+            const auto nameAttr  = child.getAttrOfType<mlir::StringAttr>("name");
+            const auto typeAttr  = child.getAttrOfType<mlir::StringAttr>("type_name");
             const auto valueAttr = child.getAttrOfType<mlir::StringAttr>("value_text");
             if (!nameAttr || !typeAttr || !valueAttr)
             {
@@ -595,7 +620,10 @@ bool parseSemanticDefinition(mlir::Operation&      schema,
             }
 
             it->second.section.constants.push_back(
-                SemanticConstant{nameAttr.getValue().str(), parseConstantType(typeAttr.getValue()), *value});
+                SemanticConstant{nameAttr.getValue().str(),
+                                 parseDocAttr(child.getAttrOfType<mlir::StringAttr>("doc")),
+                                 parseConstantType(typeAttr.getValue()),
+                                 *value});
             continue;
         }
     }
@@ -633,7 +661,7 @@ bool parseSemanticDefinition(mlir::Operation&      schema,
 }  // namespace
 
 llvm::Expected<UavcanEmbeddedCatalog> loadUavcanEmbeddedCatalog(mlir::MLIRContext& context,
-                                                                DiagnosticEngine&   diagnostics)
+                                                                DiagnosticEngine&  diagnostics)
 {
     auto module = mlir::parseSourceString<mlir::ModuleOp>(uavcan_embedded_mlir::kEmbeddedUavcanMlirText, &context);
     if (!module)
@@ -703,7 +731,7 @@ bool isEmbeddedUavcanSyntheticPath(const std::string& filePath)
     return filePath.rfind(kEmbeddedUavcanSyntheticPathPrefix, 0U) == 0U;
 }
 
-llvm::Error appendEmbeddedUavcanSchemasForKeys(const UavcanEmbeddedCatalog&          catalog,
+llvm::Error appendEmbeddedUavcanSchemasForKeys(const UavcanEmbeddedCatalog&           catalog,
                                                mlir::ModuleOp                         destination,
                                                const std::unordered_set<std::string>& selectedTypeKeys,
                                                DiagnosticEngine&                      diagnostics)
@@ -721,8 +749,9 @@ llvm::Error appendEmbeddedUavcanSchemasForKeys(const UavcanEmbeddedCatalog&     
         const auto minorAttr    = op.getAttrOfType<mlir::IntegerAttr>("minor");
         if (!fullNameAttr || !majorAttr || !minorAttr)
         {
-            diagnostics.error({"<embedded-uavcan>", 1, 1},
-                              "destination module schema op missing key attributes while composing embedded UAVCAN schemas");
+            diagnostics
+                .error({"<embedded-uavcan>", 1, 1},
+                       "destination module schema op missing key attributes while composing embedded UAVCAN schemas");
             return llvm::createStringError(llvm::inconvertibleErrorCode(), "destination schema missing key attributes");
         }
 

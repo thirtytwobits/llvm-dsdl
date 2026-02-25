@@ -75,11 +75,11 @@ RuntimeSectionHelperNames resolveRuntimeSectionHelperNames(const LoweredSectionF
     return out;
 }
 
-RuntimeFieldHelperNames resolveRuntimeFieldHelperNames(const SemanticSection&               section,
-                                                       const LoweredSectionFacts*           sectionFacts,
-                                                       const RuntimeFieldPlan&              field,
-                                                       const std::optional<std::uint32_t>   prefixBitsOverride,
-                                                       const RuntimeHelperNameResolver& helperNameResolver)
+RuntimeFieldHelperNames resolveRuntimeFieldHelperNames(const SemanticSection&             section,
+                                                       const LoweredSectionFacts*         sectionFacts,
+                                                       const RuntimeFieldPlan&            field,
+                                                       const std::optional<std::uint32_t> prefixBitsOverride,
+                                                       const RuntimeHelperNameResolver&   helperNameResolver)
 {
     RuntimeFieldHelperNames out;
     const auto* const       semanticField = findSemanticFieldByName(section, field.semanticFieldName);

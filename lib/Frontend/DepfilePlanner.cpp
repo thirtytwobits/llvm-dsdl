@@ -179,7 +179,8 @@ const std::vector<std::string>& DepfilePlanner::depsForTypeKey(const std::string
     return inserted->second;
 }
 
-const std::vector<std::string>& DepfilePlanner::depsForRequiredTypeKeys(const std::vector<std::string>& requiredTypeKeys)
+const std::vector<std::string>& DepfilePlanner::depsForRequiredTypeKeys(
+    const std::vector<std::string>& requiredTypeKeys)
 {
     if (requiredTypeKeys.empty())
     {

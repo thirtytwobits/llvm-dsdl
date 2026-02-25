@@ -84,6 +84,31 @@ enum class ArrayKind
 struct TypeExprAST;
 struct ExprAST;
 
+/// @brief One normalized source comment line attached to an AST node.
+struct AttachedDocLine
+{
+    /// @brief Source location of the original comment token.
+    SourceLocation location;
+
+    /// @brief Normalized comment text without leading `#`.
+    std::string text;
+};
+
+/// @brief Attached documentation comments for an AST node.
+struct AttachedDoc
+{
+    /// @brief Attached comment lines in source order.
+    std::vector<AttachedDocLine> lines;
+
+    /// @brief Returns true when no comment lines are attached.
+    /// @return True when @ref lines is empty.
+    [[nodiscard]] bool empty() const;
+
+    /// @brief Returns attached comment text joined by newlines.
+    /// @return Joined normalized comment text.
+    [[nodiscard]] std::string str() const;
+};
+
 /// @brief Primitive scalar type expression.
 struct PrimitiveTypeExprAST
 {
@@ -304,6 +329,9 @@ struct ConstantDeclAST
     /// @brief Statement source location.
     SourceLocation location;
 
+    /// @brief Documentation attached to this declaration.
+    AttachedDoc doc;
+
     /// @brief Declared type expression.
     TypeExprAST type;
 
@@ -322,6 +350,9 @@ struct FieldDeclAST
 {
     /// @brief Statement source location.
     SourceLocation location;
+
+    /// @brief Documentation attached to this declaration.
+    AttachedDoc doc;
 
     /// @brief Field type expression.
     TypeExprAST type;
@@ -342,6 +373,9 @@ struct DirectiveAST
     /// @brief Statement source location.
     SourceLocation location;
 
+    /// @brief Documentation attached to this directive.
+    AttachedDoc doc;
+
     /// @brief Parsed directive kind.
     DirectiveKind kind{DirectiveKind::Unknown};
 
@@ -357,6 +391,9 @@ struct ServiceResponseMarkerAST
 {
     /// @brief Marker source location.
     SourceLocation location;
+
+    /// @brief Documentation attached to this marker.
+    AttachedDoc doc;
 };
 
 /// @brief Union of all supported top-level statements.
@@ -367,6 +404,9 @@ struct DefinitionAST
 {
     /// @brief Definition source location.
     SourceLocation location;
+
+    /// @brief Documentation attached to this definition.
+    AttachedDoc doc;
 
     /// @brief Statements in source order.
     std::vector<StatementAST> statements;

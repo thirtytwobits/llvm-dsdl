@@ -91,9 +91,9 @@ public:
     /// @param[in] task Request task body.
     /// @param[in] completion Completion callback invoked once.
     /// @return `true` when queued successfully.
-    [[nodiscard]] bool enqueue(std::string requestKey,
-                               std::string method,
-                               RequestTask task,
+    [[nodiscard]] bool enqueue(std::string       requestKey,
+                               std::string       method,
+                               RequestTask       task,
                                RequestCompletion completion);
 
     /// @brief Requests cancellation for the given request key.

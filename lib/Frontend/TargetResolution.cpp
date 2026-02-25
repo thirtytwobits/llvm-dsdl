@@ -124,7 +124,7 @@ std::vector<std::filesystem::path> splitEnvPaths(const char* value)
         return out;
     }
 
-    const char separator = envPathSeparator();
+    const char  separator = envPathSeparator();
     std::string current;
     for (const char* it = value; *it != '\0'; ++it)
     {
@@ -165,7 +165,7 @@ std::set<std::filesystem::path> lookupDirsFromEnvironment()
         {
             continue;
         }
-        const auto base = normalizePath(cyphalRoot);
+        const auto      base = normalizePath(cyphalRoot);
         std::error_code ec;
         if (!std::filesystem::exists(base, ec) || ec || !std::filesystem::is_directory(base, ec))
         {
@@ -191,8 +191,10 @@ std::set<std::filesystem::path> lookupDirsFromEnvironment()
 
 llvm::Error expandRootTargets(const std::filesystem::path& root, std::set<std::filesystem::path>& explicitTargets)
 {
-    std::error_code ec;
-    std::filesystem::recursive_directory_iterator it(root, std::filesystem::directory_options::skip_permission_denied, ec);
+    std::error_code                               ec;
+    std::filesystem::recursive_directory_iterator it(root,
+                                                     std::filesystem::directory_options::skip_permission_denied,
+                                                     ec);
     std::filesystem::recursive_directory_iterator end;
     if (ec)
     {
@@ -234,7 +236,9 @@ llvm::Expected<std::filesystem::path> resolveExistingFile(const std::filesystem:
     std::error_code ec;
     if (!std::filesystem::exists(path, ec) || ec || !std::filesystem::is_regular_file(path, ec))
     {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(), "file does not exist: %s", path.string().c_str());
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "file does not exist: %s",
+                                       path.string().c_str());
     }
     return normalizePath(path);
 }
@@ -242,12 +246,12 @@ llvm::Expected<std::filesystem::path> resolveExistingFile(const std::filesystem:
 }  // namespace
 
 llvm::Expected<ResolvedTargets> resolveTargets(const std::vector<std::string>& targetFilesOrRootNamespace,
-                                               const TargetResolveOptions&      options,
-                                               DiagnosticEngine&                diagnostics)
+                                               const TargetResolveOptions&     options,
+                                               DiagnosticEngine&               diagnostics)
 {
-    std::set<std::filesystem::path> roots;
-    std::set<std::filesystem::path> lookupRoots;
-    std::set<std::filesystem::path> explicitTargets;
+    std::set<std::filesystem::path>    roots;
+    std::set<std::filesystem::path>    lookupRoots;
+    std::set<std::filesystem::path>    explicitTargets;
     std::vector<std::filesystem::path> unresolvedFileTargets;
 
     for (const auto& envLookup : lookupDirsFromEnvironment())
@@ -441,7 +445,8 @@ llvm::Expected<ResolvedTargets> resolveTargets(const std::vector<std::string>& t
     std::sort(out.rootNamespaceDirs.begin(), out.rootNamespaceDirs.end());
     std::sort(out.lookupDirs.begin(), out.lookupDirs.end());
     std::sort(out.explicitTargetFiles.begin(), out.explicitTargetFiles.end());
-    out.rootNamespaceDirs.erase(std::unique(out.rootNamespaceDirs.begin(), out.rootNamespaceDirs.end()), out.rootNamespaceDirs.end());
+    out.rootNamespaceDirs.erase(std::unique(out.rootNamespaceDirs.begin(), out.rootNamespaceDirs.end()),
+                                out.rootNamespaceDirs.end());
     out.lookupDirs.erase(std::unique(out.lookupDirs.begin(), out.lookupDirs.end()), out.lookupDirs.end());
     out.explicitTargetFiles.erase(std::unique(out.explicitTargetFiles.begin(), out.explicitTargetFiles.end()),
                                   out.explicitTargetFiles.end());

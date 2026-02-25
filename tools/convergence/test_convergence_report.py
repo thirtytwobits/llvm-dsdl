@@ -204,6 +204,73 @@ class ConvergenceReportRegressionTest(unittest.TestCase):
             self.assertIn("helper_binding_completeness", backend["classifications"], msg=backend_name)
             self.assertIn("contract_v2_usage", backend["classifications"], msg=backend_name)
             self.assertIn("fallback_free_semantic_execution", backend["classifications"], msg=backend_name)
+            self.assertEqual(backend["score"], 100, msg=backend_name)
+            self.assertEqual(backend["shared_classes"], backend["total_classes"], msg=backend_name)
+            self.assertTrue(
+                all(status == "shared" for status in backend["classifications"].values()),
+                msg=backend_name,
+            )
+        self.assertEqual(report["project_floor_score"], 100)
+
+    def test_baseline_missing_backend_is_detected(self) -> None:
+        baseline = _load_json(self.baseline_path)
+        baseline["expected"].pop("python")
+
+        with tempfile.TemporaryDirectory(prefix="llvmdsdl-convergence-test-") as tmp_dir:
+            bad_baseline = Path(tmp_dir) / "baseline.json"
+            output_json = Path(tmp_dir) / "report.json"
+            output_md = Path(tmp_dir) / "report.md"
+            _write_json(bad_baseline, baseline)
+            result = self._run_report(
+                baseline_path=bad_baseline,
+                check_regressions=True,
+                output_json=output_json,
+                output_md=output_md,
+            )
+
+        self.assertNotEqual(result.returncode, 0, msg="expected baseline-shape backend failure")
+        self.assertIn("convergence regression:", result.stderr)
+        self.assertIn("baseline missing required backends", result.stderr)
+
+    def test_baseline_missing_class_is_detected(self) -> None:
+        baseline = _load_json(self.baseline_path)
+        baseline["expected"]["c"].pop("contract_v2_usage")
+
+        with tempfile.TemporaryDirectory(prefix="llvmdsdl-convergence-test-") as tmp_dir:
+            bad_baseline = Path(tmp_dir) / "baseline.json"
+            output_json = Path(tmp_dir) / "report.json"
+            output_md = Path(tmp_dir) / "report.md"
+            _write_json(bad_baseline, baseline)
+            result = self._run_report(
+                baseline_path=bad_baseline,
+                check_regressions=True,
+                output_json=output_json,
+                output_md=output_md,
+            )
+
+        self.assertNotEqual(result.returncode, 0, msg="expected baseline-shape class failure")
+        self.assertIn("convergence regression:", result.stderr)
+        self.assertIn("missing semantic classes", result.stderr)
+
+    def test_baseline_non_shared_status_is_detected(self) -> None:
+        baseline = _load_json(self.baseline_path)
+        baseline["expected"]["go"]["helper_binding_completeness"] = "backend-local"
+
+        with tempfile.TemporaryDirectory(prefix="llvmdsdl-convergence-test-") as tmp_dir:
+            bad_baseline = Path(tmp_dir) / "baseline.json"
+            output_json = Path(tmp_dir) / "report.json"
+            output_md = Path(tmp_dir) / "report.md"
+            _write_json(bad_baseline, baseline)
+            result = self._run_report(
+                baseline_path=bad_baseline,
+                check_regressions=True,
+                output_json=output_json,
+                output_md=output_md,
+            )
+
+        self.assertNotEqual(result.returncode, 0, msg="expected baseline non-shared class failure")
+        self.assertIn("convergence regression:", result.stderr)
+        self.assertIn("must be 'shared'", result.stderr)
 
     def test_expected_shared_regression_is_detected(self) -> None:
         self._assert_classification_mutation_regression(

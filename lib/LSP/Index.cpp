@@ -69,10 +69,9 @@ std::string normalizePath(const std::string& pathText)
 
 std::string toLower(std::string text)
 {
-    std::transform(text.begin(),
-                   text.end(),
-                   text.begin(),
-                   [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::transform(text.begin(), text.end(), text.begin(), [](const unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
     return text;
 }
 
@@ -106,8 +105,7 @@ std::string encodeShardKey(const std::string& normalizedPath)
     return encoded;
 }
 
-std::filesystem::path shardPathFor(const std::string& cacheDirectory,
-                                   const std::string& normalizedPath)
+std::filesystem::path shardPathFor(const std::string& cacheDirectory, const std::string& normalizedPath)
 {
     return std::filesystem::path(cacheDirectory) / (encodeShardKey(normalizedPath) + ".index.json");
 }
@@ -140,9 +138,7 @@ llvm::json::Object referenceToJson(const IndexReferenceRecord& reference)
                               {"location", locationToJson(reference.location)}};
 }
 
-std::optional<std::string> getRequiredString(const llvm::json::Object& object,
-                                             llvm::StringRef            key,
-                                             std::string&               error)
+std::optional<std::string> getRequiredString(const llvm::json::Object& object, llvm::StringRef key, std::string& error)
 {
     const auto value = object.getString(key);
     if (!value.has_value())
@@ -154,8 +150,8 @@ std::optional<std::string> getRequiredString(const llvm::json::Object& object,
 }
 
 std::optional<std::uint32_t> getRequiredUnsigned32(const llvm::json::Object& object,
-                                                   llvm::StringRef            key,
-                                                   std::string&               error)
+                                                   llvm::StringRef           key,
+                                                   std::string&              error)
 {
     const auto value = object.getInteger(key);
     if (!value.has_value() || *value < 0)
@@ -167,8 +163,8 @@ std::optional<std::uint32_t> getRequiredUnsigned32(const llvm::json::Object& obj
 }
 
 std::optional<std::uint64_t> getRequiredUnsigned64(const llvm::json::Object& object,
-                                                   llvm::StringRef            key,
-                                                   std::string&               error)
+                                                   llvm::StringRef           key,
+                                                   std::string&              error)
 {
     const auto value = object.getInteger(key);
     if (!value.has_value() || *value < 0)
@@ -179,9 +175,7 @@ std::optional<std::uint64_t> getRequiredUnsigned64(const llvm::json::Object& obj
     return static_cast<std::uint64_t>(*value);
 }
 
-std::optional<std::size_t> getRequiredSize(const llvm::json::Object& object,
-                                           llvm::StringRef            key,
-                                           std::string&               error)
+std::optional<std::size_t> getRequiredSize(const llvm::json::Object& object, llvm::StringRef key, std::string& error)
 {
     const auto value = object.getInteger(key);
     if (!value.has_value() || *value < 0)
@@ -192,8 +186,7 @@ std::optional<std::size_t> getRequiredSize(const llvm::json::Object& object,
     return static_cast<std::size_t>(*value);
 }
 
-std::optional<IndexLocation> parseLocation(const llvm::json::Object& object,
-                                           std::string&               error)
+std::optional<IndexLocation> parseLocation(const llvm::json::Object& object, std::string& error)
 {
     IndexLocation location;
 
@@ -236,7 +229,7 @@ ParseShardResult parseShardFromFile(const std::filesystem::path& shardPath)
         return ParseShardResult{std::nullopt, "failed to read shard file"};
     }
 
-    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::string                       text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     llvm::Expected<llvm::json::Value> parsed = llvm::json::parse(text);
     if (!parsed)
     {
@@ -260,8 +253,7 @@ ParseShardResult parseShardFromFile(const std::filesystem::path& shardPath)
     if (shard.metadata.schemaVersion != LspIndexSchemaVersion)
     {
         return ParseShardResult{std::nullopt,
-                                "unsupported schema version: " +
-                                    std::to_string(shard.metadata.schemaVersion)};
+                                "unsupported schema version: " + std::to_string(shard.metadata.schemaVersion)};
     }
 
     const auto* metadataValue = root->getObject("metadata");
@@ -465,9 +457,9 @@ bool IndexStorage::writeShard(const IndexFileShard& shard, std::string* errorMes
     }
 
     llvm::json::Object metadata;
-    metadata["file_path"] = shard.metadata.filePath;
-    metadata["source_uri"] = shard.metadata.sourceUri;
-    metadata["text_hash"] = static_cast<std::int64_t>(shard.metadata.textHash);
+    metadata["file_path"]        = shard.metadata.filePath;
+    metadata["source_uri"]       = shard.metadata.sourceUri;
+    metadata["text_hash"]        = static_cast<std::int64_t>(shard.metadata.textHash);
     metadata["snapshot_version"] = static_cast<std::int64_t>(shard.metadata.snapshotVersion);
 
     std::vector<IndexSymbolRecord> sortedSymbols = shard.symbols;
@@ -481,15 +473,14 @@ bool IndexStorage::writeShard(const IndexFileShard& shard, std::string* errorMes
                                   lhs.name,
                                   lhs.qualifiedName,
                                   lhs.kind,
-                                  lhs.detail) <
-                         std::tie(rhs.usr,
-                                  rhs.filePath,
-                                  rhs.location.line,
-                                  rhs.location.character,
-                                  rhs.name,
-                                  rhs.qualifiedName,
-                                  rhs.kind,
-                                  rhs.detail);
+                                  lhs.detail) < std::tie(rhs.usr,
+                                                         rhs.filePath,
+                                                         rhs.location.line,
+                                                         rhs.location.character,
+                                                         rhs.name,
+                                                         rhs.qualifiedName,
+                                                         rhs.kind,
+                                                         rhs.detail);
               });
 
     llvm::json::Array symbols;
@@ -507,13 +498,12 @@ bool IndexStorage::writeShard(const IndexFileShard& shard, std::string* errorMes
                                   lhs.location.line,
                                   lhs.location.character,
                                   lhs.location.length,
-                                  lhs.isDeclaration) <
-                         std::tie(rhs.targetUsr,
-                                  rhs.filePath,
-                                  rhs.location.line,
-                                  rhs.location.character,
-                                  rhs.location.length,
-                                  rhs.isDeclaration);
+                                  lhs.isDeclaration) < std::tie(rhs.targetUsr,
+                                                                rhs.filePath,
+                                                                rhs.location.line,
+                                                                rhs.location.character,
+                                                                rhs.location.length,
+                                                                rhs.isDeclaration);
               });
 
     llvm::json::Array references;
@@ -524,18 +514,18 @@ bool IndexStorage::writeShard(const IndexFileShard& shard, std::string* errorMes
 
     llvm::json::Object root;
     root["schema_version"] = static_cast<std::int64_t>(LspIndexSchemaVersion);
-    root["metadata"] = std::move(metadata);
-    root["symbols"] = std::move(symbols);
-    root["references"] = std::move(references);
+    root["metadata"]       = std::move(metadata);
+    root["symbols"]        = std::move(symbols);
+    root["references"]     = std::move(references);
 
-    std::string rendered;
+    std::string              rendered;
     llvm::raw_string_ostream stream(rendered);
     stream << llvm::formatv("{0:2}", llvm::json::Value(std::move(root)));
     stream << '\n';
     stream.flush();
 
     const std::filesystem::path targetPath = shardPathFor(cacheDirectory_, shard.metadata.filePath);
-    const std::filesystem::path tempPath = targetPath.string() + ".tmp";
+    const std::filesystem::path tempPath   = targetPath.string() + ".tmp";
 
     {
         std::ofstream out(tempPath, std::ios::binary | std::ios::trunc);
@@ -627,8 +617,7 @@ std::vector<IndexFileShard> IndexStorage::loadAllShards(std::vector<std::string>
     }
 
     std::vector<std::filesystem::path> shardPaths;
-    for (const std::filesystem::directory_entry& entry :
-         std::filesystem::directory_iterator(cacheDirectory_, ec))
+    for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(cacheDirectory_, ec))
     {
         if (ec)
         {
@@ -666,11 +655,9 @@ std::vector<IndexFileShard> IndexStorage::loadAllShards(std::vector<std::string>
         shards.push_back(std::move(*parsed.shard));
     }
 
-    std::sort(shards.begin(),
-              shards.end(),
-              [](const IndexFileShard& lhs, const IndexFileShard& rhs) {
-                  return lhs.metadata.filePath < rhs.metadata.filePath;
-              });
+    std::sort(shards.begin(), shards.end(), [](const IndexFileShard& lhs, const IndexFileShard& rhs) {
+        return lhs.metadata.filePath < rhs.metadata.filePath;
+    });
     return shards;
 }
 
@@ -700,8 +687,7 @@ IndexRepairReport IndexStorage::verifyAndRepair(const bool removeInvalidShards) 
     }
 
     std::vector<std::filesystem::path> shardPaths;
-    for (const std::filesystem::directory_entry& entry :
-         std::filesystem::directory_iterator(cacheDirectory_, ec))
+    for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(cacheDirectory_, ec))
     {
         if (ec)
         {
@@ -764,11 +750,9 @@ IndexRepairReport IndexStorage::verifyAndRepair(const bool removeInvalidShards) 
 
 void WorkspaceIndex::replaceAll(std::vector<IndexFileShard> shards)
 {
-    std::sort(shards.begin(),
-              shards.end(),
-              [](const IndexFileShard& lhs, const IndexFileShard& rhs) {
-                  return lhs.metadata.filePath < rhs.metadata.filePath;
-              });
+    std::sort(shards.begin(), shards.end(), [](const IndexFileShard& lhs, const IndexFileShard& rhs) {
+        return lhs.metadata.filePath < rhs.metadata.filePath;
+    });
 
     shards_ = std::move(shards);
     shardsByPath_.clear();
@@ -780,8 +764,7 @@ void WorkspaceIndex::replaceAll(std::vector<IndexFileShard> shards)
     rebuildFlattenedSymbols();
 }
 
-std::vector<WorkspaceSymbolResult> WorkspaceIndex::querySymbols(const std::string& query,
-                                                                 const std::size_t  limit) const
+std::vector<WorkspaceSymbolResult> WorkspaceIndex::querySymbols(const std::string& query, const std::size_t limit) const
 {
     std::vector<WorkspaceSymbolResult> out;
     if (flattenedSymbols_.empty() || limit == 0)
@@ -859,16 +842,14 @@ std::vector<WorkspaceSymbolResult> WorkspaceIndex::querySymbols(const std::strin
         });
     }
 
-    std::sort(out.begin(),
-              out.end(),
-              [](const WorkspaceSymbolResult& lhs, const WorkspaceSymbolResult& rhs) {
-                  if (lhs.score != rhs.score)
-                  {
-                      return lhs.score > rhs.score;
-                  }
-                  return std::tie(lhs.qualifiedName, lhs.uri, lhs.line, lhs.character, lhs.name) <
-                         std::tie(rhs.qualifiedName, rhs.uri, rhs.line, rhs.character, rhs.name);
-              });
+    std::sort(out.begin(), out.end(), [](const WorkspaceSymbolResult& lhs, const WorkspaceSymbolResult& rhs) {
+        if (lhs.score != rhs.score)
+        {
+            return lhs.score > rhs.score;
+        }
+        return std::tie(lhs.qualifiedName, lhs.uri, lhs.line, lhs.character, lhs.name) <
+               std::tie(rhs.qualifiedName, rhs.uri, rhs.line, rhs.character, rhs.name);
+    });
 
     if (out.size() > limit)
     {
@@ -920,12 +901,11 @@ void WorkspaceIndex::rebuildFlattenedSymbols()
                                   lhs.record.location.uri,
                                   lhs.record.location.line,
                                   lhs.record.location.character,
-                                  lhs.record.usr) <
-                         std::tie(rhs.record.qualifiedName,
-                                  rhs.record.location.uri,
-                                  rhs.record.location.line,
-                                  rhs.record.location.character,
-                                  rhs.record.usr);
+                                  lhs.record.usr) < std::tie(rhs.record.qualifiedName,
+                                                             rhs.record.location.uri,
+                                                             rhs.record.location.line,
+                                                             rhs.record.location.character,
+                                                             rhs.record.usr);
               });
 }
 
@@ -977,8 +957,7 @@ public:
         });
     }
 
-    std::vector<WorkspaceSymbolResult> workspaceSymbols(const std::string& query,
-                                                         const std::size_t  limit) const
+    std::vector<WorkspaceSymbolResult> workspaceSymbols(const std::string& query, const std::size_t limit) const
     {
         std::lock_guard<std::mutex> lock(mutex_);
         return index_.querySymbols(query, limit);
@@ -1043,14 +1022,14 @@ public:
 private:
     struct Job final
     {
-        std::uint64_t snapshotVersion{0};
-        std::vector<IndexFileShard> shards;
+        std::uint64_t                     snapshotVersion{0};
+        std::vector<IndexFileShard>       shards;
         std::shared_ptr<std::atomic_bool> cancelFlag;
     };
 
     void warmStartLoad()
     {
-        std::vector<std::string> invalidShardPaths;
+        std::vector<std::string>    invalidShardPaths;
         std::vector<IndexFileShard> loaded = storage_.loadAllShards(&invalidShardPaths);
         index_.replaceAll(std::move(loaded));
         indexedPaths_.clear();
@@ -1080,9 +1059,7 @@ private:
             activeJobCancelFlag_->store(true);
         }
 
-        cv_.wait(lock, [this]() {
-            return !activeJobCancelFlag_ && !pendingJob_.has_value();
-        });
+        cv_.wait(lock, [this]() { return !activeJobCancelFlag_ && !pendingJob_.has_value(); });
     }
 
     void workerLoop()
@@ -1126,9 +1103,7 @@ private:
 
     bool applyJob(const Job& job)
     {
-        auto cancelled = [&job]() {
-            return job.cancelFlag && job.cancelFlag->load();
-        };
+        auto cancelled = [&job]() { return job.cancelFlag && job.cancelFlag->load(); };
 
         if (cancelled())
         {
@@ -1136,11 +1111,9 @@ private:
         }
 
         std::vector<IndexFileShard> sortedShards = job.shards;
-        std::sort(sortedShards.begin(),
-                  sortedShards.end(),
-                  [](const IndexFileShard& lhs, const IndexFileShard& rhs) {
-                      return lhs.metadata.filePath < rhs.metadata.filePath;
-                  });
+        std::sort(sortedShards.begin(), sortedShards.end(), [](const IndexFileShard& lhs, const IndexFileShard& rhs) {
+            return lhs.metadata.filePath < rhs.metadata.filePath;
+        });
 
         std::unordered_set<std::string> desiredPaths;
         desiredPaths.reserve(sortedShards.size());
@@ -1155,9 +1128,9 @@ private:
             desiredPaths.insert(shard.metadata.filePath);
 
             std::string errorMessage;
-            const bool wrote = storage_.writeShard(shard, &errorMessage);
-            (void)wrote;
-            (void)errorMessage;
+            const bool  wrote = storage_.writeShard(shard, &errorMessage);
+            (void) wrote;
+            (void) errorMessage;
 
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
@@ -1186,7 +1159,7 @@ private:
                 return false;
             }
             const bool removed = storage_.removeShardForPath(stalePath);
-            (void)removed;
+            (void) removed;
         }
 
         if (cancelled())
@@ -1203,16 +1176,16 @@ private:
         return true;
     }
 
-    mutable std::mutex                      mutex_;
-    std::condition_variable                 cv_;
-    IndexStorage                            storage_;
-    WorkspaceIndex                          index_;
-    std::unordered_set<std::string>         indexedPaths_;
-    std::optional<Job>                      pendingJob_;
-    std::shared_ptr<std::atomic_bool>       activeJobCancelFlag_;
-    IndexManagerStats                       stats_;
-    bool                                    stopping_{false};
-    std::thread                             worker_;
+    mutable std::mutex                mutex_;
+    std::condition_variable           cv_;
+    IndexStorage                      storage_;
+    WorkspaceIndex                    index_;
+    std::unordered_set<std::string>   indexedPaths_;
+    std::optional<Job>                pendingJob_;
+    std::shared_ptr<std::atomic_bool> activeJobCancelFlag_;
+    IndexManagerStats                 stats_;
+    bool                              stopping_{false};
+    std::thread                       worker_;
 };
 
 IndexManager::IndexManager(std::string cacheDirectory)
@@ -1227,14 +1200,12 @@ const std::string& IndexManager::cacheDirectory() const
     return impl_->cacheDirectory();
 }
 
-void IndexManager::scheduleRebuild(const std::uint64_t snapshotVersion,
-                                   std::vector<IndexFileShard> shards)
+void IndexManager::scheduleRebuild(const std::uint64_t snapshotVersion, std::vector<IndexFileShard> shards)
 {
     impl_->scheduleRebuild(snapshotVersion, std::move(shards));
 }
 
-bool IndexManager::waitForSnapshot(const std::uint64_t snapshotVersion,
-                                   const std::chrono::milliseconds timeout)
+bool IndexManager::waitForSnapshot(const std::uint64_t snapshotVersion, const std::chrono::milliseconds timeout)
 {
     return impl_->waitForSnapshot(snapshotVersion, timeout);
 }

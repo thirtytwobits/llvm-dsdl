@@ -52,8 +52,8 @@ std::optional<LoweredContractEnvelopeViolation> findLoweredContractEnvelopeViola
     }
     if (!isSupportedLoweredSerDesContractVersion(contractVersion.getInt()))
     {
-        return LoweredContractEnvelopeViolation{
-            LoweredContractEnvelopeViolationKind::UnsupportedMajorVersion, contractVersion.getInt()};
+        return LoweredContractEnvelopeViolation{LoweredContractEnvelopeViolationKind::UnsupportedMajorVersion,
+                                                contractVersion.getInt()};
     }
     const auto contractProducer = operation->getAttrOfType<mlir::StringAttr>(kLoweredSerDesContractProducerAttr);
     if (!contractProducer || contractProducer.getValue() != kLoweredSerDesContractProducer)
@@ -64,12 +64,13 @@ std::optional<LoweredContractEnvelopeViolation> findLoweredContractEnvelopeViola
 }
 
 std::optional<LoweredPlanContractViolation> findLoweredPlanContractViolation(mlir::ModuleOp   module,
-                                                                              mlir::Operation* plan)
+                                                                             mlir::Operation* plan)
 {
     if (!plan->hasAttr(kLoweredPlanMarkerAttr))
     {
-        return LoweredPlanContractViolation{
-            plan, "missing lowered marker attribute '" + std::string(kLoweredPlanMarkerAttr) + "'"};
+        return LoweredPlanContractViolation{plan,
+                                            "missing lowered marker attribute '" + std::string(kLoweredPlanMarkerAttr) +
+                                                "'"};
     }
     const auto minBits      = plan->getAttrOfType<mlir::IntegerAttr>(kLoweredMinBitsAttr);
     const auto maxBits      = plan->getAttrOfType<mlir::IntegerAttr>(kLoweredMaxBitsAttr);
@@ -90,22 +91,23 @@ std::optional<LoweredPlanContractViolation> findLoweredPlanContractViolation(mli
     const auto capacityCheckHelper = plan->getAttrOfType<mlir::StringAttr>(kLoweredCapacityCheckHelperAttr);
     if (!capacityCheckHelper || capacityCheckHelper.getValue().empty())
     {
-        return LoweredPlanContractViolation{
-            plan, "missing lowered capacity-check helper attribute '" + std::string(kLoweredCapacityCheckHelperAttr) +
-                      "'"};
+        return LoweredPlanContractViolation{plan,
+                                            "missing lowered capacity-check helper attribute '" +
+                                                std::string(kLoweredCapacityCheckHelperAttr) + "'"};
     }
     if (!module.lookupSymbol<mlir::func::FuncOp>(capacityCheckHelper.getValue()))
     {
-        return LoweredPlanContractViolation{
-            plan, "missing lowered capacity-check helper symbol: " + capacityCheckHelper.getValue().str()};
+        return LoweredPlanContractViolation{plan,
+                                            "missing lowered capacity-check helper symbol: " +
+                                                capacityCheckHelper.getValue().str()};
     }
 
     if (plan->hasAttr("is_union"))
     {
-        const auto unionTagBits              = plan->getAttrOfType<mlir::IntegerAttr>("union_tag_bits");
-        const auto unionOptionCount          = plan->getAttrOfType<mlir::IntegerAttr>("union_option_count");
-        const auto unionTagValidateHelper    = plan->getAttrOfType<mlir::StringAttr>(kLoweredUnionTagValidateHelperAttr);
-        const auto unionTagSerializeHelper   = plan->getAttrOfType<mlir::StringAttr>(kLoweredSerUnionTagHelperAttr);
+        const auto unionTagBits            = plan->getAttrOfType<mlir::IntegerAttr>("union_tag_bits");
+        const auto unionOptionCount        = plan->getAttrOfType<mlir::IntegerAttr>("union_option_count");
+        const auto unionTagValidateHelper  = plan->getAttrOfType<mlir::StringAttr>(kLoweredUnionTagValidateHelperAttr);
+        const auto unionTagSerializeHelper = plan->getAttrOfType<mlir::StringAttr>(kLoweredSerUnionTagHelperAttr);
         const auto unionTagDeserializeHelper = plan->getAttrOfType<mlir::StringAttr>(kLoweredDeserUnionTagHelperAttr);
         if (!unionTagBits || !unionOptionCount || !unionTagValidateHelper || !unionTagSerializeHelper ||
             !unionTagDeserializeHelper)
@@ -204,9 +206,9 @@ std::optional<LoweredPlanContractViolation> findLoweredPlanContractViolation(mli
         {
             ++observedFieldCount;
         }
-        auto requireStepHelperSymbol = [&](const llvm::StringRef attrName,
-                                           const llvm::StringRef helperLabel)
-            -> std::optional<LoweredPlanContractViolation> {
+        auto requireStepHelperSymbol =
+            [&](const llvm::StringRef attrName,
+                const llvm::StringRef helperLabel) -> std::optional<LoweredPlanContractViolation> {
             const auto helper = step.getAttrOfType<mlir::StringAttr>(attrName);
             if (!helper || helper.getValue().empty())
             {
@@ -216,8 +218,9 @@ std::optional<LoweredPlanContractViolation> findLoweredPlanContractViolation(mli
             }
             if (!module.lookupSymbol<mlir::func::FuncOp>(helper.getValue()))
             {
-                return LoweredPlanContractViolation{
-                    &step, "missing lowered " + helperLabel.str() + " helper symbol: " + helper.getValue().str()};
+                return LoweredPlanContractViolation{&step,
+                                                    "missing lowered " + helperLabel.str() +
+                                                        " helper symbol: " + helper.getValue().str()};
             }
             return std::nullopt;
         };
@@ -240,8 +243,8 @@ std::optional<LoweredPlanContractViolation> findLoweredPlanContractViolation(mli
             {
                 return violation;
             }
-            if (const auto violation = requireStepHelperSymbol("lowered_array_length_validate_helper",
-                                                               "array-length-validate"))
+            if (const auto violation =
+                    requireStepHelperSymbol("lowered_array_length_validate_helper", "array-length-validate"))
             {
                 return violation;
             }
@@ -292,7 +295,8 @@ std::optional<LoweredPlanContractViolation> findLoweredPlanContractViolation(mli
             {
                 if (!step.getAttrOfType<mlir::IntegerAttr>("composite_extent_bits"))
                 {
-                    return LoweredPlanContractViolation{&step, "delimited composite missing composite_extent_bits metadata"};
+                    return LoweredPlanContractViolation{&step,
+                                                        "delimited composite missing composite_extent_bits metadata"};
                 }
                 if (const auto violation =
                         requireStepHelperSymbol("lowered_delimiter_validate_helper", "delimiter-validate"))

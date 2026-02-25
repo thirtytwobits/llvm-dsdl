@@ -44,6 +44,9 @@ string(REGEX REPLACE "([][+.*()^$?{}|\\\\])" "\\\\\\1"
   _llvmdsdl_source_dir_regex "${LLVMDSDL_SOURCE_DIR}")
 
 set(_llvmdsdl_tidy_files)
+set(_llvmdsdl_tidy_excluded_files
+  "${LLVMDSDL_SOURCE_DIR}/lib/IR/DSDLDialect.cpp"
+)
 foreach(_index RANGE 0 ${_llvmdsdl_last_index})
   string(JSON _file GET "${_llvmdsdl_compile_db}" ${_index} file)
   if(_file STREQUAL "")
@@ -68,6 +71,19 @@ foreach(_index RANGE 0 ${_llvmdsdl_last_index})
     continue()
   endif()
 
+  if(_abs_file MATCHES "^${_llvmdsdl_source_dir_regex}/submodules/")
+    continue()
+  endif()
+
+  if(_abs_file MATCHES "^${_llvmdsdl_source_dir_regex}/examples/")
+    continue()
+  endif()
+
+  list(FIND _llvmdsdl_tidy_excluded_files "${_abs_file}" _llvmdsdl_excluded_index)
+  if(NOT _llvmdsdl_excluded_index EQUAL -1)
+    continue()
+  endif()
+
   if(NOT _abs_file MATCHES "\\.(c|cc|cpp|cxx)$")
     continue()
   endif()
@@ -87,6 +103,7 @@ endif()
 set(_llvmdsdl_tidy_args
   -p "${LLVMDSDL_BINARY_DIR}"
   --warnings-as-errors=*
+  "--header-filter=^${_llvmdsdl_source_dir_regex}/"
 )
 
 if(APPLE)

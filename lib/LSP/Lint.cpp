@@ -33,10 +33,9 @@ namespace
 
 std::string toLower(std::string text)
 {
-    std::transform(text.begin(),
-                   text.end(),
-                   text.begin(),
-                   [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::transform(text.begin(), text.end(), text.begin(), [](const unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
     return text;
 }
 
@@ -146,10 +145,9 @@ std::string toSnakeCase(const std::string& text)
 std::string toUpperSnakeCase(const std::string& text)
 {
     std::string out = toSnakeCase(text);
-    std::transform(out.begin(),
-                   out.end(),
-                   out.begin(),
-                   [](const unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    std::transform(out.begin(), out.end(), out.begin(), [](const unsigned char c) {
+        return static_cast<char>(std::toupper(c));
+    });
     return out;
 }
 
@@ -195,11 +193,11 @@ std::uint32_t zeroColumn(const SourceLocation& location)
     return location.column == 0 ? 0U : location.column - 1U;
 }
 
-LintFinding makeFinding(const std::string&  ruleId,
-                        const LintDocument& document,
+LintFinding makeFinding(const std::string&    ruleId,
+                        const LintDocument&   document,
                         const SourceLocation& location,
-                        std::string         message,
-                        const LintSeverity  severity)
+                        std::string           message,
+                        const LintSeverity    severity)
 {
     LintFinding finding;
     finding.ruleId   = ruleId;
@@ -259,12 +257,12 @@ public:
             {
                 continue;
             }
-            LintFinding finding = makeFinding(id(),
+            LintFinding finding  = makeFinding(id(),
                                               document,
                                               field->nameLocation,
                                               "field should use snake_case: " + field->name,
                                               LintSeverity::Warning);
-            finding.hasFix      = true;
+            finding.hasFix       = true;
             finding.preferredFix = true;
             finding.fixes.push_back(LintFixEdit{
                 zeroLine(field->nameLocation),
@@ -299,12 +297,12 @@ public:
             {
                 continue;
             }
-            LintFinding finding = makeFinding(id(),
+            LintFinding finding  = makeFinding(id(),
                                               document,
                                               constant->nameLocation,
                                               "constant should use UPPER_SNAKE_CASE: " + constant->name,
                                               LintSeverity::Warning);
-            finding.hasFix      = true;
+            finding.hasFix       = true;
             finding.preferredFix = true;
             finding.fixes.push_back(LintFixEdit{
                 zeroLine(constant->nameLocation),
@@ -367,8 +365,8 @@ public:
         const std::vector<std::string> lines = splitLines(document.sourceText);
         for (std::size_t lineIndex = 0; lineIndex < lines.size(); ++lineIndex)
         {
-            const std::string& line = lines[lineIndex];
-            const std::size_t tabPos = line.find('\t');
+            const std::string& line   = lines[lineIndex];
+            const std::size_t  tabPos = line.find('\t');
             if (tabPos == std::string::npos)
             {
                 continue;
@@ -376,12 +374,9 @@ public:
             SourceLocation location{document.info.filePath,
                                     static_cast<std::uint32_t>(lineIndex + 1U),
                                     static_cast<std::uint32_t>(tabPos + 1U)};
-            LintFinding finding = makeFinding(id(),
-                                              document,
-                                              location,
-                                              "replace tab characters with spaces",
-                                              LintSeverity::Warning);
-            finding.hasFix      = true;
+            LintFinding    finding =
+                makeFinding(id(), document, location, "replace tab characters with spaces", LintSeverity::Warning);
+            finding.hasFix       = true;
             finding.preferredFix = false;
             finding.fixes.push_back(LintFixEdit{
                 static_cast<std::uint32_t>(lineIndex),
@@ -413,7 +408,7 @@ public:
         for (std::size_t lineIndex = 0; lineIndex < lines.size(); ++lineIndex)
         {
             const std::string& line = lines[lineIndex];
-            std::size_t end = line.size();
+            std::size_t        end  = line.size();
             while (end > 0 && std::isspace(static_cast<unsigned char>(line[end - 1U])) && line[end - 1U] != '\t')
             {
                 --end;
@@ -425,12 +420,9 @@ public:
             SourceLocation location{document.info.filePath,
                                     static_cast<std::uint32_t>(lineIndex + 1U),
                                     static_cast<std::uint32_t>(end + 1U)};
-            LintFinding finding = makeFinding(id(),
-                                              document,
-                                              location,
-                                              "remove trailing whitespace",
-                                              LintSeverity::Info);
-            finding.hasFix      = true;
+            LintFinding    finding =
+                makeFinding(id(), document, location, "remove trailing whitespace", LintSeverity::Info);
+            finding.hasFix       = true;
             finding.preferredFix = true;
             finding.fixes.push_back(LintFixEdit{
                 static_cast<std::uint32_t>(lineIndex),
@@ -475,17 +467,14 @@ public:
         }
 
         SourceLocation location{document.info.filePath, 1, 1};
-        LintFinding    finding = makeFinding(id(),
-                                          document,
-                                          location,
-                                          "file should end with exactly one newline",
-                                          LintSeverity::Info);
+        LintFinding    finding =
+            makeFinding(id(), document, location, "file should end with exactly one newline", LintSeverity::Info);
         finding.hasFix       = true;
         finding.preferredFix = true;
 
-        const std::vector<std::string> lines = splitLines(text);
-        const std::uint32_t line = lines.empty() ? 0U : static_cast<std::uint32_t>(lines.size() - 1U);
-        const std::uint32_t column = lines.empty() ? 0U : static_cast<std::uint32_t>(lines.back().size());
+        const std::vector<std::string> lines  = splitLines(text);
+        const std::uint32_t            line   = lines.empty() ? 0U : static_cast<std::uint32_t>(lines.size() - 1U);
+        const std::uint32_t            column = lines.empty() ? 0U : static_cast<std::uint32_t>(lines.back().size());
 
         if (trailingNewlines == 0)
         {
@@ -531,8 +520,7 @@ public:
         findings.push_back(makeFinding(id(),
                                        document,
                                        document.ast.location,
-                                       "type declares " + std::to_string(fieldCount) +
-                                           " fields (recommended <= 64)",
+                                       "type declares " + std::to_string(fieldCount) + " fields (recommended <= 64)",
                                        LintSeverity::Warning));
     }
 };
@@ -561,12 +549,12 @@ public:
         {
             return;
         }
-        findings.push_back(makeFinding(id(),
-                                       document,
-                                       document.ast.location,
-                                       "type declares " + std::to_string(constantCount) +
-                                           " constants (recommended <= 32)",
-                                       LintSeverity::Warning));
+        findings.push_back(
+            makeFinding(id(),
+                        document,
+                        document.ast.location,
+                        "type declares " + std::to_string(constantCount) + " constants (recommended <= 32)",
+                        LintSeverity::Warning));
     }
 };
 
@@ -604,10 +592,10 @@ public:
         {
             // Prefer anchoring on @extent when present because it is commonly
             // interpreted as the directive that pushed policy complexity.
-            const auto extentDirective = std::find_if(
-                directives.begin(),
-                directives.end(),
-                [](const DirectiveAST* directive) { return directive->kind == DirectiveKind::Extent; });
+            const auto extentDirective =
+                std::find_if(directives.begin(), directives.end(), [](const DirectiveAST* directive) {
+                    return directive->kind == DirectiveKind::Extent;
+                });
             if (extentDirective != directives.end())
             {
                 anchor = (*extentDirective)->location;
@@ -618,12 +606,12 @@ public:
             }
         }
 
-        findings.push_back(makeFinding(id(),
-                                       document,
-                                       anchor,
-                                       "type declares " + std::to_string(directiveCount) +
-                                           " directives (recommended <= 4)",
-                                       LintSeverity::Info));
+        findings.push_back(
+            makeFinding(id(),
+                        document,
+                        anchor,
+                        "type declares " + std::to_string(directiveCount) + " directives (recommended <= 4)",
+                        LintSeverity::Info));
     }
 };
 
@@ -763,7 +751,7 @@ bool LintRegistry::loadPluginLibrary(const std::string& libraryPath, std::string
     }
 
     using RegisterFn = void (*)(LintRegistry&);
-    void* symbol = dlsym(handle, "llvmdsdlRegisterLintRules");
+    void* symbol     = dlsym(handle, "llvmdsdlRegisterLintRules");
     if (!symbol)
     {
         if (errorMessage)
@@ -796,6 +784,10 @@ std::vector<std::unique_ptr<LintRule>> LintRegistry::createRules() const
     std::sort(rules.begin(),
               rules.end(),
               [](const std::unique_ptr<LintRule>& lhs, const std::unique_ptr<LintRule>& rhs) {
+                  if (!lhs || !rhs)
+                  {
+                      return static_cast<bool>(rhs);
+                  }
                   return lhs->id() < rhs->id();
               });
     return rules;
@@ -808,9 +800,9 @@ LintEngine::LintEngine(LintRegistry registry, LintExecutionConfig config)
     for (const std::string& library : config_.pluginLibraries)
     {
         std::string error;
-        const bool loaded = registry_.loadPluginLibrary(library, &error);
-        (void)loaded;
-        (void)error;
+        const bool  loaded = registry_.loadPluginLibrary(library, &error);
+        (void) loaded;
+        (void) error;
     }
 }
 
@@ -826,6 +818,10 @@ LintRunResult LintEngine::run(const std::vector<LintDocument>& documents) const
     std::sort(rules.begin(),
               rules.end(),
               [](const std::unique_ptr<LintRule>& lhs, const std::unique_ptr<LintRule>& rhs) {
+                  if (!lhs || !rhs)
+                  {
+                      return static_cast<bool>(rhs);
+                  }
                   return lhs->id() < rhs->id();
               });
 
@@ -835,9 +831,9 @@ LintRunResult LintEngine::run(const std::vector<LintDocument>& documents) const
     {
         orderedDocuments.push_back(&document);
     }
-    std::sort(orderedDocuments.begin(),
-              orderedDocuments.end(),
-              [](const LintDocument* lhs, const LintDocument* rhs) { return lhs->path < rhs->path; });
+    std::sort(orderedDocuments.begin(), orderedDocuments.end(), [](const LintDocument* lhs, const LintDocument* rhs) {
+        return lhs->path < rhs->path;
+    });
 
     for (const LintDocument* document : orderedDocuments)
     {
@@ -853,20 +849,10 @@ LintRunResult LintEngine::run(const std::vector<LintDocument>& documents) const
             std::vector<LintFinding> emitted;
             rule->run(*document, emitted);
 
-            std::sort(emitted.begin(),
-                      emitted.end(),
-                      [](const LintFinding& lhs, const LintFinding& rhs) {
-                          return std::tie(lhs.ruleId,
-                                          lhs.location.file,
-                                          lhs.location.line,
-                                          lhs.location.column,
-                                          lhs.message) <
-                                 std::tie(rhs.ruleId,
-                                          rhs.location.file,
-                                          rhs.location.line,
-                                          rhs.location.column,
-                                          rhs.message);
-                      });
+            std::sort(emitted.begin(), emitted.end(), [](const LintFinding& lhs, const LintFinding& rhs) {
+                return std::tie(lhs.ruleId, lhs.location.file, lhs.location.line, lhs.location.column, lhs.message) <
+                       std::tie(rhs.ruleId, rhs.location.file, rhs.location.line, rhs.location.column, rhs.message);
+            });
 
             for (LintFinding finding : emitted)
             {
@@ -879,45 +865,23 @@ LintRunResult LintEngine::run(const std::vector<LintDocument>& documents) const
 
     for (auto& [_, findings] : result.findingsByUri)
     {
-        std::sort(findings.begin(),
-                  findings.end(),
-                  [](const LintFinding& lhs, const LintFinding& rhs) {
-                      return std::tie(lhs.ruleId,
-                                      lhs.location.file,
-                                      lhs.location.line,
-                                      lhs.location.column,
-                                      lhs.message) <
-                             std::tie(rhs.ruleId,
-                                      rhs.location.file,
-                                      rhs.location.line,
-                                      rhs.location.column,
-                                      rhs.message);
-                  });
+        std::sort(findings.begin(), findings.end(), [](const LintFinding& lhs, const LintFinding& rhs) {
+            return std::tie(lhs.ruleId, lhs.location.file, lhs.location.line, lhs.location.column, lhs.message) <
+                   std::tie(rhs.ruleId, rhs.location.file, rhs.location.line, rhs.location.column, rhs.message);
+        });
     }
 
-    std::sort(result.findings.begin(),
-              result.findings.end(),
-              [](const LintFinding& lhs, const LintFinding& rhs) {
-                  return std::tie(lhs.uri,
-                                  lhs.ruleId,
-                                  lhs.location.file,
-                                  lhs.location.line,
-                                  lhs.location.column,
-                                  lhs.message) <
-                         std::tie(rhs.uri,
-                                  rhs.ruleId,
-                                  rhs.location.file,
-                                  rhs.location.line,
-                                  rhs.location.column,
-                                  rhs.message);
-              });
+    std::sort(result.findings.begin(), result.findings.end(), [](const LintFinding& lhs, const LintFinding& rhs) {
+        return std::tie(lhs.uri, lhs.ruleId, lhs.location.file, lhs.location.line, lhs.location.column, lhs.message) <
+               std::tie(rhs.uri, rhs.ruleId, rhs.location.file, rhs.location.line, rhs.location.column, rhs.message);
+    });
 
     return result;
 }
 
 std::vector<std::string> LintEngine::baselineRuleIds()
 {
-    LintRegistry registry;
+    LintRegistry             registry;
     std::vector<std::string> ids;
     for (const std::unique_ptr<LintRule>& rule : registry.createRules())
     {
@@ -928,9 +892,9 @@ std::vector<std::string> LintEngine::baselineRuleIds()
     return ids;
 }
 
-bool LintEngine::isSuppressed(const LintDocument&                     document,
+bool LintEngine::isSuppressed(const LintDocument&                    document,
                               const std::unordered_set<std::string>& sourceSuppressed,
-                              const std::string&                      ruleId) const
+                              const std::string&                     ruleId) const
 {
     if (config_.disabledRules.contains("*") || config_.disabledRules.contains(ruleId))
     {
@@ -938,15 +902,13 @@ bool LintEngine::isSuppressed(const LintDocument&                     document,
     }
 
     const auto uriIt = config_.fileDisabledRules.find(document.uri);
-    if (uriIt != config_.fileDisabledRules.end() &&
-        (uriIt->second.contains("*") || uriIt->second.contains(ruleId)))
+    if (uriIt != config_.fileDisabledRules.end() && (uriIt->second.contains("*") || uriIt->second.contains(ruleId)))
     {
         return true;
     }
 
     const auto pathIt = config_.fileDisabledRules.find(document.path);
-    if (pathIt != config_.fileDisabledRules.end() &&
-        (pathIt->second.contains("*") || pathIt->second.contains(ruleId)))
+    if (pathIt != config_.fileDisabledRules.end() && (pathIt->second.contains("*") || pathIt->second.contains(ruleId)))
     {
         return true;
     }

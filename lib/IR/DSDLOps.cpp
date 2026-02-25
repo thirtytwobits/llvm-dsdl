@@ -22,9 +22,9 @@
 #include <llvm/Support/LogicalResult.h>
 #include <cstdint>
 
-#include "mlir/IR/Builders.h"  // IWYU pragma: keep
-#include "mlir/IR/BuiltinAttributes.h" // IWYU pragma: keep
-#include "mlir/IR/Diagnostics.h" // IWYU pragma: keep
+#include "mlir/IR/Builders.h"           // IWYU pragma: keep
+#include "mlir/IR/BuiltinAttributes.h"  // IWYU pragma: keep
+#include "mlir/IR/Diagnostics.h"        // IWYU pragma: keep
 #include "mlir/Support/LLVM.h"
 
 using namespace mlir;
@@ -87,8 +87,8 @@ LogicalResult SerializationPlanOp::verify()
         return emitOpError("invalid min_bits/max_bits plan metadata");
     }
 
-    const bool loweredPlan = (*this)->hasAttr("lowered");
-    auto requirePlanIntAttr = [&](llvm::StringRef attrName) -> FailureOr<std::int64_t> {
+    const bool loweredPlan        = (*this)->hasAttr("lowered");
+    auto       requirePlanIntAttr = [&](llvm::StringRef attrName) -> FailureOr<std::int64_t> {
         const auto attr = (*this)->getAttrOfType<IntegerAttr>(attrName);
         if (!attr)
         {
@@ -119,25 +119,23 @@ LogicalResult SerializationPlanOp::verify()
     FailureOr<std::int64_t> loweredAlignCount;
     if (loweredPlan)
     {
-        const auto loweredContractVersion =
-            (*this)->getAttrOfType<IntegerAttr>("llvmdsdl.lowered_contract_version");
+        const auto loweredContractVersion = (*this)->getAttrOfType<IntegerAttr>("llvmdsdl.lowered_contract_version");
         if (!loweredContractVersion || loweredContractVersion.getInt() != 1)
         {
             return emitOpError("lowered plan requires supported llvmdsdl.lowered_contract_version");
         }
-        const auto loweredContractProducer =
-            (*this)->getAttrOfType<StringAttr>("llvmdsdl.lowered_contract_producer");
+        const auto loweredContractProducer = (*this)->getAttrOfType<StringAttr>("llvmdsdl.lowered_contract_producer");
         if (!loweredContractProducer || loweredContractProducer.getValue() != "lower-dsdl-serialization")
         {
             return emitOpError("lowered plan requires llvmdsdl.lowered_contract_producer=lower-dsdl-serialization");
         }
 
-        loweredMinBits     = requireNonNegativePlanIntAttr("lowered_min_bits");
-        loweredMaxBits     = requireNonNegativePlanIntAttr("lowered_max_bits");
-        loweredStepCount   = requireNonNegativePlanIntAttr("lowered_step_count");
-        loweredFieldCount  = requireNonNegativePlanIntAttr("lowered_field_count");
+        loweredMinBits      = requireNonNegativePlanIntAttr("lowered_min_bits");
+        loweredMaxBits      = requireNonNegativePlanIntAttr("lowered_max_bits");
+        loweredStepCount    = requireNonNegativePlanIntAttr("lowered_step_count");
+        loweredFieldCount   = requireNonNegativePlanIntAttr("lowered_field_count");
         loweredPaddingCount = requireNonNegativePlanIntAttr("lowered_padding_count");
-        loweredAlignCount  = requireNonNegativePlanIntAttr("lowered_align_count");
+        loweredAlignCount   = requireNonNegativePlanIntAttr("lowered_align_count");
         if (failed(loweredMinBits) || failed(loweredMaxBits) || failed(loweredStepCount) || failed(loweredFieldCount) ||
             failed(loweredPaddingCount) || failed(loweredAlignCount))
         {
@@ -241,7 +239,8 @@ LogicalResult SerializationPlanOp::verify()
                 const auto loweredBits = op.getAttrOfType<IntegerAttr>("lowered_bits");
                 if (!stepMinBits || !stepMaxBits || !loweredBits)
                 {
-                    return op.emitError("missing required min_bits/max_bits/lowered_bits step metadata in lowered plan");
+                    return op.emitError(
+                        "missing required min_bits/max_bits/lowered_bits step metadata in lowered plan");
                 }
                 if (stepMinBits.getInt() < 0 || stepMaxBits.getInt() < stepMinBits.getInt() ||
                     loweredBits.getInt() < 0 || loweredBits.getInt() != stepMaxBits.getInt())

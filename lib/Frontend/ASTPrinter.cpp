@@ -114,6 +114,25 @@ std::string directiveToString(DirectiveKind kind)
 
 }  // namespace
 
+bool AttachedDoc::empty() const
+{
+    return lines.empty();
+}
+
+std::string AttachedDoc::str() const
+{
+    std::ostringstream out;
+    for (std::size_t i = 0; i < lines.size(); ++i)
+    {
+        if (i > 0)
+        {
+            out << '\n';
+        }
+        out << lines[i].text;
+    }
+    return out.str();
+}
+
 bool TypeExprAST::isVoid() const
 {
     return std::holds_alternative<VoidTypeExprAST>(scalar);
@@ -259,9 +278,22 @@ bool DefinitionAST::isService() const
 std::string printAST(const ASTModule& module)
 {
     std::ostringstream out;
+    const auto         emitDoc = [&](const AttachedDoc& doc, const int indent) {
+        for (const auto& line : doc.lines)
+        {
+            out << std::string(static_cast<std::size_t>(indent) * 2U, ' ') << "#";
+            if (!line.text.empty())
+            {
+                out << ' ' << line.text;
+            }
+            out << "\n";
+        }
+    };
+
     out << "module {\n";
     for (const auto& def : module.definitions)
     {
+        emitDoc(def.ast.doc, 1);
         out << "  definition \"" << def.info.fullName << '.' << def.info.majorVersion << '.' << def.info.minorVersion
             << "\"";
         if (def.ast.isService())
@@ -277,6 +309,7 @@ std::string printAST(const ASTModule& module)
                     using T = std::decay_t<decltype(s)>;
                     if constexpr (std::is_same_v<T, FieldDeclAST>)
                     {
+                        emitDoc(s.doc, 2);
                         out << "    field " << s.type.str();
                         if (!s.isPadding)
                         {
@@ -286,11 +319,13 @@ std::string printAST(const ASTModule& module)
                     }
                     else if constexpr (std::is_same_v<T, ConstantDeclAST>)
                     {
+                        emitDoc(s.doc, 2);
                         out << "    const " << s.type.str() << ' ' << s.name << " = "
                             << (s.value ? s.value->str() : "?") << "\n";
                     }
                     else if constexpr (std::is_same_v<T, DirectiveAST>)
                     {
+                        emitDoc(s.doc, 2);
                         out << "    @" << directiveToString(s.kind);
                         if (s.expression)
                         {
@@ -300,6 +335,7 @@ std::string printAST(const ASTModule& module)
                     }
                     else if constexpr (std::is_same_v<T, ServiceResponseMarkerAST>)
                     {
+                        emitDoc(s.doc, 2);
                         out << "    ---\n";
                     }
                 },

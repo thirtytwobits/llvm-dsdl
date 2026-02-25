@@ -75,9 +75,9 @@ bool shouldEmitDefinition(const DiscoveredDefinition& info, const std::unordered
 /// @param[in] content File contents.
 /// @param[in] policy Write policy.
 /// @return Success or a descriptive I/O error.
-llvm::Error writeGeneratedFile(const std::filesystem::path& path,
-                               llvm::StringRef               content,
-                               const EmitWritePolicy&        policy,
+llvm::Error writeGeneratedFile(const std::filesystem::path&    path,
+                               llvm::StringRef                 content,
+                               const EmitWritePolicy&          policy,
                                const std::vector<std::string>& requiredTypeKeys = {});
 
 /// @brief Renders one make-style depfile body.
@@ -102,7 +102,7 @@ std::string renderMakeDepfile(const std::string& target, const std::vector<std::
 /// @param[in] deps Dependency path list.
 /// @param[in] policy Write policy.
 /// @return Success or a descriptive I/O error.
-llvm::Error writeDepfileForGeneratedOutput(const std::filesystem::path& outputPath,
+llvm::Error writeDepfileForGeneratedOutput(const std::filesystem::path&    outputPath,
                                            const std::vector<std::string>& deps,
                                            const EmitWritePolicy&          policy);
 
@@ -117,7 +117,7 @@ llvm::Error writeDepfileForGeneratedOutput(const std::filesystem::path& outputPa
 /// @param[in] normalizedSortedDedupDeps Prepared dependency path list.
 /// @param[in] policy Write policy.
 /// @return Success or a descriptive I/O error.
-llvm::Error writeDepfileForGeneratedOutputPrepared(const std::filesystem::path& outputPath,
+llvm::Error writeDepfileForGeneratedOutputPrepared(const std::filesystem::path&    outputPath,
                                                    const std::vector<std::string>& normalizedSortedDedupDeps,
                                                    const EmitWritePolicy&          policy);
 

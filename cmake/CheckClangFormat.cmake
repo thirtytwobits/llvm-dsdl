@@ -16,6 +16,9 @@ if(NOT DEFINED LLVMDSDL_SOURCE_DIR OR LLVMDSDL_SOURCE_DIR STREQUAL "")
   message(FATAL_ERROR "LLVMDSDL_SOURCE_DIR must be provided.")
 endif()
 
+string(REGEX REPLACE "([][+.*()^$?{}|\\\\])" "\\\\\\1"
+  _llvmdsdl_source_dir_regex "${LLVMDSDL_SOURCE_DIR}")
+
 set(_llvmdsdl_format_dirs
   include
   lib
@@ -46,6 +49,15 @@ endforeach()
 
 list(REMOVE_DUPLICATES _llvmdsdl_format_files)
 list(SORT _llvmdsdl_format_files)
+
+set(_llvmdsdl_filtered_format_files)
+foreach(_file IN LISTS _llvmdsdl_format_files)
+  if(_file MATCHES "^${_llvmdsdl_source_dir_regex}/examples/")
+    continue()
+  endif()
+  list(APPEND _llvmdsdl_filtered_format_files "${_file}")
+endforeach()
+set(_llvmdsdl_format_files "${_llvmdsdl_filtered_format_files}")
 
 if(NOT _llvmdsdl_format_files)
   message(STATUS "No source files found for clang-format check.")

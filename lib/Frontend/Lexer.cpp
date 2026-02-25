@@ -211,7 +211,7 @@ std::vector<Token> Lexer::lex()
         if (c == '#')
         {
             std::string text;
-            while (!isAtEnd() && peek() != '\n')
+            while (!isAtEnd() && peek() != '\n' && peek() != '\r')
             {
                 text.push_back(advance());
             }

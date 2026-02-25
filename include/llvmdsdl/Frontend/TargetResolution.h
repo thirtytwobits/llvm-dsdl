@@ -61,8 +61,8 @@ struct ResolvedTargets final
 /// @param[in,out] diagnostics Diagnostic sink for resolution errors.
 /// @return Resolved targets or an error.
 llvm::Expected<ResolvedTargets> resolveTargets(const std::vector<std::string>& targetFilesOrRootNamespace,
-                                               const TargetResolveOptions&      options,
-                                               DiagnosticEngine&                diagnostics);
+                                               const TargetResolveOptions&     options,
+                                               DiagnosticEngine&               diagnostics);
 
 }  // namespace llvmdsdl
 

@@ -54,8 +54,8 @@ bool runRuntimeLoweredOrderingTests()
         auto orderedOrErr = llvmdsdl::buildRuntimeOrderedFieldSteps(section, &facts);
         if (!orderedOrErr)
         {
-            std::cerr << "runtime lowered ordering non-union unexpectedly failed: " << llvm::toString(orderedOrErr.takeError())
-                      << "\n";
+            std::cerr << "runtime lowered ordering non-union unexpectedly failed: "
+                      << llvm::toString(orderedOrErr.takeError()) << "\n";
             return false;
         }
         const auto& ordered = *orderedOrErr;
@@ -113,8 +113,8 @@ bool runRuntimeLoweredOrderingTests()
         auto orderedOrErr = llvmdsdl::buildRuntimeOrderedFieldSteps(section, &facts);
         if (!orderedOrErr)
         {
-            std::cerr << "runtime lowered ordering union unexpectedly failed: " << llvm::toString(orderedOrErr.takeError())
-                      << "\n";
+            std::cerr << "runtime lowered ordering union unexpectedly failed: "
+                      << llvm::toString(orderedOrErr.takeError()) << "\n";
             return false;
         }
         const auto& ordered = *orderedOrErr;
@@ -271,8 +271,8 @@ bool runRuntimeLoweredOrderingTests()
         auto runtimePlanOrErr = llvmdsdl::buildRuntimeSectionPlan(section, &facts);
         if (!runtimePlanOrErr)
         {
-            std::cerr << "runtime section plan union unexpectedly failed: " << llvm::toString(runtimePlanOrErr.takeError())
-                      << "\n";
+            std::cerr << "runtime section plan union unexpectedly failed: "
+                      << llvm::toString(runtimePlanOrErr.takeError()) << "\n";
             return false;
         }
         const auto& runtimePlan = *runtimePlanOrErr;

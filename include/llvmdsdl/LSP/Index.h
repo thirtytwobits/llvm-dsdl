@@ -213,7 +213,8 @@ public:
     /// @brief Loads and parses all shards from cache directory.
     /// @param[out] invalidShardPaths Optional invalid shard paths encountered.
     /// @return Parsed shards.
-    [[nodiscard]] std::vector<IndexFileShard> loadAllShards(std::vector<std::string>* invalidShardPaths = nullptr) const;
+    [[nodiscard]] std::vector<IndexFileShard> loadAllShards(
+        std::vector<std::string>* invalidShardPaths = nullptr) const;
 
     /// @brief Removes shard file associated with a normalized source path.
     /// @param[in] normalizedPath Source path key.
@@ -241,8 +242,7 @@ public:
     /// @param[in] query Free-text query.
     /// @param[in] limit Maximum result rows.
     /// @return Sorted symbol rows.
-    [[nodiscard]] std::vector<WorkspaceSymbolResult> querySymbols(const std::string& query,
-                                                                   std::size_t        limit) const;
+    [[nodiscard]] std::vector<WorkspaceSymbolResult> querySymbols(const std::string& query, std::size_t limit) const;
 
     /// @brief Returns indexed file count.
     /// @return Number of indexed files.
@@ -275,8 +275,8 @@ private:
 
     void rebuildFlattenedSymbols();
 
-    std::vector<IndexFileShard> shards_;
-    std::vector<SearchableSymbol> flattenedSymbols_;
+    std::vector<IndexFileShard>                  shards_;
+    std::vector<SearchableSymbol>                flattenedSymbols_;
     std::unordered_map<std::string, std::size_t> shardsByPath_;
 };
 

@@ -39,7 +39,7 @@ int main(int argc, char** argv)
     }
 
     llvmdsdl::lsp::JsonRpcStdioTransport transport(std::cin, std::cout);
-    llvmdsdl::lsp::Server server(
+    llvmdsdl::lsp::Server                server(
         [&transport](llvm::json::Value message) {
             if (!transport.writeMessage(message))
             {

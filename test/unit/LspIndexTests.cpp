@@ -34,10 +34,10 @@ bool writeTextFile(const std::filesystem::path& path, const std::string& text)
     return out.good();
 }
 
-llvmdsdl::lsp::IndexFileShard makeShard(const std::string& path,
-                                        const std::string& uri,
-                                        const std::string& typeKey,
-                                        const std::string& shortName,
+llvmdsdl::lsp::IndexFileShard makeShard(const std::string&  path,
+                                        const std::string&  uri,
+                                        const std::string&  typeKey,
+                                        const std::string&  shortName,
                                         const std::uint64_t snapshotVersion)
 {
     llvmdsdl::lsp::IndexFileShard shard;
@@ -86,7 +86,7 @@ bool runLspIndexTests()
 
     const std::string filePathA = (tmpRoot / "demo" / "TypeA.1.0.dsdl").lexically_normal().string();
     const std::string fileUriA  = std::string("file://") + filePathA;
-    const auto shardA = makeShard(filePathA, fileUriA, "demo.TypeA.1.0", "TypeA", 1);
+    const auto        shardA    = makeShard(filePathA, fileUriA, "demo.TypeA.1.0", "TypeA", 1);
 
     std::string writeError;
     if (!storage.writeShard(shardA, &writeError))
@@ -97,7 +97,7 @@ bool runLspIndexTests()
     }
 
     std::string readError;
-    const auto loadedA = storage.readShardForPath(filePathA, &readError);
+    const auto  loadedA = storage.readShardForPath(filePathA, &readError);
     if (!loadedA.has_value() || loadedA->symbols.empty() || loadedA->metadata.filePath != filePathA)
     {
         std::cerr << "failed to read back shard A: " << readError << "\n";
@@ -135,7 +135,7 @@ bool runLspIndexTests()
 
     const std::string filePathB = (tmpRoot / "demo" / "TypeB.1.0.dsdl").lexically_normal().string();
     const std::string fileUriB  = std::string("file://") + filePathB;
-    const auto shardB = makeShard(filePathB, fileUriB, "demo.TypeB.1.0", "TypeB", 2);
+    const auto        shardB    = makeShard(filePathB, fileUriB, "demo.TypeB.1.0", "TypeB", 2);
 
     manager.scheduleRebuild(2, {shardA, shardB});
     manager.scheduleRebuild(3, {shardB});

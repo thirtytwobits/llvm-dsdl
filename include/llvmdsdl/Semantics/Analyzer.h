@@ -48,7 +48,9 @@ llvm::Expected<SemanticModule> analyze(const ASTModule& module, DiagnosticEngine
 /// @param[in,out] diagnostics Diagnostic sink for semantic issues.
 /// @param[in] options Semantic policy options.
 /// @return Resolved semantic module on success.
-llvm::Expected<SemanticModule> analyze(const ASTModule& module, DiagnosticEngine& diagnostics, const AnalyzeOptions& options);
+llvm::Expected<SemanticModule> analyze(const ASTModule&      module,
+                                       DiagnosticEngine&     diagnostics,
+                                       const AnalyzeOptions& options);
 
 }  // namespace llvmdsdl
 

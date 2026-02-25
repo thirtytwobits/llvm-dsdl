@@ -61,12 +61,12 @@ std::size_t countOccurrences(std::string_view text, std::string_view needle)
 bool runDepfileRenderTests()
 {
     {
-        const std::string target = "/tmp/out file:$.c";
-        const std::vector<std::string> deps = {"z path\\tab\t#.dsdl", "a:dep.dsdl", "z path\\tab\t#.dsdl"};
-        const std::string rendered = llvmdsdl::renderMakeDepfile(target, deps);
-        const std::string escapedTarget = "/tmp/out\\ file\\:$$.c: ";
-        const std::string escapedDepA   = "a\\:dep.dsdl";
-        const std::string escapedDepZ   = "z\\ path\\\\tab\\\t\\#.dsdl";
+        const std::string              target        = "/tmp/out file:$.c";
+        const std::vector<std::string> deps          = {"z path\\tab\t#.dsdl", "a:dep.dsdl", "z path\\tab\t#.dsdl"};
+        const std::string              rendered      = llvmdsdl::renderMakeDepfile(target, deps);
+        const std::string              escapedTarget = "/tmp/out\\ file\\:$$.c: ";
+        const std::string              escapedDepA   = "a\\:dep.dsdl";
+        const std::string              escapedDepZ   = "z\\ path\\\\tab\\\t\\#.dsdl";
         if (!rendered.starts_with(escapedTarget) || !rendered.ends_with("\n") ||
             countOccurrences(rendered, escapedDepA) != 1 || countOccurrences(rendered, escapedDepZ) != 1 ||
             rendered.find(escapedDepA) > rendered.find(escapedDepZ))
@@ -137,13 +137,14 @@ bool runDepfileRenderTests()
         return fail("expected depfile output was not created");
     }
 
-    const std::string depfileContent = readTextFile(depfilePath);
+    const std::string        depfileContent = readTextFile(depfilePath);
     std::vector<std::string> normalizedDeps = {
         std::filesystem::absolute(depA, ec).lexically_normal().string(),
         std::filesystem::absolute(depB, ec).lexically_normal().string(),
     };
-    const std::string expectedDepfile = llvmdsdl::renderMakeDepfile(
-        std::filesystem::absolute(outputPath, ec).lexically_normal().string(), normalizedDeps);
+    const std::string expectedDepfile =
+        llvmdsdl::renderMakeDepfile(std::filesystem::absolute(outputPath, ec).lexically_normal().string(),
+                                    normalizedDeps);
     if (depfileContent != expectedDepfile)
     {
         return fail("depfile content did not match expected normalized+escaped rule");
@@ -165,8 +166,9 @@ bool runDepfileRenderTests()
     }
     const std::filesystem::path preparedDepfilePath = preparedOutputPath.string() + ".d";
     const std::string           preparedDepfileText = readTextFile(preparedDepfilePath);
-    const std::string expectedPreparedDepfile       = llvmdsdl::renderMakeDepfile(
-        std::filesystem::absolute(preparedOutputPath, ec).lexically_normal().string(), normalizedDeps);
+    const std::string           expectedPreparedDepfile =
+        llvmdsdl::renderMakeDepfile(std::filesystem::absolute(preparedOutputPath, ec).lexically_normal().string(),
+                                    normalizedDeps);
     if (preparedDepfileText != expectedPreparedDepfile)
     {
         return fail("prepared depfile writer content mismatch");
@@ -184,10 +186,10 @@ bool runDepfileRenderTests()
         return fail("expected no-overwrite policy to reject existing depfile");
     }
 
-    std::vector<std::string> dryRunRecorded;
+    std::vector<std::string>  dryRunRecorded;
     llvmdsdl::EmitWritePolicy dryRunPolicy;
-    dryRunPolicy.dryRun         = true;
-    dryRunPolicy.recordedOutputs = &dryRunRecorded;
+    dryRunPolicy.dryRun                       = true;
+    dryRunPolicy.recordedOutputs              = &dryRunRecorded;
     const std::filesystem::path dryOutputPath = tmpRoot / "dry" / "dry_generated.c";
     if (auto err = llvmdsdl::writeDepfileForGeneratedOutput(dryOutputPath, deps, dryRunPolicy))
     {

@@ -213,6 +213,15 @@ llvm::StringRef arrayKindName(ArrayKind arrayKind)
     return "none";
 }
 
+std::optional<std::string> docAttrText(const AttachedDoc& doc)
+{
+    if (doc.empty())
+    {
+        return std::nullopt;
+    }
+    return doc.str();
+}
+
 }  // namespace
 
 mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
@@ -257,6 +266,10 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
         {
             state.addAttribute("deprecated", builder.getUnitAttr());
         }
+        if (const auto doc = docAttrText(def.doc))
+        {
+            state.addAttribute("doc", builder.getStringAttr(*doc));
+        }
         state.addRegion();
 
         auto* schema     = builder.create(state);
@@ -290,6 +303,10 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                 {
                     fieldState.addAttribute("padding", builder.getUnitAttr());
                 }
+                if (const auto doc = docAttrText(field.doc))
+                {
+                    fieldState.addAttribute("doc", builder.getStringAttr(*doc));
+                }
                 if (!sectionName.empty())
                 {
                     fieldState.addAttribute("section", builder.getStringAttr(sectionName));
@@ -303,6 +320,10 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                 constState.addAttribute("name", builder.getStringAttr(constant.name));
                 constState.addAttribute("type_name", builder.getStringAttr(constant.type.str()));
                 constState.addAttribute("value_text", builder.getStringAttr(constant.value.str()));
+                if (const auto doc = docAttrText(constant.doc))
+                {
+                    constState.addAttribute("doc", builder.getStringAttr(*doc));
+                }
                 if (!sectionName.empty())
                 {
                     constState.addAttribute("section", builder.getStringAttr(sectionName));
@@ -369,6 +390,10 @@ mlir::OwningOpRef<mlir::ModuleOp> lowerToMLIR(const SemanticModule& module,
                 ioState.addAttribute("name", builder.getStringAttr(field.name));
                 ioState.addAttribute("c_name", builder.getStringAttr(sanitizeIdentifier(field.name)));
                 ioState.addAttribute("type_name", builder.getStringAttr(field.type.str()));
+                if (const auto doc = docAttrText(field.doc))
+                {
+                    ioState.addAttribute("doc", builder.getStringAttr(*doc));
+                }
                 ioState.addAttribute("scalar_category",
                                      builder.getStringAttr(scalarCategoryName(field.resolvedType.scalarCategory)));
                 ioState.addAttribute("cast_mode", builder.getStringAttr(castModeName(field.resolvedType.castMode)));

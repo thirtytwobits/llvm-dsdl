@@ -57,9 +57,9 @@ struct ScriptedSectionBodyPlan final
 /// @param[in] sectionFacts Optional lowered helper facts.
 /// @param[in] helperNameResolver Lowered symbol-to-emitted-name callback.
 /// @return Scripted section body plan.
-ScriptedSectionBodyPlan buildScriptedSectionBodyPlan(const SemanticSection&               section,
-                                                     const RuntimeSectionPlan&            runtimePlan,
-                                                     const LoweredSectionFacts*           sectionFacts,
+ScriptedSectionBodyPlan buildScriptedSectionBodyPlan(const SemanticSection&           section,
+                                                     const RuntimeSectionPlan&        runtimePlan,
+                                                     const LoweredSectionFacts*       sectionFacts,
                                                      const RuntimeHelperNameResolver& helperNameResolver);
 
 }  // namespace llvmdsdl

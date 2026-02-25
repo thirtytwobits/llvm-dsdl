@@ -41,15 +41,13 @@ bool runLoweredContractVersionTests()
         ok = false;
     }
 
-    if (llvmdsdl::loweredSerDesUnsupportedMajorVersionDiagnosticDetail(2) !=
-        "expected 1, got 2 (encoded version 2)")
+    if (llvmdsdl::loweredSerDesUnsupportedMajorVersionDiagnosticDetail(2) != "expected 1, got 2 (encoded version 2)")
     {
         std::cerr << "unsupported-major diagnostic detail mismatch for encoded version 2\n";
         ok = false;
     }
 
-    if (llvmdsdl::loweredSerDesUnsupportedMajorVersionDiagnosticDetail(17) !=
-        "expected 1, got 17 (encoded version 17)")
+    if (llvmdsdl::loweredSerDesUnsupportedMajorVersionDiagnosticDetail(17) != "expected 1, got 17 (encoded version 17)")
     {
         std::cerr << "unsupported-major diagnostic detail mismatch for encoded version 17\n";
         ok = false;

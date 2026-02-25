@@ -23,23 +23,23 @@
 namespace
 {
 
-llvm::Expected<llvmdsdl::DefinitionAST> parseDefinition(const std::string& path,
-                                                        const std::string& text,
+llvm::Expected<llvmdsdl::DefinitionAST> parseDefinition(const std::string&          path,
+                                                        const std::string&          text,
                                                         llvmdsdl::DiagnosticEngine& diagnostics)
 {
-    llvmdsdl::Lexer lexer(path, text);
+    llvmdsdl::Lexer              lexer(path, text);
     std::vector<llvmdsdl::Token> tokens = lexer.lex();
-    llvmdsdl::Parser parser(path, std::move(tokens), diagnostics);
+    llvmdsdl::Parser             parser(path, std::move(tokens), diagnostics);
     return parser.parseDefinition();
 }
 
-std::optional<llvmdsdl::lsp::LintDocument> makeDocument(const std::string& path,
-                                                        const std::string& uri,
-                                                        const std::string& shortName,
+std::optional<llvmdsdl::lsp::LintDocument> makeDocument(const std::string&              path,
+                                                        const std::string&              uri,
+                                                        const std::string&              shortName,
                                                         const std::vector<std::string>& ns,
-                                                        const std::string& text)
+                                                        const std::string&              text)
 {
-    llvmdsdl::DiagnosticEngine diagnostics;
+    llvmdsdl::DiagnosticEngine              diagnostics;
     llvm::Expected<llvmdsdl::DefinitionAST> parsed = parseDefinition(path, text, diagnostics);
     if (!parsed)
     {
@@ -62,9 +62,9 @@ std::optional<llvmdsdl::lsp::LintDocument> makeDocument(const std::string& path,
 
 std::vector<std::string> readLines(const std::filesystem::path& path)
 {
-    std::ifstream in(path, std::ios::binary);
+    std::ifstream            in(path, std::ios::binary);
     std::vector<std::string> out;
-    std::string line;
+    std::string              line;
     while (std::getline(in, line))
     {
         if (!line.empty())
@@ -91,17 +91,16 @@ bool runLspLintTests()
 {
     const std::string path = "/tmp/lint_fixture.dsdl";
     const std::string uri  = "file:///tmp/lint_fixture.dsdl";
-    const std::string text =
-        "# dsdld-lint-disable: arrays.large_variable_bound\n"
-        "uint8 BadField\t \n"
-        "uint8 badConst = 1\n"
-        "uint8[5001] hugeArray\n"
-        "uint8[<=2001] hugeVar\n"
-        "@union\n"
-        "@sealed\n"
-        "@deprecated\n"
-        "@assert true\n"
-        "@print 1";
+    const std::string text = "# dsdld-lint-disable: arrays.large_variable_bound\n"
+                             "uint8 BadField\t \n"
+                             "uint8 badConst = 1\n"
+                             "uint8[5001] hugeArray\n"
+                             "uint8[<=2001] hugeVar\n"
+                             "@union\n"
+                             "@sealed\n"
+                             "@deprecated\n"
+                             "@assert true\n"
+                             "@print 1";
 
     const auto document = makeDocument(path, uri, "bad_type", {"DemoNs"}, text);
     if (!document.has_value())
@@ -115,7 +114,7 @@ bool runLspLintTests()
         config.enabled = true;
         llvmdsdl::lsp::LintEngine engine(llvmdsdl::lsp::LintRegistry{}, config);
 
-        const llvmdsdl::lsp::LintRunResult first = engine.run({*document});
+        const llvmdsdl::lsp::LintRunResult first  = engine.run({*document});
         const llvmdsdl::lsp::LintRunResult second = engine.run({*document});
 
         std::vector<std::string> canonical;
@@ -186,9 +185,9 @@ bool runLspLintTests()
         suppressed.disabledRules.insert("naming.type_pascal_case");
         suppressed.fileDisabledRules[uri].insert("style.no_tabs");
 
-        llvmdsdl::lsp::LintEngine engine(llvmdsdl::lsp::LintRegistry{}, suppressed);
+        llvmdsdl::lsp::LintEngine          engine(llvmdsdl::lsp::LintRegistry{}, suppressed);
         const llvmdsdl::lsp::LintRunResult result = engine.run({*document});
-        const auto ids = findingIds(result.findings);
+        const auto                         ids    = findingIds(result.findings);
 
         if (ids.contains("naming.type_pascal_case") || ids.contains("style.no_tabs") ||
             ids.contains("arrays.large_variable_bound"))
@@ -210,16 +209,17 @@ bool runLspLintTests()
         }
         textComplex += "@sealed\n";
 
-        const auto complexDoc = makeDocument("/tmp/complex.dsdl", "file:///tmp/complex.dsdl", "Complex", {"demo"}, textComplex);
+        const auto complexDoc =
+            makeDocument("/tmp/complex.dsdl", "file:///tmp/complex.dsdl", "Complex", {"demo"}, textComplex);
         if (!complexDoc.has_value())
         {
             std::cerr << "failed to parse complexity fixture\n";
             return false;
         }
 
-        llvmdsdl::lsp::LintEngine engine(llvmdsdl::lsp::LintRegistry{}, llvmdsdl::lsp::LintExecutionConfig{});
+        llvmdsdl::lsp::LintEngine          engine(llvmdsdl::lsp::LintRegistry{}, llvmdsdl::lsp::LintExecutionConfig{});
         const llvmdsdl::lsp::LintRunResult result = engine.run({*complexDoc});
-        const auto ids = findingIds(result.findings);
+        const auto                         ids    = findingIds(result.findings);
         if (!ids.contains("complexity.max_fields_per_type") || !ids.contains("complexity.max_constants_per_type"))
         {
             std::cerr << "complexity lint rules did not trigger as expected\n";
@@ -241,7 +241,7 @@ bool runLspLintTests()
                 return "Plugin Example Rule";
             }
 
-            void run(const llvmdsdl::lsp::LintDocument& document,
+            void run(const llvmdsdl::lsp::LintDocument&       document,
                      std::vector<llvmdsdl::lsp::LintFinding>& findings) const override
             {
                 findings.push_back(llvmdsdl::lsp::LintFinding{
@@ -260,9 +260,9 @@ bool runLspLintTests()
         llvmdsdl::lsp::LintRegistry registry;
         registry.registerRuleFactory([]() { return std::make_unique<PluginRule>(); });
 
-        llvmdsdl::lsp::LintEngine engine(std::move(registry), llvmdsdl::lsp::LintExecutionConfig{});
+        llvmdsdl::lsp::LintEngine          engine(std::move(registry), llvmdsdl::lsp::LintExecutionConfig{});
         const llvmdsdl::lsp::LintRunResult result = engine.run({*document});
-        const auto ids = findingIds(result.findings);
+        const auto                         ids    = findingIds(result.findings);
         if (!ids.contains("plugin.example_rule"))
         {
             std::cerr << "custom lint rule factory was not executed\n";
@@ -270,7 +270,7 @@ bool runLspLintTests()
         }
 
         llvmdsdl::lsp::LintRegistry dynamicRegistry;
-        std::string error;
+        std::string                 error;
         if (dynamicRegistry.loadPluginLibrary("/definitely/not/a/real/plugin.so", &error))
         {
             std::cerr << "expected missing plugin load to fail\n";

@@ -62,9 +62,9 @@ bool hasErrorContaining(const llvmdsdl::DiagnosticEngine& diag, std::string_view
     return false;
 }
 
-std::optional<llvmdsdl::Value> evaluateAssertExpression(const std::string&                   expression,
-                                                        llvmdsdl::DiagnosticEngine&          diag,
-                                                        const llvmdsdl::ValueEnv&            env      = {},
+std::optional<llvmdsdl::Value> evaluateAssertExpression(const std::string&                     expression,
+                                                        llvmdsdl::DiagnosticEngine&            diag,
+                                                        const llvmdsdl::ValueEnv&              env      = {},
                                                         const llvmdsdl::TypeAttributeResolver* resolver = nullptr)
 {
     auto expr = parseAssertExpression(expression, diag);
@@ -104,8 +104,8 @@ bool runEvaluatorTests()
 {
     {
         llvmdsdl::DiagnosticEngine diag;
-        llvmdsdl::ValueEnv env;
-        auto               value = evaluateAssertExpression("Foo.1.0.MAX", diag, env, nullptr);
+        llvmdsdl::ValueEnv         env;
+        auto                       value = evaluateAssertExpression("Foo.1.0.MAX", diag, env, nullptr);
         if (value)
         {
             std::cerr << "expected evaluation without resolver to fail\n";
@@ -119,7 +119,7 @@ bool runEvaluatorTests()
     }
 
     {
-        llvmdsdl::DiagnosticEngine diag;
+        llvmdsdl::DiagnosticEngine      diag;
         bool                            resolverCalled = false;
         llvmdsdl::TypeAttributeResolver resolver =
             [&](const llvmdsdl::TypeExprAST& type,
@@ -149,7 +149,7 @@ bool runEvaluatorTests()
     }
 
     {
-        llvmdsdl::DiagnosticEngine diag;
+        llvmdsdl::DiagnosticEngine      diag;
         bool                            resolverCalled = false;
         llvmdsdl::TypeAttributeResolver resolver =
             [&](const llvmdsdl::TypeExprAST&, const std::string&, const llvmdsdl::SourceLocation&) {
@@ -413,8 +413,7 @@ bool runEvaluatorTests()
 
         llvmdsdl::ExprAST wrongTargetExpr;
         wrongTargetExpr.location = loc;
-        wrongTargetExpr.value =
-            llvmdsdl::ExprAST::Binary{llvmdsdl::BinaryOp::Attribute, lhsBool, rhsIdentifier};
+        wrongTargetExpr.value    = llvmdsdl::ExprAST::Binary{llvmdsdl::BinaryOp::Attribute, lhsBool, rhsIdentifier};
 
         auto wrongAttributeTarget = llvmdsdl::evaluateExpression(wrongTargetExpr, env, diag, loc, nullptr);
         if (wrongAttributeTarget || !hasErrorContaining(diag, "attribute operator is not defined on bool"))
@@ -429,7 +428,7 @@ bool runEvaluatorTests()
 
         llvmdsdl::ExprAST wrongRhsExpr;
         wrongRhsExpr.location = loc;
-        wrongRhsExpr.value = llvmdsdl::ExprAST::Binary{llvmdsdl::BinaryOp::Attribute, lhsBool, rhsRational};
+        wrongRhsExpr.value    = llvmdsdl::ExprAST::Binary{llvmdsdl::BinaryOp::Attribute, lhsBool, rhsRational};
 
         auto wrongAttributeRhs = llvmdsdl::evaluateExpression(wrongRhsExpr, env, diag, loc, nullptr);
         if (wrongAttributeRhs || !hasErrorContaining(diag, "attribute operator expects identifier on RHS"))
@@ -471,16 +470,16 @@ bool runEvaluatorTests()
         }
 
         const llvmdsdl::SourceLocation setLoc{"evaluator_set_literal_test.dsdl", 1, 1};
-        auto                           rationalElem      = std::make_shared<llvmdsdl::ExprAST>();
-        rationalElem->location                         = setLoc;
-        rationalElem->value                            = llvmdsdl::Rational(1, 1);
-        auto boolElem                                   = std::make_shared<llvmdsdl::ExprAST>();
-        boolElem->location                              = setLoc;
-        boolElem->value                                 = true;
+        auto                           rationalElem = std::make_shared<llvmdsdl::ExprAST>();
+        rationalElem->location                      = setLoc;
+        rationalElem->value                         = llvmdsdl::Rational(1, 1);
+        auto boolElem                               = std::make_shared<llvmdsdl::ExprAST>();
+        boolElem->location                          = setLoc;
+        boolElem->value                             = true;
 
         llvmdsdl::ExprAST invalidSetExpr;
         invalidSetExpr.location = setLoc;
-        invalidSetExpr.value = llvmdsdl::ExprAST::SetLiteral{{rationalElem, boolElem}};
+        invalidSetExpr.value    = llvmdsdl::ExprAST::SetLiteral{{rationalElem, boolElem}};
 
         auto invalidSetLiteral = llvmdsdl::evaluateExpression(invalidSetExpr, env, diag, setLoc, nullptr);
         if (invalidSetLiteral || !hasErrorContaining(diag, "set literal elements must evaluate to rational"))
@@ -493,11 +492,11 @@ bool runEvaluatorTests()
     {
         llvmdsdl::DiagnosticEngine diag;
         llvmdsdl::ValueEnv         env;
-        auto                       boolValue = evaluateAssertExpression("true", diag, env, nullptr);
+        auto                       boolValue     = evaluateAssertExpression("true", diag, env, nullptr);
         auto                       rationalValue = evaluateAssertExpression("5", diag, env, nullptr);
-        auto                       stringValue = evaluateAssertExpression("\"text\"", diag, env, nullptr);
-        auto                       setValue = evaluateAssertExpression("{2, 1}", diag, env, nullptr);
-        auto                       typeValue = evaluateAssertExpression("Foo.1.0", diag, env, nullptr);
+        auto                       stringValue   = evaluateAssertExpression("\"text\"", diag, env, nullptr);
+        auto                       setValue      = evaluateAssertExpression("{2, 1}", diag, env, nullptr);
+        auto                       typeValue     = evaluateAssertExpression("Foo.1.0", diag, env, nullptr);
         if (!boolValue || !rationalValue || !stringValue || !setValue || !typeValue)
         {
             std::cerr << "failed to evaluate values for string/type formatting coverage\n";

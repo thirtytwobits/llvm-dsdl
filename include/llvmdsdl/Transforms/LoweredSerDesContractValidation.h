@@ -64,8 +64,8 @@ std::optional<LoweredContractEnvelopeViolation> findLoweredContractEnvelopeViola
 /// @param[in] module Module containing helper symbols.
 /// @param[in] plan `dsdl.serialization_plan` operation to validate.
 /// @return Violation details on failure; `std::nullopt` on success.
-std::optional<LoweredPlanContractViolation> findLoweredPlanContractViolation(mlir::ModuleOp module,
-                                                                              mlir::Operation* plan);
+std::optional<LoweredPlanContractViolation> findLoweredPlanContractViolation(mlir::ModuleOp   module,
+                                                                             mlir::Operation* plan);
 
 }  // namespace llvmdsdl
 

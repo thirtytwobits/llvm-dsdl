@@ -137,26 +137,23 @@ mlir::LogicalResult canonicalizePlan(mlir::Operation* plan, mlir::Builder& build
 
         if (opName == "dsdl.io")
         {
-            const auto kindAttr = op.getAttrOfType<mlir::StringAttr>("kind");
-            const auto kind = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
+            const auto kindAttr  = op.getAttrOfType<mlir::StringAttr>("kind");
+            const auto kind      = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
             const bool isPadding = kind == "padding";
 
             const std::int64_t minBits = nonNegative(intAttrOrDefault(&op, "min_bits", 0));
-            const std::int64_t maxBits = std::max<std::int64_t>(nonNegative(intAttrOrDefault(&op, "max_bits", minBits)),
-                                                                 minBits);
+            const std::int64_t maxBits =
+                std::max<std::int64_t>(nonNegative(intAttrOrDefault(&op, "max_bits", minBits)), minBits);
 
-            const std::int64_t bitLength =
-                nonNegative(intAttrOrDefault(&op, "bit_length", /*fallback=*/0));
-            const std::int64_t arrayCapacity =
-                nonNegative(intAttrOrDefault(&op, "array_capacity", /*fallback=*/0));
+            const std::int64_t bitLength     = nonNegative(intAttrOrDefault(&op, "bit_length", /*fallback=*/0));
+            const std::int64_t arrayCapacity = nonNegative(intAttrOrDefault(&op, "array_capacity", /*fallback=*/0));
             const std::int64_t arrayPrefixBits =
                 nonNegative(intAttrOrDefault(&op, "array_length_prefix_bits", /*fallback=*/0));
             const std::int64_t alignmentBits =
                 std::max<std::int64_t>(nonNegative(intAttrOrDefault(&op, "alignment_bits", /*fallback=*/1)), 1);
             const std::int64_t unionOptionIndex =
                 nonNegative(intAttrOrDefault(&op, "union_option_index", /*fallback=*/0));
-            const std::int64_t unionTagBits =
-                nonNegative(intAttrOrDefault(&op, "union_tag_bits", /*fallback=*/0));
+            const std::int64_t unionTagBits = nonNegative(intAttrOrDefault(&op, "union_tag_bits", /*fallback=*/0));
 
             if (isPadding && maxBits == 0)
             {
@@ -219,7 +216,7 @@ mlir::LogicalResult canonicalizePlan(mlir::Operation* plan, mlir::Builder& build
 
     if (plan->hasAttr("is_union"))
     {
-        const std::int64_t unionTagBits = nonNegative(intAttrOrDefault(plan, "union_tag_bits", 0));
+        const std::int64_t unionTagBits     = nonNegative(intAttrOrDefault(plan, "union_tag_bits", 0));
         const std::int64_t unionOptionCount = static_cast<std::int64_t>(unionOptionIndexes.size());
         setI64Attr(plan, "union_tag_bits", unionTagBits, builder);
         setI64Attr(plan, "union_option_count", unionOptionCount, builder);

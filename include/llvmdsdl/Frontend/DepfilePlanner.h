@@ -60,13 +60,13 @@ private:
         bool                     emitAsInput{false};
     };
 
-    std::vector<Node>                                   nodes_;
-    std::unordered_map<std::string, std::size_t>        nodeIndexByTypeKey_;
+    std::vector<Node>                                         nodes_;
+    std::unordered_map<std::string, std::size_t>              nodeIndexByTypeKey_;
     std::unordered_map<std::string, std::vector<std::string>> depsByTypeKey_;
     std::unordered_map<std::string, std::vector<std::string>> depsByRequiredSetSignature_;
-    std::vector<std::uint32_t>                          visitEpochByNode_;
-    std::uint32_t                                       nextVisitEpoch_{1U};
-    std::vector<std::string>                            emptyDeps_;
+    std::vector<std::uint32_t>                                visitEpochByNode_;
+    std::uint32_t                                             nextVisitEpoch_{1U};
+    std::vector<std::string>                                  emptyDeps_;
 };
 
 }  // namespace llvmdsdl

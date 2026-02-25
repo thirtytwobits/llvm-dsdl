@@ -32,10 +32,9 @@ constexpr std::uint32_t RankingSignalSchemaVersion = 1;
 
 std::string toLower(std::string text)
 {
-    std::transform(text.begin(),
-                   text.end(),
-                   text.begin(),
-                   [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::transform(text.begin(), text.end(), text.begin(), [](const unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
     return text;
 }
 
@@ -100,7 +99,7 @@ double kindBoostSymbol(const std::int64_t kind)
     {
     case 23:  // Struct
         return 2.0;
-    case 8:   // Field
+    case 8:  // Field
         return 1.0;
     case 14:  // Constant
         return 1.0;
@@ -109,16 +108,16 @@ double kindBoostSymbol(const std::int64_t kind)
     }
 }
 
-RankingBreakdown scoreCommon(const std::string&                 query,
-                             const std::string&                 primary,
-                             const std::string&                 secondary,
-                             const double                       lexicalBase,
-                             const double                       kindBoost,
+RankingBreakdown scoreCommon(const std::string&                  query,
+                             const std::string&                  primary,
+                             const std::string&                  secondary,
+                             const double                        lexicalBase,
+                             const double                        kindBoost,
                              const std::optional<RankingSignal>& signal,
-                             const std::uint64_t                nowTick)
+                             const std::uint64_t                 nowTick)
 {
-    const std::string queryLower    = toLower(query);
-    const std::string primaryLower  = toLower(primary);
+    const std::string queryLower     = toLower(query);
+    const std::string primaryLower   = toLower(primary);
     const std::string secondaryLower = toLower(secondary);
 
     RankingBreakdown out;
@@ -166,21 +165,21 @@ RankingBreakdown scoreCommon(const std::string&                 query,
         out.frequencyBoost = std::log1p(exposure * 0.25 + selected * 2.0) * 2.5;
         out.frequencyBoost = std::min(10.0, out.frequencyBoost);
 
-        const std::uint64_t age = nowTick > signal->lastTick ? (nowTick - signal->lastTick) : 0U;
-        const double decay = std::exp(-static_cast<double>(age) / 256.0);
-        out.recencyBoost = std::clamp(decay * 6.0, 0.0, 6.0);
+        const std::uint64_t age   = nowTick > signal->lastTick ? (nowTick - signal->lastTick) : 0U;
+        const double        decay = std::exp(-static_cast<double>(age) / 256.0);
+        out.recencyBoost          = std::clamp(decay * 6.0, 0.0, 6.0);
     }
 
     out.lengthPenalty = -std::min(4.0, static_cast<double>(primary.size()) / 64.0);
-    out.totalScore = out.lexicalBase + out.matchQuality + out.fuzzyBoost + out.frequencyBoost +
-                     out.recencyBoost + out.kindBoost + out.lengthPenalty;
+    out.totalScore    = out.lexicalBase + out.matchQuality + out.fuzzyBoost + out.frequencyBoost + out.recencyBoost +
+                     out.kindBoost + out.lengthPenalty;
     return out;
 }
 
 }  // namespace
 
 RankingBreakdown RankingModel::scoreCompletion(const std::string&                  query,
-                                               const CompletionRankingInput&        input,
+                                               const CompletionRankingInput&       input,
                                                const std::optional<RankingSignal>& signal,
                                                const std::uint64_t                 nowTick)
 {
@@ -194,7 +193,7 @@ RankingBreakdown RankingModel::scoreCompletion(const std::string&               
 }
 
 RankingBreakdown RankingModel::scoreSymbol(const std::string&                  query,
-                                           const SymbolRankingInput&            input,
+                                           const SymbolRankingInput&           input,
                                            const std::optional<RankingSignal>& signal,
                                            const std::uint64_t                 nowTick)
 {
@@ -224,7 +223,7 @@ std::uint64_t AdaptiveSignalStore::currentTick() const
 std::optional<RankingSignal> AdaptiveSignalStore::signalFor(const std::string& key) const
 {
     std::lock_guard<std::mutex> lock(mutex_);
-    const auto it = signals_.find(key);
+    const auto                  it = signals_.find(key);
     if (it == signals_.end())
     {
         return std::nullopt;
@@ -264,7 +263,7 @@ bool AdaptiveSignalStore::flush()
         return true;
     }
 
-    std::error_code ec;
+    std::error_code             ec;
     const std::filesystem::path persistencePath(persistencePath_);
     std::filesystem::create_directories(persistencePath.parent_path(), ec);
     if (ec)
@@ -273,11 +272,9 @@ bool AdaptiveSignalStore::flush()
     }
 
     std::vector<std::pair<std::string, RankingSignal>> ordered(signals_.begin(), signals_.end());
-    std::sort(ordered.begin(),
-              ordered.end(),
-              [](const auto& lhs, const auto& rhs) {
-                  return std::tie(lhs.second.lastTick, lhs.first) < std::tie(rhs.second.lastTick, rhs.first);
-              });
+    std::sort(ordered.begin(), ordered.end(), [](const auto& lhs, const auto& rhs) {
+        return std::tie(lhs.second.lastTick, lhs.first) < std::tie(rhs.second.lastTick, rhs.first);
+    });
 
     llvm::json::Array entries;
     for (const auto& [key, signal] : ordered)
@@ -290,10 +287,10 @@ bool AdaptiveSignalStore::flush()
 
     llvm::json::Object root;
     root["schema_version"] = static_cast<std::int64_t>(RankingSignalSchemaVersion);
-    root["next_tick"] = static_cast<std::int64_t>(nextTick_);
-    root["entries"] = std::move(entries);
+    root["next_tick"]      = static_cast<std::int64_t>(nextTick_);
+    root["entries"]        = std::move(entries);
 
-    std::string rendered;
+    std::string              rendered;
     llvm::raw_string_ostream stream(rendered);
     stream << llvm::formatv("{0:2}", llvm::json::Value(std::move(root)));
     stream << '\n';
@@ -346,10 +343,11 @@ void AdaptiveSignalStore::noteEvent(const std::string& key, const bool selection
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
-    RankingSignal& signal = signals_[key];
-    signal.exposureCount = selection ? signal.exposureCount : std::min<std::uint32_t>(signal.exposureCount + 1U, 100000U);
-    signal.selectionCount = selection ? std::min<std::uint32_t>(signal.selectionCount + 1U, 100000U)
-                                      : signal.selectionCount;
+    RankingSignal&              signal = signals_[key];
+    signal.exposureCount =
+        selection ? signal.exposureCount : std::min<std::uint32_t>(signal.exposureCount + 1U, 100000U);
+    signal.selectionCount =
+        selection ? std::min<std::uint32_t>(signal.selectionCount + 1U, 100000U) : signal.selectionCount;
     signal.lastTick = nextTick_++;
 
     dirty_ = true;
@@ -364,11 +362,9 @@ void AdaptiveSignalStore::pruneLocked()
     }
 
     std::vector<std::pair<std::string, RankingSignal>> ordered(signals_.begin(), signals_.end());
-    std::sort(ordered.begin(),
-              ordered.end(),
-              [](const auto& lhs, const auto& rhs) {
-                  return std::tie(lhs.second.lastTick, lhs.first) < std::tie(rhs.second.lastTick, rhs.first);
-              });
+    std::sort(ordered.begin(), ordered.end(), [](const auto& lhs, const auto& rhs) {
+        return std::tie(lhs.second.lastTick, lhs.first) < std::tie(rhs.second.lastTick, rhs.first);
+    });
 
     const std::size_t removeCount = ordered.size() - maxEntries_;
     for (std::size_t i = 0; i < removeCount; ++i)
@@ -396,7 +392,7 @@ void AdaptiveSignalStore::loadLocked()
         return;
     }
 
-    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    const std::string                 text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     llvm::Expected<llvm::json::Value> parsed = llvm::json::parse(text);
     if (!parsed)
     {
@@ -434,10 +430,10 @@ void AdaptiveSignalStore::loadLocked()
             continue;
         }
 
-        const auto key = entry->getString("key");
-        const auto exposure = entry->getInteger("exposure");
+        const auto key       = entry->getString("key");
+        const auto exposure  = entry->getInteger("exposure");
         const auto selection = entry->getInteger("selection");
-        const auto lastTick = entry->getInteger("last_tick");
+        const auto lastTick  = entry->getInteger("last_tick");
         if (!key.has_value() || !exposure.has_value() || !selection.has_value() || !lastTick.has_value())
         {
             continue;

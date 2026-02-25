@@ -63,8 +63,8 @@ public:
     [[nodiscard]] std::uint64_t requestCount(std::string_view method) const;
 
 private:
-    mutable std::mutex                           mutex_;
-    RequestMetricSink                            sink_;
+    mutable std::mutex                             mutex_;
+    RequestMetricSink                              sink_;
     std::unordered_map<std::string, std::uint64_t> requestCounts_;
 };
 

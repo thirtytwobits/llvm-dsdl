@@ -400,11 +400,12 @@ void initializeRegisters(NodeApp& app)
 {
     app.registers.clear();
     app.registers.push_back(RegisterEntry{
-        .name       = "uavcan.node.id",
-        .kind       = RegisterKind::Natural16,
-        .mutable_   = true,
-        .persistent = true,
-        .natural16  = static_cast<uint16_t>(app.options.nodeId),
+        .name        = "uavcan.node.id",
+        .kind        = RegisterKind::Natural16,
+        .mutable_    = true,
+        .persistent  = true,
+        .natural16   = static_cast<uint16_t>(app.options.nodeId),
+        .stringValue = {},
     });
     app.registers.push_back(RegisterEntry{
         .name        = "uavcan.node.description",
@@ -421,18 +422,20 @@ void initializeRegisters(NodeApp& app)
         .stringValue = app.options.ifaceAddress,
     });
     app.registers.push_back(RegisterEntry{
-        .name       = "demo.rate_hz",
-        .kind       = RegisterKind::Natural32,
-        .mutable_   = true,
-        .persistent = true,
-        .natural32  = app.options.heartbeatRateHz,
+        .name        = "demo.rate_hz",
+        .kind        = RegisterKind::Natural32,
+        .mutable_    = true,
+        .persistent  = true,
+        .natural32   = app.options.heartbeatRateHz,
+        .stringValue = {},
     });
     app.registers.push_back(RegisterEntry{
-        .name       = "demo.counter",
-        .kind       = RegisterKind::Natural32,
-        .mutable_   = true,
-        .persistent = false,
-        .natural32  = 0U,
+        .name        = "demo.counter",
+        .kind        = RegisterKind::Natural32,
+        .mutable_    = true,
+        .persistent  = false,
+        .natural32   = 0U,
+        .stringValue = {},
     });
     app.registers.push_back(RegisterEntry{
         .name        = "sys.version",

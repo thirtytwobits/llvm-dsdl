@@ -2,14 +2,14 @@
   "version": 1,
   "minimum_scores": {
     "backends": {
-      "c": 85,
-      "cpp": 90,
-      "rust": 90,
-      "go": 90,
-      "ts": 90,
-      "python": 90
+      "c": 100,
+      "cpp": 100,
+      "rust": 100,
+      "go": 100,
+      "ts": 100,
+      "python": 100
     },
-    "project_floor": 90
+    "project_floor": 100
   },
   "expected": {
     "c": {

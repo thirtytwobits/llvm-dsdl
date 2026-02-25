@@ -118,8 +118,7 @@ bool runLspAnalysisTests()
         std::filesystem::remove_all(tmpRoot, ec);
         return false;
     }
-    if (!pipeline.isCurrentSnapshot(second.snapshotVersion) ||
-        pipeline.isCurrentSnapshot(second.snapshotVersion - 1))
+    if (!pipeline.isCurrentSnapshot(second.snapshotVersion) || pipeline.isCurrentSnapshot(second.snapshotVersion - 1))
     {
         std::cerr << "snapshot current-version tracking is inconsistent\n";
         std::filesystem::remove_all(tmpRoot, ec);
@@ -140,7 +139,7 @@ bool runLspAnalysisTests()
         return false;
     }
 
-    config.enableMlirSnapshot = true;
+    config.enableMlirSnapshot                  = true;
     const llvmdsdl::lsp::AnalysisResult fourth = pipeline.run(config, documents);
     if (!fourth.mlirSnapshot.has_value() || fourth.mlirSnapshot->find("module") == std::string::npos)
     {

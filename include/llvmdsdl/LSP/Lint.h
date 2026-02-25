@@ -172,7 +172,7 @@ public:
 private:
     struct PluginHandle;
 
-    std::vector<LintRuleFactory> factories_;
+    std::vector<LintRuleFactory>               factories_;
     std::vector<std::shared_ptr<PluginHandle>> pluginHandles_;
 };
 
@@ -205,13 +205,13 @@ public:
     [[nodiscard]] static std::vector<std::string> baselineRuleIds();
 
 private:
-    [[nodiscard]] bool isSuppressed(const LintDocument& document,
-                                    const std::unordered_set<std::string>& sourceSuppressed,
-                                    const std::string& ruleId) const;
+    [[nodiscard]] bool                                   isSuppressed(const LintDocument&                    document,
+                                                                      const std::unordered_set<std::string>& sourceSuppressed,
+                                                                      const std::string&                     ruleId) const;
     [[nodiscard]] static std::unordered_set<std::string> parseSourceSuppressions(const std::string& sourceText);
 
-    LintRegistry         registry_;
-    LintExecutionConfig  config_;
+    LintRegistry        registry_;
+    LintExecutionConfig config_;
 };
 
 }  // namespace llvmdsdl::lsp

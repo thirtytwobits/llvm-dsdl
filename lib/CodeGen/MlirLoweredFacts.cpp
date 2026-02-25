@@ -129,8 +129,8 @@ bool collectLoweredFactsFromMlir(const SemanticModule&  semantic,
         case LoweredContractEnvelopeViolationKind::ProducerMismatch:
             diagnostics.error({"<mlir>", 1, 1},
                               "lowered SerDes contract producer mismatch for " + backendLabel +
-                                  " backend validation: expected '" +
-                                  std::string(kLoweredSerDesContractProducer) + "'");
+                                  " backend validation: expected '" + std::string(kLoweredSerDesContractProducer) +
+                                  "'");
             break;
         }
         return false;
@@ -247,7 +247,7 @@ bool collectLoweredFactsFromMlir(const SemanticModule&  semantic,
                     return false;
                 }
 
-                const auto arrayKind      = step.getAttrOfType<mlir::StringAttr>("array_kind");
+                const auto arrayKind       = step.getAttrOfType<mlir::StringAttr>("array_kind");
                 const auto arrayPrefixBits = step.getAttrOfType<mlir::IntegerAttr>("array_length_prefix_bits");
                 if (const auto fieldNameAttr = step.getAttrOfType<mlir::StringAttr>("name"); fieldNameAttr)
                 {

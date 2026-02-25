@@ -559,12 +559,56 @@ def _check_baseline(report: Dict[str, object], baseline_path: Path) -> List[str]
     failures: List[str] = []
     baseline_expected = baseline.get("expected", {})
     report_backends = report["backends"]
+    semantic_class_ids = {class_id for class_id, _ in SEMANTIC_CLASSES}
+    required_backend_ids = set(BACKEND_CONFIG.keys())
+
+    report_backend_ids = set(report_backends.keys())
+    missing_report_backends = sorted(required_backend_ids - report_backend_ids)
+    unexpected_report_backends = sorted(report_backend_ids - required_backend_ids)
+    if missing_report_backends:
+        failures.append(f"report missing required backends: {', '.join(missing_report_backends)}")
+    if unexpected_report_backends:
+        failures.append(f"report contains unexpected backends: {', '.join(unexpected_report_backends)}")
+
+    baseline_backend_ids = set(baseline_expected.keys())
+    missing_baseline_backends = sorted(required_backend_ids - baseline_backend_ids)
+    unexpected_baseline_backends = sorted(baseline_backend_ids - required_backend_ids)
+    if missing_baseline_backends:
+        failures.append(f"baseline missing required backends: {', '.join(missing_baseline_backends)}")
+    if unexpected_baseline_backends:
+        failures.append(f"baseline contains unexpected backends: {', '.join(unexpected_baseline_backends)}")
+
+    for backend_name, expected_classes in baseline_expected.items():
+        if not isinstance(expected_classes, dict):
+            failures.append(f"baseline backend '{backend_name}' expected classifications must be an object")
+            continue
+        expected_ids = set(expected_classes.keys())
+        missing_ids = sorted(semantic_class_ids - expected_ids)
+        unexpected_ids = sorted(expected_ids - semantic_class_ids)
+        if missing_ids:
+            failures.append(f"baseline backend '{backend_name}' missing semantic classes: {', '.join(missing_ids)}")
+        if unexpected_ids:
+            failures.append(f"baseline backend '{backend_name}' has unknown semantic classes: {', '.join(unexpected_ids)}")
+        for class_id, status in expected_classes.items():
+            if status != "shared":
+                failures.append(
+                    f"baseline backend '{backend_name}' class '{class_id}' must be 'shared', found '{status}'"
+                )
 
     for backend_name, expected_classes in baseline_expected.items():
         if backend_name not in report_backends:
             failures.append(f"baseline backend missing from report: {backend_name}")
             continue
         actual_classes = report_backends[backend_name]["classifications"]
+        actual_class_ids = set(actual_classes.keys())
+        missing_class_ids = sorted(semantic_class_ids - actual_class_ids)
+        unexpected_class_ids = sorted(actual_class_ids - semantic_class_ids)
+        if missing_class_ids:
+            failures.append(f"report backend '{backend_name}' missing semantic classes: {', '.join(missing_class_ids)}")
+        if unexpected_class_ids:
+            failures.append(
+                f"report backend '{backend_name}' has unknown semantic classes: {', '.join(unexpected_class_ids)}"
+            )
         for class_id, expected_status in expected_classes.items():
             actual_status = actual_classes.get(class_id)
             if expected_status == "shared" and actual_status != "shared":

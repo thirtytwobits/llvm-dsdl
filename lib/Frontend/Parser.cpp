@@ -26,6 +26,7 @@
 
 #include <cctype>
 #include <cstdint>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <regex>
@@ -233,6 +234,54 @@ std::optional<std::pair<std::uint32_t, std::uint32_t>> parseVersionTokenAsMajorM
     return std::make_pair(static_cast<std::uint32_t>(*major), static_cast<std::uint32_t>(*minor));
 }
 
+std::string normalizeCommentTokenText(const std::string& text)
+{
+    if (text.empty())
+    {
+        return "";
+    }
+
+    std::size_t start = 0U;
+    if (text[start] == '#')
+    {
+        ++start;
+    }
+    if (start < text.size() && text[start] == ' ')
+    {
+        ++start;
+    }
+    return text.substr(start);
+}
+
+std::uint32_t statementLine(const StatementAST& statement)
+{
+    return std::visit([](const auto& node) { return node.location.line; }, statement);
+}
+
+void attachDocToStatement(StatementAST& statement, AttachedDoc doc)
+{
+    std::visit([&](auto& node) { node.doc = std::move(doc); }, statement);
+}
+
+void appendDocToStatement(StatementAST& statement, AttachedDoc&& doc)
+{
+    std::visit(
+        [&](auto& node) {
+            node.doc.lines.insert(node.doc.lines.end(),
+                                  std::make_move_iterator(doc.lines.begin()),
+                                  std::make_move_iterator(doc.lines.end()));
+        },
+        statement);
+}
+
+struct CollectedDocTrivia final
+{
+    AttachedDoc doc;
+    std::size_t newlinesBeforeFirstComment{0U};
+    std::size_t newlinesAfterLastComment{0U};
+    bool        sawComment{false};
+};
+
 }  // namespace
 
 Parser::Parser(std::string filePath, std::vector<Token> tokens, DiagnosticEngine& diagnostics)
@@ -321,13 +370,68 @@ llvm::Expected<DefinitionAST> Parser::parseDefinition()
     DefinitionAST def;
     def.location = SourceLocation{filePath_, 1, 1};
 
+    auto collectDocTrivia = [&]() -> CollectedDocTrivia {
+        CollectedDocTrivia out;
+
+        while (check(TokenKind::Newline) || check(TokenKind::Comment))
+        {
+            if (check(TokenKind::Comment))
+            {
+                const Token token = advance();
+                if (out.sawComment && out.newlinesAfterLastComment > 1U)
+                {
+                    out.doc.lines.push_back(AttachedDocLine{token.location, ""});
+                }
+                out.doc.lines.push_back(AttachedDocLine{token.location, normalizeCommentTokenText(token.text)});
+                out.sawComment               = true;
+                out.newlinesAfterLastComment = 0U;
+                continue;
+            }
+
+            (void) advance();
+            if (out.sawComment)
+            {
+                ++out.newlinesAfterLastComment;
+            }
+            else
+            {
+                ++out.newlinesBeforeFirstComment;
+            }
+        }
+
+        return out;
+    };
+
+    auto collectTrailingDoc = [&](const std::uint32_t line) -> AttachedDoc {
+        AttachedDoc trailingDoc;
+        if (check(TokenKind::Comment) && current().location.line == line)
+        {
+            const Token token = advance();
+            trailingDoc.lines.push_back(AttachedDocLine{token.location, normalizeCommentTokenText(token.text)});
+        }
+        return trailingDoc;
+    };
+
     while (!isAtEnd())
     {
-        while (match(TokenKind::Newline) || match(TokenKind::Comment))
+        CollectedDocTrivia leadingTrivia = collectDocTrivia();
+        if (def.statements.empty() && def.doc.empty() && !leadingTrivia.doc.empty())
         {
+            def.doc = std::move(leadingTrivia.doc);
         }
+
+        if (!def.statements.empty() && !leadingTrivia.doc.empty() && leadingTrivia.newlinesBeforeFirstComment <= 1U &&
+            leadingTrivia.newlinesAfterLastComment > 1U)
+        {
+            appendDocToStatement(def.statements.back(), std::move(leadingTrivia.doc));
+        }
+
         if (isAtEnd())
         {
+            if (!def.statements.empty() && !leadingTrivia.doc.empty() && leadingTrivia.newlinesBeforeFirstComment <= 1U)
+            {
+                appendDocToStatement(def.statements.back(), std::move(leadingTrivia.doc));
+            }
             break;
         }
 
@@ -335,14 +439,19 @@ llvm::Expected<DefinitionAST> Parser::parseDefinition()
         if (!stmt)
         {
             syncToNextLine();
+            continue;
         }
-        else
+
+        AttachedDoc trailingDoc = collectTrailingDoc(statementLine(*stmt));
+        if (!trailingDoc.empty())
         {
-            def.statements.push_back(*stmt);
-            while (match(TokenKind::Newline) || match(TokenKind::Comment))
-            {
-            }
+            leadingTrivia.doc.lines.insert(leadingTrivia.doc.lines.end(),
+                                           std::make_move_iterator(trailingDoc.lines.begin()),
+                                           std::make_move_iterator(trailingDoc.lines.end()));
         }
+        attachDocToStatement(*stmt, std::move(leadingTrivia.doc));
+
+        def.statements.push_back(*stmt);
     }
 
     if (diagnostics_.hasErrors())
@@ -447,31 +556,31 @@ std::optional<StatementAST> Parser::parseAttribute()
                 return std::nullopt;
             }
             ConstantDeclAST c;
-            c.location = nameTok.location;
-            c.type     = *type;
-            c.name     = nameTok.text;
+            c.location     = nameTok.location;
+            c.type         = *type;
+            c.name         = nameTok.text;
             c.nameLocation = nameTok.location;
-            c.value    = value;
+            c.value        = value;
             return StatementAST(c);
         }
 
         FieldDeclAST f;
-        f.location  = nameTok.location;
-        f.type      = *type;
-        f.name      = nameTok.text;
+        f.location     = nameTok.location;
+        f.type         = *type;
+        f.name         = nameTok.text;
         f.nameLocation = nameTok.location;
-        f.isPadding = false;
+        f.isPadding    = false;
         return StatementAST(f);
     }
 
     if (type->isVoid())
     {
         FieldDeclAST f;
-        f.location  = type->location;
-        f.type      = *type;
-        f.name      = "";
+        f.location     = type->location;
+        f.type         = *type;
+        f.name         = "";
         f.nameLocation = type->location;
-        f.isPadding = true;
+        f.isPadding    = true;
         return StatementAST(f);
     }
 

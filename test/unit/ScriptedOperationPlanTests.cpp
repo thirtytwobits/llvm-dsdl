@@ -80,8 +80,7 @@ bool runScriptedOperationPlanTests()
     const auto& operationPlan = *operationPlanOrErr;
 
     if (operationPlan.contractVersion != llvmdsdl::kWireOperationContractVersion || !operationPlan.isUnion ||
-        operationPlan.unionTagBits != 3U || operationPlan.maxBits != 128 ||
-        operationPlan.fields.size() != 3U)
+        operationPlan.unionTagBits != 3U || operationPlan.maxBits != 128 || operationPlan.fields.size() != 3U)
     {
         std::cerr << "scripted operation section metadata mismatch\n";
         return false;
@@ -106,8 +105,10 @@ bool runScriptedOperationPlanTests()
     }
 
     runtimePlan.contractVersion = llvmdsdl::kWireOperationContractVersion + 1;
-    operationPlanOrErr          = llvmdsdl::buildScriptedSectionOperationPlan(
-        section, runtimePlan, nullptr, [](const std::string& symbol) { return symbol; });
+    operationPlanOrErr =
+        llvmdsdl::buildScriptedSectionOperationPlan(section, runtimePlan, nullptr, [](const std::string& symbol) {
+            return symbol;
+        });
     if (operationPlanOrErr)
     {
         std::cerr << "scripted operation plan should reject unsupported wire-operation major version\n";

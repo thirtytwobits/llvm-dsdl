@@ -25,9 +25,9 @@ namespace
 {
 
 const llvmdsdl::SemanticDefinition* findDefinition(const llvmdsdl::SemanticModule& module,
-                                                   const std::string&               fullName,
-                                                   const std::uint32_t              major,
-                                                   const std::uint32_t              minor)
+                                                   const std::string&              fullName,
+                                                   const std::uint32_t             major,
+                                                   const std::uint32_t             minor)
 {
     for (const auto& def : module.definitions)
     {
@@ -92,6 +92,11 @@ bool runUavcanEmbeddedCatalogTests()
         std::cerr << "embedded UAVCAN semantic definition did not use synthetic source path\n";
         return false;
     }
+    if (heartbeat->request.constants.empty() || heartbeat->request.constants.front().doc.empty())
+    {
+        std::cerr << "embedded UAVCAN semantic constants missing attached docs\n";
+        return false;
+    }
 
     const auto* registerValue = findDefinition(catalog.semantic, "uavcan.register.Value", 1U, 0U);
     if (registerValue == nullptr || !registerValue->request.isUnion)
@@ -103,7 +108,8 @@ bool runUavcanEmbeddedCatalogTests()
     const auto* getInfo = findDefinition(catalog.semantic, "uavcan.node.GetInfo", 1U, 0U);
     if (getInfo == nullptr || !getInfo->isService || !getInfo->response)
     {
-        std::cerr << "embedded UAVCAN catalog failed to preserve service request/response for uavcan.node.GetInfo.1.0\n";
+        std::cerr
+            << "embedded UAVCAN catalog failed to preserve service request/response for uavcan.node.GetInfo.1.0\n";
         return false;
     }
 

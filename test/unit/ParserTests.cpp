@@ -122,19 +122,17 @@ bool runParserTests()
         return false;
     }
 
-    const std::string commentText = "# file comment\n"
-                                    "uint8 a # field comment\n"
-                                    "uint16 B = 1 # constant comment\n"
-                                    "@sealed # directive comment\n";
+    const std::string          commentText = "# file comment\n"
+                                             "uint8 a # field comment\n"
+                                             "uint16 B = 1 # constant comment\n"
+                                             "@sealed # directive comment\n";
     llvmdsdl::DiagnosticEngine commentDiag;
     llvmdsdl::Lexer            commentLexer("comments.dsdl", commentText);
-    auto                       commentTokens = commentLexer.lex();
-    const std::size_t          commentTokenCount =
-        static_cast<std::size_t>(std::count_if(commentTokens.begin(),
-                                               commentTokens.end(),
-                                               [](const llvmdsdl::Token& token) {
-                                                   return token.kind == llvmdsdl::TokenKind::Comment;
-                                               }));
+    auto                       commentTokens     = commentLexer.lex();
+    const std::size_t          commentTokenCount = static_cast<std::size_t>(
+        std::count_if(commentTokens.begin(), commentTokens.end(), [](const llvmdsdl::Token& token) {
+            return token.kind == llvmdsdl::TokenKind::Comment;
+        }));
     if (commentTokenCount < 3)
     {
         std::cerr << "expected lexer to preserve comment tokens\n";
@@ -164,6 +162,147 @@ bool runParserTests()
     if (!commentConstant || commentConstant->nameLocation.line != 3 || commentConstant->nameLocation.column != 8)
     {
         std::cerr << "constant symbol location was not captured correctly\n";
+        return false;
+    }
+    if (commentDef->doc.lines.size() != 1 || commentDef->doc.lines[0].text != "file comment")
+    {
+        std::cerr << "expected definition doc attachment from leading comment\n";
+        return false;
+    }
+    if (commentField->doc.lines.size() != 1 || commentField->doc.lines[0].text != "field comment")
+    {
+        std::cerr << "expected trailing field comment attachment\n";
+        return false;
+    }
+    if (commentConstant->doc.lines.size() != 1 || commentConstant->doc.lines[0].text != "constant comment")
+    {
+        std::cerr << "expected trailing constant comment attachment\n";
+        return false;
+    }
+
+    const std::string          attachmentText = "# orphaned before blank line\n"
+                                                "\n"
+                                                "# first field docs line 1\n"
+                                                "# first field docs line 2\n"
+                                                "uint8 first\n"
+                                                "\n"
+                                                "# split block old\n"
+                                                "\n"
+                                                "# second field docs\n"
+                                                "uint8 second # second trailing\n";
+    llvmdsdl::DiagnosticEngine attachmentDiag;
+    llvmdsdl::Lexer            attachmentLexer("attachment.dsdl", attachmentText);
+    auto                       attachmentTokens = attachmentLexer.lex();
+    llvmdsdl::Parser           attachmentParser("attachment.dsdl", std::move(attachmentTokens), attachmentDiag);
+    auto                       attachmentDef = attachmentParser.parseDefinition();
+    if (!attachmentDef)
+    {
+        std::cerr << "parser failed unexpectedly on attachment fixture\n";
+        return false;
+    }
+    if (attachmentDef->statements.size() != 2)
+    {
+        std::cerr << "unexpected statement count in attachment fixture: " << attachmentDef->statements.size() << "\n";
+        return false;
+    }
+    const auto* firstField  = std::get_if<llvmdsdl::FieldDeclAST>(&attachmentDef->statements[0]);
+    const auto* secondField = std::get_if<llvmdsdl::FieldDeclAST>(&attachmentDef->statements[1]);
+    if (!firstField || !secondField)
+    {
+        std::cerr << "expected field declarations in attachment fixture\n";
+        return false;
+    }
+    if (attachmentDef->doc.lines.size() != 4 || attachmentDef->doc.lines[0].text != "orphaned before blank line" ||
+        attachmentDef->doc.lines[1].text != "" || attachmentDef->doc.lines[2].text != "first field docs line 1" ||
+        attachmentDef->doc.lines[3].text != "first field docs line 2")
+    {
+        std::cerr << "expected definition docs to preserve comment lines and blank separators\n";
+        return false;
+    }
+    if (!firstField->doc.empty())
+    {
+        std::cerr << "expected first field docs to be promoted to definition docs only\n";
+        return false;
+    }
+    if (secondField->doc.lines.size() != 4 || secondField->doc.lines[0].text != "split block old" ||
+        secondField->doc.lines[1].text != "" || secondField->doc.lines[2].text != "second field docs" ||
+        secondField->doc.lines[3].text != "second trailing")
+    {
+        std::cerr << "expected second field docs to preserve split block and trailing comment\n";
+        return false;
+    }
+
+    const std::string          orphanText = "uint8 kept\n"
+                                            "\n"
+                                            "# orphan comment\n";
+    llvmdsdl::DiagnosticEngine orphanDiag;
+    llvmdsdl::Lexer            orphanLexer("orphan.dsdl", orphanText);
+    auto                       orphanTokens = orphanLexer.lex();
+    llvmdsdl::Parser           orphanParser("orphan.dsdl", std::move(orphanTokens), orphanDiag);
+    auto                       orphanDef = orphanParser.parseDefinition();
+    if (!orphanDef)
+    {
+        std::cerr << "parser failed unexpectedly on orphan fixture\n";
+        return false;
+    }
+    if (!orphanDef->doc.empty())
+    {
+        std::cerr << "unexpected definition docs from orphan trailing comment\n";
+        return false;
+    }
+    const auto* orphanField = std::get_if<llvmdsdl::FieldDeclAST>(&orphanDef->statements[0]);
+    if (!orphanField || !orphanField->doc.empty())
+    {
+        std::cerr << "unexpected field docs from orphan trailing comment\n";
+        return false;
+    }
+
+    const std::string          windowsText = "uint8 a # windows comment\r\n@sealed\r\n";
+    llvmdsdl::DiagnosticEngine windowsDiag;
+    llvmdsdl::Lexer            windowsLexer("windows.dsdl", windowsText);
+    auto                       windowsTokens = windowsLexer.lex();
+    auto windowsCommentIt = std::find_if(windowsTokens.begin(), windowsTokens.end(), [](const llvmdsdl::Token& token) {
+        return token.kind == llvmdsdl::TokenKind::Comment;
+    });
+    if (windowsCommentIt == windowsTokens.end())
+    {
+        std::cerr << "expected windows fixture comment token\n";
+        return false;
+    }
+    if (!windowsCommentIt->text.empty() && windowsCommentIt->text.back() == '\r')
+    {
+        std::cerr << "windows fixture comment token unexpectedly contains carriage return\n";
+        return false;
+    }
+
+    llvmdsdl::Parser windowsParser("windows.dsdl", std::move(windowsTokens), windowsDiag);
+    auto             windowsDef = windowsParser.parseDefinition();
+    if (!windowsDef || windowsDef->statements.size() != 2)
+    {
+        std::cerr << "windows fixture parse failed unexpectedly\n";
+        return false;
+    }
+    const auto* windowsField = std::get_if<llvmdsdl::FieldDeclAST>(&windowsDef->statements[0]);
+    if (!windowsField || windowsField->doc.lines.size() != 1 || windowsField->doc.lines[0].text != "windows comment")
+    {
+        std::cerr << "windows fixture failed to preserve trailing comment text\n";
+        return false;
+    }
+
+    const std::string          reservedText = "#[vendor(extension)]\nuint8 value\n";
+    llvmdsdl::DiagnosticEngine reservedDiag;
+    llvmdsdl::Lexer            reservedLexer("reserved.dsdl", reservedText);
+    auto                       reservedTokens = reservedLexer.lex();
+    llvmdsdl::Parser           reservedParser("reserved.dsdl", std::move(reservedTokens), reservedDiag);
+    auto                       reservedDef = reservedParser.parseDefinition();
+    if (!reservedDef || reservedDef->statements.size() != 1)
+    {
+        std::cerr << "reserved-comment fixture parse failed unexpectedly\n";
+        return false;
+    }
+    if (reservedDef->doc.lines.size() != 1 || reservedDef->doc.lines[0].text != "[vendor(extension)]")
+    {
+        std::cerr << "reserved-comment fixture comment lexing/parsing mismatch\n";
         return false;
     }
 

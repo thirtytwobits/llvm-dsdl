@@ -30,9 +30,9 @@ LoweredBodyRenderIR buildLoweredBodyRenderIR(const SemanticSection&       sectio
                                              const HelperBindingDirection direction)
 {
     LoweredBodyRenderIR out;
-    out.contractVersion          = kWireOperationContractVersion;
-    const auto          statementPlan = buildSectionStatementPlan(section, sectionFacts);
-    out.helperBindings                = buildSectionHelperBindingPlan(section, sectionFacts, direction);
+    out.contractVersion      = kWireOperationContractVersion;
+    const auto statementPlan = buildSectionStatementPlan(section, sectionFacts);
+    out.helperBindings       = buildSectionHelperBindingPlan(section, sectionFacts, direction);
 
     if (section.isUnion)
     {
@@ -62,7 +62,7 @@ LoweredBodyRenderIR buildLoweredBodyRenderIR(const SemanticSection&       sectio
 }
 
 llvm::Error validateLoweredBodyRenderIRContract(const LoweredBodyRenderIR& renderIR,
-                                                const llvm::StringRef       consumerLabel)
+                                                const llvm::StringRef      consumerLabel)
 {
     if (isSupportedWireOperationContractVersion(renderIR.contractVersion))
     {

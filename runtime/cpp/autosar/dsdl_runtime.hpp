@@ -23,17 +23,17 @@
 #include <cstddef>
 
 #if defined(__cplusplus) && (__cplusplus >= 201703L)
-#  if defined(__has_cpp_attribute)
-#    if __has_cpp_attribute(nodiscard)
-#      define LLVMDSDL_NODISCARD [[nodiscard]]
+#    if defined(__has_cpp_attribute)
+#        if __has_cpp_attribute(nodiscard)
+#            define LLVMDSDL_NODISCARD [[nodiscard]]
+#        else
+#            define LLVMDSDL_NODISCARD
+#        endif
 #    else
-#      define LLVMDSDL_NODISCARD
+#        define LLVMDSDL_NODISCARD [[nodiscard]]
 #    endif
-#  else
-#    define LLVMDSDL_NODISCARD [[nodiscard]]
-#  endif
 #else
-#  define LLVMDSDL_NODISCARD
+#    define LLVMDSDL_NODISCARD
 #endif
 
 extern "C"

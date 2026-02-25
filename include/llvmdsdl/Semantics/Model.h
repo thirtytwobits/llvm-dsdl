@@ -119,6 +119,9 @@ struct SemanticField final
     /// @brief Field name.
     std::string name;
 
+    /// @brief Attached documentation comments.
+    AttachedDoc doc;
+
     /// @brief Original parsed type expression.
     TypeExprAST type;
 
@@ -143,6 +146,9 @@ struct SemanticConstant final
 {
     /// @brief Constant symbol name.
     std::string name;
+
+    /// @brief Attached documentation comments.
+    AttachedDoc doc;
 
     /// @brief Original parsed type expression.
     TypeExprAST type;
@@ -193,6 +199,9 @@ struct SemanticDefinition final
 {
     /// @brief Discovery metadata.
     DiscoveredDefinition info;
+
+    /// @brief Attached documentation comments.
+    AttachedDoc doc;
 
     /// @brief True when this definition is a service.
     bool isService{false};

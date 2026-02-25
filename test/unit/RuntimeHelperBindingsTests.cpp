@@ -27,8 +27,8 @@ bool runRuntimeHelperBindingsTests()
         section.fields.push_back(payload);
 
         llvmdsdl::SemanticField nested;
-        nested.name                        = "nested";
-        nested.resolvedType.scalarCategory = llvmdsdl::SemanticScalarCategory::Composite;
+        nested.name                         = "nested";
+        nested.resolvedType.scalarCategory  = llvmdsdl::SemanticScalarCategory::Composite;
         nested.resolvedType.compositeSealed = false;
         section.fields.push_back(nested);
 
@@ -38,9 +38,9 @@ bool runRuntimeHelperBindingsTests()
         facts.serUnionTagHelper      = "union_mask_ser";
         facts.deserUnionTagHelper    = "union_mask_deser";
 
-        facts.fieldsByName["payload"].serUnsignedHelper          = "scalar_ser_u";
-        facts.fieldsByName["payload"].deserUnsignedHelper        = "scalar_deser_u";
-        facts.fieldsByName["payload"].serArrayLengthPrefixHelper = "array_prefix_ser";
+        facts.fieldsByName["payload"].serUnsignedHelper            = "scalar_ser_u";
+        facts.fieldsByName["payload"].deserUnsignedHelper          = "scalar_deser_u";
+        facts.fieldsByName["payload"].serArrayLengthPrefixHelper   = "array_prefix_ser";
         facts.fieldsByName["payload"].deserArrayLengthPrefixHelper = "array_prefix_deser";
         facts.fieldsByName["payload"].arrayLengthValidateHelper    = "array_validate";
         facts.fieldsByName["nested"].delimiterValidateHelper       = "delimiter_validate";
@@ -50,7 +50,8 @@ bool runRuntimeHelperBindingsTests()
         };
 
         const auto sectionNames = llvmdsdl::resolveRuntimeSectionHelperNames(&facts, nameResolver);
-        if (sectionNames.capacityCheck != "bound_cap_check" || sectionNames.unionTagValidate != "bound_union_validate" ||
+        if (sectionNames.capacityCheck != "bound_cap_check" ||
+            sectionNames.unionTagValidate != "bound_union_validate" ||
             sectionNames.serUnionTagMask != "bound_union_mask_ser" ||
             sectionNames.deserUnionTagMask != "bound_union_mask_deser")
         {
@@ -59,8 +60,8 @@ bool runRuntimeHelperBindingsTests()
         }
 
         llvmdsdl::RuntimeFieldPlan payloadPlan;
-        payloadPlan.semanticFieldName   = "payload";
-        payloadPlan.arrayKind           = llvmdsdl::RuntimeArrayKind::Variable;
+        payloadPlan.semanticFieldName     = "payload";
+        payloadPlan.arrayKind             = llvmdsdl::RuntimeArrayKind::Variable;
         payloadPlan.arrayLengthPrefixBits = 12;
 
         const auto payloadPrefixOverride = llvmdsdl::runtimeArrayPrefixOverride(payloadPlan);
@@ -70,8 +71,8 @@ bool runRuntimeHelperBindingsTests()
             return false;
         }
 
-        const auto payloadHelpers = llvmdsdl::resolveRuntimeFieldHelperNames(
-            section, &facts, payloadPlan, payloadPrefixOverride, nameResolver);
+        const auto payloadHelpers =
+            llvmdsdl::resolveRuntimeFieldHelperNames(section, &facts, payloadPlan, payloadPrefixOverride, nameResolver);
         if (payloadHelpers.serScalar != "bound_scalar_ser_u" || payloadHelpers.deserScalar != "bound_scalar_deser_u" ||
             payloadHelpers.serArrayPrefix != "bound_array_prefix_ser" ||
             payloadHelpers.deserArrayPrefix != "bound_array_prefix_deser" ||
@@ -113,12 +114,12 @@ bool runRuntimeHelperBindingsTests()
 
         llvmdsdl::LoweredSectionFacts facts;
         facts.fieldsByName["only"].serUnsignedHelper = "u_ser";
-        const auto helpers = llvmdsdl::resolveRuntimeFieldHelperNames(
-            section,
-            &facts,
-            missingPlan,
-            std::nullopt,
-            [](const std::string& symbol) { return "bound_" + symbol; });
+        const auto helpers =
+            llvmdsdl::resolveRuntimeFieldHelperNames(section,
+                                                     &facts,
+                                                     missingPlan,
+                                                     std::nullopt,
+                                                     [](const std::string& symbol) { return "bound_" + symbol; });
         if (!helpers.serScalar.empty() || !helpers.deserScalar.empty() || !helpers.serArrayPrefix.empty() ||
             !helpers.deserArrayPrefix.empty() || !helpers.arrayValidate.empty() || !helpers.delimiterValidate.empty())
         {

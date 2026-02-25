@@ -123,7 +123,7 @@ public:
     /// @param[in] signal Optional adaptive signal.
     /// @param[in] nowTick Current signal tick.
     /// @return Score component breakdown.
-    [[nodiscard]] static RankingBreakdown scoreCompletion(const std::string&                 query,
+    [[nodiscard]] static RankingBreakdown scoreCompletion(const std::string&                  query,
                                                           const CompletionRankingInput&       input,
                                                           const std::optional<RankingSignal>& signal,
                                                           std::uint64_t                       nowTick);
@@ -134,7 +134,7 @@ public:
     /// @param[in] signal Optional adaptive signal.
     /// @param[in] nowTick Current signal tick.
     /// @return Score component breakdown.
-    [[nodiscard]] static RankingBreakdown scoreSymbol(const std::string&                 query,
+    [[nodiscard]] static RankingBreakdown scoreSymbol(const std::string&                  query,
                                                       const SymbolRankingInput&           input,
                                                       const std::optional<RankingSignal>& signal,
                                                       std::uint64_t                       nowTick);
@@ -191,12 +191,12 @@ private:
     void pruneLocked();
     void loadLocked();
 
-    std::string persistencePath_;
-    std::size_t maxEntries_{4096};
-    mutable std::mutex mutex_;
+    std::string                                    persistencePath_;
+    std::size_t                                    maxEntries_{4096};
+    mutable std::mutex                             mutex_;
     std::unordered_map<std::string, RankingSignal> signals_;
-    std::uint64_t nextTick_{1};
-    bool dirty_{false};
+    std::uint64_t                                  nextTick_{1};
+    bool                                           dirty_{false};
 };
 
 }  // namespace llvmdsdl::lsp

@@ -22,9 +22,9 @@
 namespace llvmdsdl
 {
 
-ScriptedSectionBodyPlan buildScriptedSectionBodyPlan(const SemanticSection&               section,
-                                                     const RuntimeSectionPlan&            runtimePlan,
-                                                     const LoweredSectionFacts*           sectionFacts,
+ScriptedSectionBodyPlan buildScriptedSectionBodyPlan(const SemanticSection&           section,
+                                                     const RuntimeSectionPlan&        runtimePlan,
+                                                     const LoweredSectionFacts*       sectionFacts,
                                                      const RuntimeHelperNameResolver& helperNameResolver)
 {
     ScriptedSectionBodyPlan out;
@@ -35,8 +35,11 @@ ScriptedSectionBodyPlan buildScriptedSectionBodyPlan(const SemanticSection&     
         ScriptedFieldBodyPlan fieldPlan;
         fieldPlan.field               = field;
         fieldPlan.arrayPrefixOverride = runtimeArrayPrefixOverride(fieldPlan.field);
-        fieldPlan.helpers = resolveRuntimeFieldHelperNames(
-            section, sectionFacts, fieldPlan.field, fieldPlan.arrayPrefixOverride, helperNameResolver);
+        fieldPlan.helpers             = resolveRuntimeFieldHelperNames(section,
+                                                           sectionFacts,
+                                                           fieldPlan.field,
+                                                           fieldPlan.arrayPrefixOverride,
+                                                           helperNameResolver);
         out.fields.push_back(std::move(fieldPlan));
     }
     return out;

@@ -21,28 +21,28 @@
 #include <cstddef>
 
 #if defined(__cplusplus) && (__cplusplus >= 201703L) && defined(__has_include)
-#  if __has_include(<memory_resource>)
-#    include <memory_resource>
-#    define LLVMDSDL_CPP_HAS_MEMORY_RESOURCE 1
-#  else
-#    define LLVMDSDL_CPP_HAS_MEMORY_RESOURCE 0
-#  endif
+#    if __has_include(<memory_resource>)
+#        include <memory_resource>
+#        define LLVMDSDL_CPP_HAS_MEMORY_RESOURCE 1
+#    else
+#        define LLVMDSDL_CPP_HAS_MEMORY_RESOURCE 0
+#    endif
 #else
-#  define LLVMDSDL_CPP_HAS_MEMORY_RESOURCE 0
+#    define LLVMDSDL_CPP_HAS_MEMORY_RESOURCE 0
 #endif
 
 #if defined(__cplusplus) && (__cplusplus >= 201703L)
-#  if defined(__has_cpp_attribute)
-#    if __has_cpp_attribute(nodiscard)
-#      define LLVMDSDL_NODISCARD [[nodiscard]]
+#    if defined(__has_cpp_attribute)
+#        if __has_cpp_attribute(nodiscard)
+#            define LLVMDSDL_NODISCARD [[nodiscard]]
+#        else
+#            define LLVMDSDL_NODISCARD
+#        endif
 #    else
-#      define LLVMDSDL_NODISCARD
+#        define LLVMDSDL_NODISCARD [[nodiscard]]
 #    endif
-#  else
-#    define LLVMDSDL_NODISCARD [[nodiscard]]
-#  endif
 #else
-#  define LLVMDSDL_NODISCARD
+#    define LLVMDSDL_NODISCARD
 #endif
 
 extern "C"

@@ -18,11 +18,11 @@ bool runLspRequestSchedulerTests()
 {
     llvmdsdl::lsp::RequestScheduler scheduler;
 
-    std::mutex                        mutex;
-    std::condition_variable           cv;
-    bool                              sawCallback      = false;
-    llvmdsdl::lsp::RequestTaskResult  completionResult;
-    std::uint64_t                     completionLatency = 0;
+    std::mutex                       mutex;
+    std::condition_variable          cv;
+    bool                             sawCallback = false;
+    llvmdsdl::lsp::RequestTaskResult completionResult;
+    std::uint64_t                    completionLatency = 0;
 
     const bool queued = scheduler.enqueue(
         "i:7",
@@ -40,7 +40,7 @@ bool runLspRequestSchedulerTests()
             return {llvmdsdl::lsp::RequestTaskStatus::Completed, llvm::json::Object{{"done", true}}, {}};
         },
         [&mutex, &cv, &sawCallback, &completionResult, &completionLatency](llvmdsdl::lsp::RequestTaskResult result,
-                                                                            const std::uint64_t latencyMicros) {
+                                                                           const std::uint64_t latencyMicros) {
             {
                 std::lock_guard<std::mutex> lock(mutex);
                 sawCallback       = true;

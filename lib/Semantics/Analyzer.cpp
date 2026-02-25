@@ -268,19 +268,19 @@ private:
         Done,
     };
 
-    const ASTModule&                               module_;
-    DiagnosticEngine&                              diagnostics_;
-    AnalyzeOptions                                 options_;
-    std::vector<State>                             state_;
-    std::vector<std::optional<SemanticDefinition>> results_;
-    std::unordered_map<std::string, std::size_t>   indexByKey_;
+    const ASTModule&                                           module_;
+    DiagnosticEngine&                                          diagnostics_;
+    AnalyzeOptions                                             options_;
+    std::vector<State>                                         state_;
+    std::vector<std::optional<SemanticDefinition>>             results_;
+    std::unordered_map<std::string, std::size_t>               indexByKey_;
     std::unordered_map<std::string, const SemanticDefinition*> externalByKey_;
 
     struct ResolvedCompositeDefinition final
     {
-        std::string                    candidateName;
-        const SemanticDefinition*      definition{nullptr};
-        std::optional<std::size_t>     localIndex;
+        std::string                candidateName;
+        const SemanticDefinition*  definition{nullptr};
+        std::optional<std::size_t> localIndex;
     };
 
     std::optional<std::size_t> resolveDefinitionIndex(const std::string& fullName,
@@ -385,6 +385,7 @@ private:
 
         SemanticDefinition sem;
         sem.info      = parsed.info;
+        sem.doc       = parsed.ast.doc;
         sem.isService = parsed.ast.isService();
 
         std::vector<StatementAST> req;
@@ -1043,7 +1044,7 @@ private:
                 }
 
                 names.insert(c.name);
-                section.constants.push_back(SemanticConstant{c.name, c.type, *value});
+                section.constants.push_back(SemanticConstant{c.name, c.doc, c.type, *value});
                 env[c.name] = *value;
                 continue;
             }
@@ -1080,6 +1081,7 @@ private:
                 auto          layout = analyzeType(owner, f.type, env, &typeAttrResolver);
                 SemanticField semanticField;
                 semanticField.name         = f.name;
+                semanticField.doc          = f.doc;
                 semanticField.type         = f.type;
                 semanticField.isPadding    = f.isPadding;
                 semanticField.resolvedType = layout.resolved;
@@ -1288,7 +1290,7 @@ private:
                 {
                     continue;
                 }
-                const auto& sem = *result;
+                const auto&     sem = *result;
                 llvm::StringRef rootNamespace;
                 if (!sem.info.namespaceComponents.empty())
                 {
@@ -1298,7 +1300,7 @@ private:
                 {
                     const auto pos = sem.info.fullName.find('.');
                     rootNamespace  = pos == std::string::npos ? llvm::StringRef(sem.info.fullName)
-                                                               : llvm::StringRef(sem.info.fullName.data(), pos);
+                                                              : llvm::StringRef(sem.info.fullName.data(), pos);
                 }
 
                 if (!isValidRegulatedPortId(*sem.info.fixedPortId, sem.isService, rootNamespace))
@@ -1320,8 +1322,8 @@ llvm::Expected<SemanticModule> analyze(const ASTModule& module, DiagnosticEngine
     return analyze(module, diagnostics, AnalyzeOptions{});
 }
 
-llvm::Expected<SemanticModule> analyze(const ASTModule& module,
-                                       DiagnosticEngine& diagnostics,
+llvm::Expected<SemanticModule> analyze(const ASTModule&      module,
+                                       DiagnosticEngine&     diagnostics,
                                        const AnalyzeOptions& options)
 {
     AnalyzerImpl impl(module, diagnostics, options);

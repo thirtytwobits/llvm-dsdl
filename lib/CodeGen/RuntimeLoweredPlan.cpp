@@ -54,8 +54,9 @@ std::size_t expectedStepCount(const SemanticSection& section)
 
 }  // namespace
 
-llvm::Expected<std::vector<RuntimeOrderedFieldStep>> buildRuntimeOrderedFieldSteps(const SemanticSection&           section,
-                                                                                    const LoweredSectionFacts* const sectionFacts)
+llvm::Expected<std::vector<RuntimeOrderedFieldStep>> buildRuntimeOrderedFieldSteps(
+    const SemanticSection&           section,
+    const LoweredSectionFacts* const sectionFacts)
 {
     if (sectionFacts == nullptr)
     {
@@ -149,8 +150,8 @@ llvm::Expected<RuntimeSectionPlan> buildRuntimeSectionPlan(const SemanticSection
                                                            const LoweredSectionFacts* const sectionFacts)
 {
     RuntimeSectionPlan plan;
-    plan.contractVersion             = kWireOperationContractVersion;
-    plan.isUnion                     = section.isUnion;
+    plan.contractVersion                = kWireOperationContractVersion;
+    plan.isUnion                        = section.isUnion;
     std::int64_t                maxBits = 0;
     std::optional<std::int64_t> unionTagBits;
     std::set<std::uint32_t>     unionOptionIndexes;
@@ -176,8 +177,8 @@ llvm::Expected<RuntimeSectionPlan> buildRuntimeSectionPlan(const SemanticSection
                                            field.name.c_str());
         }
 
-        RuntimeArrayKind arrayKind           = RuntimeArrayKind::None;
-        std::int64_t     arrayCapacity       = 0;
+        RuntimeArrayKind arrayKind             = RuntimeArrayKind::None;
+        std::int64_t     arrayCapacity         = 0;
         std::int64_t     arrayLengthPrefixBits = 0;
         if (field.resolvedType.arrayKind == ArrayKind::None)
         {
@@ -366,11 +367,9 @@ llvm::Expected<RuntimeSectionPlan> buildRuntimeSectionPlan(const SemanticSection
             return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                            "union runtime plan metadata is incomplete or inconsistent");
         }
-        std::sort(plan.fields.begin(),
-                  plan.fields.end(),
-                  [](const RuntimeFieldPlan& lhs, const RuntimeFieldPlan& rhs) {
-                      return lhs.unionOptionIndex < rhs.unionOptionIndex;
-                  });
+        std::sort(plan.fields.begin(), plan.fields.end(), [](const RuntimeFieldPlan& lhs, const RuntimeFieldPlan& rhs) {
+            return lhs.unionOptionIndex < rhs.unionOptionIndex;
+        });
         plan.unionTagBits          = *unionTagBits;
         std::int64_t maxOptionBits = 0;
         for (const auto& fieldPlan : plan.fields)

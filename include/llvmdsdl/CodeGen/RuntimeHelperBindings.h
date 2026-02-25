@@ -79,7 +79,7 @@ std::optional<std::uint32_t> runtimeArrayPrefixOverride(const RuntimeFieldPlan& 
 /// @param[in] sectionFacts Lowered section facts.
 /// @param[in] helperNameResolver Callback to map lowered symbols to emitted names.
 /// @return Section-level helper names.
-RuntimeSectionHelperNames resolveRuntimeSectionHelperNames(const LoweredSectionFacts*     sectionFacts,
+RuntimeSectionHelperNames resolveRuntimeSectionHelperNames(const LoweredSectionFacts*       sectionFacts,
                                                            const RuntimeHelperNameResolver& helperNameResolver);
 
 /// @brief Resolves per-field helper names from lowered facts and semantic type metadata.
@@ -89,10 +89,10 @@ RuntimeSectionHelperNames resolveRuntimeSectionHelperNames(const LoweredSectionF
 /// @param[in] prefixBitsOverride Optional variable-array prefix width override.
 /// @param[in] helperNameResolver Callback to map lowered symbols to emitted names.
 /// @return Field-level helper names.
-RuntimeFieldHelperNames resolveRuntimeFieldHelperNames(const SemanticSection&              section,
-                                                       const LoweredSectionFacts*          sectionFacts,
-                                                       const RuntimeFieldPlan&             field,
-                                                       std::optional<std::uint32_t>        prefixBitsOverride,
+RuntimeFieldHelperNames resolveRuntimeFieldHelperNames(const SemanticSection&           section,
+                                                       const LoweredSectionFacts*       sectionFacts,
+                                                       const RuntimeFieldPlan&          field,
+                                                       std::optional<std::uint32_t>     prefixBitsOverride,
                                                        const RuntimeHelperNameResolver& helperNameResolver);
 
 }  // namespace llvmdsdl

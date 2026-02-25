@@ -61,10 +61,10 @@ void appendCompositeField(llvmdsdl::SemanticSection& section, const llvmdsdl::Se
     section.fields.push_back(std::move(field));
 }
 
-llvmdsdl::SemanticDefinition makeDefinition(const std::string&                      fullName,
-                                            const std::uint32_t                     major,
-                                            const std::uint32_t                     minor,
-                                            const std::string&                      filePath,
+llvmdsdl::SemanticDefinition makeDefinition(const std::string&                            fullName,
+                                            const std::uint32_t                           major,
+                                            const std::uint32_t                           minor,
+                                            const std::string&                            filePath,
                                             const std::vector<llvmdsdl::SemanticTypeRef>& requestDeps  = {},
                                             const std::vector<llvmdsdl::SemanticTypeRef>& responseDeps = {})
 {
@@ -74,7 +74,7 @@ llvmdsdl::SemanticDefinition makeDefinition(const std::string&                  
     def.info.majorVersion        = major;
     def.info.minorVersion        = minor;
     def.info.namespaceComponents = splitComponents(fullName);
-    def.info.shortName           = def.info.namespaceComponents.empty() ? fullName : def.info.namespaceComponents.back();
+    def.info.shortName = def.info.namespaceComponents.empty() ? fullName : def.info.namespaceComponents.back();
     if (!def.info.namespaceComponents.empty())
     {
         def.info.namespaceComponents.pop_back();
@@ -127,10 +127,8 @@ bool runDepfilePlannerTests()
     module.definitions.push_back(
         makeDefinition("ns.B", 1U, 0U, "/tmp/depfile_planner/ns/B.1.0.dsdl", {}, {makeTypeRef("ns.D", 1U, 0U)}));
     module.definitions.push_back(makeDefinition("ns.D", 1U, 0U, "/tmp/depfile_planner/ns/D.1.0.dsdl"));
-    module.definitions.push_back(makeDefinition("uavcan.node.Heartbeat",
-                                                1U,
-                                                0U,
-                                                "<embedded-uavcan>:uavcan.node.Heartbeat.1.0.dsdl"));
+    module.definitions.push_back(
+        makeDefinition("uavcan.node.Heartbeat", 1U, 0U, "<embedded-uavcan>:uavcan.node.Heartbeat.1.0.dsdl"));
 
     llvmdsdl::DepfilePlanner planner(module);
 

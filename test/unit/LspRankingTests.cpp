@@ -102,8 +102,8 @@ bool runLspRankingTests()
 
     llvmdsdl::lsp::AdaptiveSignalStore exposureStore((tmpRoot / "top_exposures.json").string(), 8);
     exposureStore.noteTopExposures({"k1", "k2", "k3"}, 2);
-    if (exposureStore.size() != 2 || !exposureStore.signalFor("k1").has_value() || !exposureStore.signalFor("k2").has_value() ||
-        exposureStore.signalFor("k3").has_value())
+    if (exposureStore.size() != 2 || !exposureStore.signalFor("k1").has_value() ||
+        !exposureStore.signalFor("k2").has_value() || exposureStore.signalFor("k3").has_value())
     {
         return fail("top exposure tracking did not honor maxCount limit");
     }
@@ -139,7 +139,9 @@ bool runLspRankingTests()
     }
 
     const std::filesystem::path wrongSchemaPath = tmpRoot / "wrong_schema.json";
-    if (!writeTextFile(wrongSchemaPath, R"({"schema_version":999,"next_tick":99,"entries":[{"key":"k","exposure":9,"selection":4,"last_tick":7}]})"))
+    if (!writeTextFile(
+            wrongSchemaPath,
+            R"({"schema_version":999,"next_tick":99,"entries":[{"key":"k","exposure":9,"selection":4,"last_tick":7}]})"))
     {
         return fail("failed to write wrong-schema fixture");
     }
@@ -150,8 +152,9 @@ bool runLspRankingTests()
     }
 
     const std::filesystem::path negativeFixturePath = tmpRoot / "negative_entries.json";
-    if (!writeTextFile(negativeFixturePath,
-                       R"({"schema_version":1,"next_tick":42,"entries":[{"key":"a","exposure":-4,"selection":-2,"last_tick":-1},{"key":"b","exposure":2,"selection":1,"last_tick":5},{"key":"c","exposure":3,"selection":2,"last_tick":6}]})"))
+    if (!writeTextFile(
+            negativeFixturePath,
+            R"({"schema_version":1,"next_tick":42,"entries":[{"key":"a","exposure":-4,"selection":-2,"last_tick":-1},{"key":"b","exposure":2,"selection":1,"last_tick":5},{"key":"c","exposure":3,"selection":2,"last_tick":6}]})"))
     {
         return fail("failed to write clamping/pruning fixture");
     }
@@ -170,58 +173,56 @@ bool runLspRankingTests()
         return fail("loaded signal values were not preserved as expected");
     }
 
-    const auto exact = llvmdsdl::lsp::RankingModel::scoreCompletion(
-        "demo.TypeA.1.0",
-        llvmdsdl::lsp::CompletionRankingInput{
-            "completion:demo.TypeA.1.0",
-            "demo.TypeA.1.0",
-            "composite",
-            7,
-            70.0,
-        },
-        signalA,
-        reloaded.currentTick());
+    const auto exact = llvmdsdl::lsp::RankingModel::scoreCompletion("demo.TypeA.1.0",
+                                                                    llvmdsdl::lsp::CompletionRankingInput{
+                                                                        "completion:demo.TypeA.1.0",
+                                                                        "demo.TypeA.1.0",
+                                                                        "composite",
+                                                                        7,
+                                                                        70.0,
+                                                                    },
+                                                                    signalA,
+                                                                    reloaded.currentTick());
 
-    const auto fuzzy = llvmdsdl::lsp::RankingModel::scoreCompletion(
-        "tpA",
-        llvmdsdl::lsp::CompletionRankingInput{
-            "completion:demo.TypeA.1.0",
-            "demo.TypeA.1.0",
-            "composite",
-            7,
-            35.0,
-        },
-        signalA,
-        reloaded.currentTick());
+    const auto fuzzy = llvmdsdl::lsp::RankingModel::scoreCompletion("tpA",
+                                                                    llvmdsdl::lsp::CompletionRankingInput{
+                                                                        "completion:demo.TypeA.1.0",
+                                                                        "demo.TypeA.1.0",
+                                                                        "composite",
+                                                                        7,
+                                                                        35.0,
+                                                                    },
+                                                                    signalA,
+                                                                    reloaded.currentTick());
 
     if (exact.totalScore <= fuzzy.totalScore)
     {
         return fail("expected exact completion match to outrank fuzzy match");
     }
 
-    const auto completionWithoutSignal = llvmdsdl::lsp::RankingModel::scoreCompletion(
-        "",
-        llvmdsdl::lsp::CompletionRankingInput{
-            "completion:demo.KindDefault.1.0",
-            "KindDefault",
-            "detail",
-            1,
-            10.0,
-        },
-        std::nullopt,
-        5);
+    const auto completionWithoutSignal =
+        llvmdsdl::lsp::RankingModel::scoreCompletion("",
+                                                     llvmdsdl::lsp::CompletionRankingInput{
+                                                         "completion:demo.KindDefault.1.0",
+                                                         "KindDefault",
+                                                         "detail",
+                                                         1,
+                                                         10.0,
+                                                     },
+                                                     std::nullopt,
+                                                     5);
 
-    const auto completionWithSignal = llvmdsdl::lsp::RankingModel::scoreCompletion(
-        "",
-        llvmdsdl::lsp::CompletionRankingInput{
-            "completion:demo.KindDefault.1.0",
-            "KindDefault",
-            "detail",
-            1,
-            10.0,
-        },
-        llvmdsdl::lsp::RankingSignal{12, 3, 10},
-        5);
+    const auto completionWithSignal =
+        llvmdsdl::lsp::RankingModel::scoreCompletion("",
+                                                     llvmdsdl::lsp::CompletionRankingInput{
+                                                         "completion:demo.KindDefault.1.0",
+                                                         "KindDefault",
+                                                         "detail",
+                                                         1,
+                                                         10.0,
+                                                     },
+                                                     llvmdsdl::lsp::RankingSignal{12, 3, 10},
+                                                     5);
 
     if (completionWithSignal.matchQuality != 0.0 || completionWithSignal.fuzzyBoost != 0.0)
     {
@@ -233,148 +234,139 @@ bool runLspRankingTests()
         return fail("adaptive signal should increase frequency/recency boosts");
     }
 
-    const auto completionTypeKind = llvmdsdl::lsp::RankingModel::scoreCompletion(
-        "",
-        llvmdsdl::lsp::CompletionRankingInput{
-            "completion:demo.TypeX.1.0",
-            "TypeX",
-            "",
-            7,
-            0.0,
-        },
-        std::nullopt,
-        1);
-    const auto completionDefaultKind = llvmdsdl::lsp::RankingModel::scoreCompletion(
-        "",
-        llvmdsdl::lsp::CompletionRankingInput{
-            "completion:demo.UnknownKind.1.0",
-            "UnknownKind",
-            "",
-            99,
-            0.0,
-        },
-        std::nullopt,
-        1);
+    const auto completionTypeKind = llvmdsdl::lsp::RankingModel::scoreCompletion("",
+                                                                                 llvmdsdl::lsp::CompletionRankingInput{
+                                                                                     "completion:demo.TypeX.1.0",
+                                                                                     "TypeX",
+                                                                                     "",
+                                                                                     7,
+                                                                                     0.0,
+                                                                                 },
+                                                                                 std::nullopt,
+                                                                                 1);
+    const auto completionDefaultKind =
+        llvmdsdl::lsp::RankingModel::scoreCompletion("",
+                                                     llvmdsdl::lsp::CompletionRankingInput{
+                                                         "completion:demo.UnknownKind.1.0",
+                                                         "UnknownKind",
+                                                         "",
+                                                         99,
+                                                         0.0,
+                                                     },
+                                                     std::nullopt,
+                                                     1);
     if (completionTypeKind.kindBoost <= completionDefaultKind.kindBoost)
     {
         return fail("completion kind boost for type should exceed default boost");
     }
 
-    const auto detailMatched = llvmdsdl::lsp::RankingModel::scoreCompletion(
-        "meta",
-        llvmdsdl::lsp::CompletionRankingInput{
-            "completion:demo.MatchInDetail.1.0",
-            "symbol",
-            "meta_serializable",
-            7,
-            0.0,
-        },
-        std::nullopt,
-        1);
-    const auto detailMismatched = llvmdsdl::lsp::RankingModel::scoreCompletion(
-        "meta",
-        llvmdsdl::lsp::CompletionRankingInput{
-            "completion:demo.NoDetailMatch.1.0",
-            "symbol",
-            "transport",
-            7,
-            0.0,
-        },
-        std::nullopt,
-        1);
+    const auto detailMatched    = llvmdsdl::lsp::RankingModel::scoreCompletion("meta",
+                                                                            llvmdsdl::lsp::CompletionRankingInput{
+                                                                                "completion:demo.MatchInDetail.1.0",
+                                                                                "symbol",
+                                                                                "meta_serializable",
+                                                                                7,
+                                                                                0.0,
+                                                                            },
+                                                                            std::nullopt,
+                                                                            1);
+    const auto detailMismatched = llvmdsdl::lsp::RankingModel::scoreCompletion("meta",
+                                                                               llvmdsdl::lsp::CompletionRankingInput{
+                                                                                   "completion:demo.NoDetailMatch.1.0",
+                                                                                   "symbol",
+                                                                                   "transport",
+                                                                                   7,
+                                                                                   0.0,
+                                                                               },
+                                                                               std::nullopt,
+                                                                               1);
     if (detailMatched.totalScore <= detailMismatched.totalScore)
     {
         return fail("secondary-detail lexical match should improve completion score");
     }
 
     const std::string longLabel(512, 'x');
-    const auto        shortLabelScore = llvmdsdl::lsp::RankingModel::scoreCompletion(
-        "",
-        llvmdsdl::lsp::CompletionRankingInput{
-            "completion:demo.Short.1.0",
-            "short",
-            "",
-            7,
-            4.0,
-        },
-        std::nullopt,
-        1);
-    const auto longLabelScore = llvmdsdl::lsp::RankingModel::scoreCompletion(
-        "",
-        llvmdsdl::lsp::CompletionRankingInput{
-            "completion:demo.Long.1.0",
-            longLabel,
-            "",
-            7,
-            4.0,
-        },
-        std::nullopt,
-        1);
+    const auto        shortLabelScore = llvmdsdl::lsp::RankingModel::scoreCompletion("",
+                                                                              llvmdsdl::lsp::CompletionRankingInput{
+                                                                                  "completion:demo.Short.1.0",
+                                                                                  "short",
+                                                                                  "",
+                                                                                  7,
+                                                                                  4.0,
+                                                                              },
+                                                                              std::nullopt,
+                                                                              1);
+    const auto        longLabelScore  = llvmdsdl::lsp::RankingModel::scoreCompletion("",
+                                                                             llvmdsdl::lsp::CompletionRankingInput{
+                                                                                 "completion:demo.Long.1.0",
+                                                                                 longLabel,
+                                                                                 "",
+                                                                                 7,
+                                                                                 4.0,
+                                                                             },
+                                                                             std::nullopt,
+                                                                             1);
     if (longLabelScore.lengthPenalty >= shortLabelScore.lengthPenalty ||
         longLabelScore.totalScore >= shortLabelScore.totalScore)
     {
         return fail("longer labels should incur a stronger length penalty");
     }
 
-    const auto symbolExact = llvmdsdl::lsp::RankingModel::scoreSymbol(
-        "TypeA",
-        llvmdsdl::lsp::SymbolRankingInput{
-            "symbol:type:demo.TypeA.1.0",
-            "TypeA",
-            "demo.TypeA.1.0",
-            "demo",
-            "message",
-            23,
-            60.0,
-        },
-        std::nullopt,
-        reloaded.currentTick());
+    const auto symbolExact = llvmdsdl::lsp::RankingModel::scoreSymbol("TypeA",
+                                                                      llvmdsdl::lsp::SymbolRankingInput{
+                                                                          "symbol:type:demo.TypeA.1.0",
+                                                                          "TypeA",
+                                                                          "demo.TypeA.1.0",
+                                                                          "demo",
+                                                                          "message",
+                                                                          23,
+                                                                          60.0,
+                                                                      },
+                                                                      std::nullopt,
+                                                                      reloaded.currentTick());
 
-    const auto symbolMismatch = llvmdsdl::lsp::RankingModel::scoreSymbol(
-        "Altitude",
-        llvmdsdl::lsp::SymbolRankingInput{
-            "symbol:type:demo.TypeA.1.0",
-            "TypeA",
-            "demo.TypeA.1.0",
-            "demo",
-            "message",
-            23,
-            60.0,
-        },
-        std::nullopt,
-        reloaded.currentTick());
+    const auto symbolMismatch = llvmdsdl::lsp::RankingModel::scoreSymbol("Altitude",
+                                                                         llvmdsdl::lsp::SymbolRankingInput{
+                                                                             "symbol:type:demo.TypeA.1.0",
+                                                                             "TypeA",
+                                                                             "demo.TypeA.1.0",
+                                                                             "demo",
+                                                                             "message",
+                                                                             23,
+                                                                             60.0,
+                                                                         },
+                                                                         std::nullopt,
+                                                                         reloaded.currentTick());
 
     if (symbolExact.totalScore <= symbolMismatch.totalScore)
     {
         return fail("expected matching workspace symbol query to outrank mismatch");
     }
 
-    const auto symbolStructKind = llvmdsdl::lsp::RankingModel::scoreSymbol(
-        "",
-        llvmdsdl::lsp::SymbolRankingInput{
-            "symbol:type:demo.StructType.1.0",
-            "StructType",
-            "demo.StructType.1.0",
-            "demo",
-            "message",
-            23,
-            0.0,
-        },
-        std::nullopt,
-        1);
-    const auto symbolDefaultKind = llvmdsdl::lsp::RankingModel::scoreSymbol(
-        "",
-        llvmdsdl::lsp::SymbolRankingInput{
-            "symbol:type:demo.UnknownKind.1.0",
-            "UnknownKind",
-            "demo.UnknownKind.1.0",
-            "demo",
-            "message",
-            99,
-            0.0,
-        },
-        std::nullopt,
-        1);
+    const auto symbolStructKind  = llvmdsdl::lsp::RankingModel::scoreSymbol("",
+                                                                           llvmdsdl::lsp::SymbolRankingInput{
+                                                                               "symbol:type:demo.StructType.1.0",
+                                                                               "StructType",
+                                                                               "demo.StructType.1.0",
+                                                                               "demo",
+                                                                               "message",
+                                                                               23,
+                                                                               0.0,
+                                                                           },
+                                                                           std::nullopt,
+                                                                           1);
+    const auto symbolDefaultKind = llvmdsdl::lsp::RankingModel::scoreSymbol("",
+                                                                            llvmdsdl::lsp::SymbolRankingInput{
+                                                                                "symbol:type:demo.UnknownKind.1.0",
+                                                                                "UnknownKind",
+                                                                                "demo.UnknownKind.1.0",
+                                                                                "demo",
+                                                                                "message",
+                                                                                99,
+                                                                                0.0,
+                                                                            },
+                                                                            std::nullopt,
+                                                                            1);
     if (symbolStructKind.kindBoost <= symbolDefaultKind.kindBoost)
     {
         return fail("symbol kind boost for struct should exceed default boost");

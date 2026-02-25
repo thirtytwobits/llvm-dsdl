@@ -84,17 +84,17 @@ struct CliOptions final
 
     int verbose{0};
 
-    llvmdsdl::CppProfile cppProfile{llvmdsdl::CppProfile::Both};
-    std::string rustCrateName{"llvmdsdl_generated"};
-    llvmdsdl::RustProfile rustProfile{llvmdsdl::RustProfile::Std};
-    llvmdsdl::RustRuntimeSpecialization rustRuntimeSpecialization{llvmdsdl::RustRuntimeSpecialization::Portable};
-    llvmdsdl::RustMemoryMode rustMemoryMode{llvmdsdl::RustMemoryMode::MaxInline};
-    std::uint32_t rustInlineThresholdBytes{256U};
-    std::string goModuleName{"llvmdsdl_generated"};
-    std::string tsModuleName{"llvmdsdl_generated"};
-    llvmdsdl::TsRuntimeSpecialization tsRuntimeSpecialization{llvmdsdl::TsRuntimeSpecialization::Portable};
+    llvmdsdl::CppProfile                  cppProfile{llvmdsdl::CppProfile::Both};
+    std::string                           rustCrateName{"llvmdsdl_generated"};
+    llvmdsdl::RustProfile                 rustProfile{llvmdsdl::RustProfile::Std};
+    llvmdsdl::RustRuntimeSpecialization   rustRuntimeSpecialization{llvmdsdl::RustRuntimeSpecialization::Portable};
+    llvmdsdl::RustMemoryMode              rustMemoryMode{llvmdsdl::RustMemoryMode::MaxInline};
+    std::uint32_t                         rustInlineThresholdBytes{256U};
+    std::string                           goModuleName{"llvmdsdl_generated"};
+    std::string                           tsModuleName{"llvmdsdl_generated"};
+    llvmdsdl::TsRuntimeSpecialization     tsRuntimeSpecialization{llvmdsdl::TsRuntimeSpecialization::Portable};
     llvmdsdl::PythonRuntimeSpecialization pyRuntimeSpecialization{llvmdsdl::PythonRuntimeSpecialization::Portable};
-    std::string pyPackageName{"dsdl_gen"};
+    std::string                           pyPackageName{"dsdl_gen"};
 
     bool sawCppProfile{false};
     bool sawRustCrateName{false};
@@ -237,10 +237,10 @@ std::string resolveOutputRoot(const std::string& outDir)
     return outDir;
 }
 
-void printRunSummary(llvm::StringRef                           command,
-                     llvm::StringRef                           outputRoot,
-                     std::uint64_t                             generatedFiles,
-                     std::chrono::steady_clock::duration      elapsed)
+void printRunSummary(llvm::StringRef                     command,
+                     llvm::StringRef                     outputRoot,
+                     std::uint64_t                       generatedFiles,
+                     std::chrono::steady_clock::duration elapsed)
 {
     const auto elapsedMs         = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
     const auto elapsedWholeSec   = elapsedMs / 1000;
@@ -308,13 +308,17 @@ llvm::Expected<std::uint32_t> parseFileMode(llvm::StringRef text)
 
     if (body.empty())
     {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(), "invalid --file-mode value: %s", text.str().c_str());
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "invalid --file-mode value: %s",
+                                       text.str().c_str());
     }
 
     std::uint64_t parsed{};
     if (body.getAsInteger(base, parsed) || parsed > 07777U)
     {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(), "invalid --file-mode value: %s", text.str().c_str());
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "invalid --file-mode value: %s",
+                                       text.str().c_str());
     }
     return static_cast<std::uint32_t>(parsed);
 }
@@ -326,7 +330,9 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
     auto requireValue = [&](int& i, llvm::StringRef optionName) -> llvm::Expected<std::string> {
         if (i + 1 >= argc)
         {
-            return llvm::createStringError(llvm::inconvertibleErrorCode(), "missing value for %s", optionName.str().c_str());
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "missing value for %s",
+                                           optionName.str().c_str());
         }
         return std::string(argv[++i]);
     };
@@ -452,8 +458,7 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
             continue;
         }
         if (arg.starts_with("-") && arg.size() > 1 &&
-            arg.drop_front().find_if([](const char c) { return c != 'v'; }) ==
-                                                  llvm::StringRef::npos)
+            arg.drop_front().find_if([](const char c) { return c != 'v'; }) == llvm::StringRef::npos)
         {
             options.verbose += static_cast<int>(arg.size() - 1);
             continue;
@@ -490,7 +495,9 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
             }
             else
             {
-                return llvm::createStringError(llvm::inconvertibleErrorCode(), "invalid --cpp-profile value: %s", value->c_str());
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "invalid --cpp-profile value: %s",
+                                               value->c_str());
             }
             continue;
         }
@@ -523,7 +530,9 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
             }
             else
             {
-                return llvm::createStringError(llvm::inconvertibleErrorCode(), "invalid --rust-profile value: %s", value->c_str());
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "invalid --rust-profile value: %s",
+                                               value->c_str());
             }
             continue;
         }
@@ -601,7 +610,7 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
             {
                 return value.takeError();
             }
-            options.sawGoModule = true;
+            options.sawGoModule  = true;
             options.goModuleName = *value;
             continue;
         }
@@ -612,7 +621,7 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
             {
                 return value.takeError();
             }
-            options.sawTsModule = true;
+            options.sawTsModule  = true;
             options.tsModuleName = *value;
             continue;
         }
@@ -647,7 +656,7 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
             {
                 return value.takeError();
             }
-            options.sawPyPackage = true;
+            options.sawPyPackage  = true;
             options.pyPackageName = *value;
             continue;
         }
@@ -719,9 +728,8 @@ llvm::Expected<int> validateLanguageGatedOptions(const CliOptions& options)
     {
         return r.takeError();
     }
-    if (auto r = failIf((options.sawTsModule || options.sawTsRuntimeSpecialization) && language != "ts",
-                        "--ts-*",
-                        "ts");
+    if (auto r =
+            failIf((options.sawTsModule || options.sawTsRuntimeSpecialization) && language != "ts", "--ts-*", "ts");
         !r)
     {
         return r.takeError();
@@ -735,8 +743,9 @@ llvm::Expected<int> validateLanguageGatedOptions(const CliOptions& options)
     }
     if (options.emitDepfiles && !isCodegenLanguage(language))
     {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "-MD is only valid when --target-language is one of: c, cpp, rust, go, ts, python");
+        return llvm::
+            createStringError(llvm::inconvertibleErrorCode(),
+                              "-MD is only valid when --target-language is one of: c, cpp, rust, go, ts, python");
     }
 
     return 0;
@@ -760,7 +769,7 @@ std::string typeKeyFromRef(const llvmdsdl::SemanticTypeRef& ref)
     return ref.fullName + ":" + std::to_string(ref.majorVersion) + ":" + std::to_string(ref.minorVersion);
 }
 
-std::unordered_set<std::string> computeDependencyClosure(const llvmdsdl::SemanticModule& semantic,
+std::unordered_set<std::string> computeDependencyClosure(const llvmdsdl::SemanticModule&        semantic,
                                                          const std::unordered_set<std::string>& explicitKeys)
 {
     std::unordered_map<std::string, const llvmdsdl::SemanticDefinition*> byKey;
@@ -817,7 +826,7 @@ std::unordered_set<std::string> computeDependencyClosure(const llvmdsdl::Semanti
     return closure;
 }
 
-llvmdsdl::SemanticModule filterSemanticModule(const llvmdsdl::SemanticModule& semantic,
+llvmdsdl::SemanticModule filterSemanticModule(const llvmdsdl::SemanticModule&        semantic,
                                               const std::unordered_set<std::string>& selectedKeys)
 {
     llvmdsdl::SemanticModule out;
@@ -850,7 +859,7 @@ llvmdsdl::ASTModule filterAstModule(const llvmdsdl::ASTModule& ast, const std::u
     return out;
 }
 
-std::vector<std::string> collectInputFilesForClosure(const llvmdsdl::SemanticModule& semantic,
+std::vector<std::string> collectInputFilesForClosure(const llvmdsdl::SemanticModule&        semantic,
                                                      const std::unordered_set<std::string>& closureKeys)
 {
     std::vector<std::string> out;
@@ -1015,7 +1024,8 @@ int main(int argc, char** argv)
 
     if (resolved->explicitTargetFiles.empty())
     {
-        const auto outputRoot = isCodegenLanguage(options.targetLanguage) ? resolveOutputRoot(options.outDir) : "stdout";
+        const auto outputRoot =
+            isCodegenLanguage(options.targetLanguage) ? resolveOutputRoot(options.outDir) : "stdout";
         if (options.listInputs || options.listOutputs)
         {
             emitScsvLists({}, {}, options.listInputs, options.listOutputs);
@@ -1046,8 +1056,8 @@ int main(int argc, char** argv)
         }
     }
 
-    const bool useEmbeddedUavcan = !options.noEmbeddedUavcan &&
-                                   (options.targetLanguage == "mlir" || isCodegenLanguage(options.targetLanguage));
+    const bool useEmbeddedUavcan =
+        !options.noEmbeddedUavcan && (options.targetLanguage == "mlir" || isCodegenLanguage(options.targetLanguage));
 
     mlir::DialectRegistry registry;
     registry.insert<mlir::dsdl::DSDLDialect,
@@ -1104,26 +1114,27 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    const auto closureKeys = computeDependencyClosure(mergedSemantic, explicitKeys);
+    const auto closureKeys  = computeDependencyClosure(mergedSemantic, explicitKeys);
     const auto selectedKeys = options.omitDependencies ? explicitKeys : closureKeys;
 
-    const auto closureSemantic = filterSemanticModule(mergedSemantic, closureKeys);
+    const auto closureSemantic      = filterSemanticModule(mergedSemantic, closureKeys);
     const auto localClosureSemantic = filterSemanticModule(localSemantic, closureKeys);
-    const auto inputsForListing = collectInputFilesForClosure(mergedSemantic, closureKeys);
+    const auto inputsForListing     = collectInputFilesForClosure(mergedSemantic, closureKeys);
 
-    auto finish = [&](llvm::StringRef outputRoot, std::vector<std::string> generatedOutputs, const bool forceFailure = false) {
-        generatedOutputs = dedupSorted(std::move(generatedOutputs));
-        if (options.listInputs || options.listOutputs)
-        {
-            emitScsvLists(inputsForListing, generatedOutputs, options.listInputs, options.listOutputs);
-        }
-        printDiagnostics(diagnostics);
-        printRunSummary(options.targetLanguage,
-                        outputRoot,
-                        static_cast<std::uint64_t>(generatedOutputs.size()),
-                        std::chrono::steady_clock::now() - startTime);
-        return (forceFailure || diagnostics.hasErrors()) ? 1 : 0;
-    };
+    auto finish =
+        [&](llvm::StringRef outputRoot, std::vector<std::string> generatedOutputs, const bool forceFailure = false) {
+            generatedOutputs = dedupSorted(std::move(generatedOutputs));
+            if (options.listInputs || options.listOutputs)
+            {
+                emitScsvLists(inputsForListing, generatedOutputs, options.listInputs, options.listOutputs);
+            }
+            printDiagnostics(diagnostics);
+            printRunSummary(options.targetLanguage,
+                            outputRoot,
+                            static_cast<std::uint64_t>(generatedOutputs.size()),
+                            std::chrono::steady_clock::now() - startTime);
+            return (forceFailure || diagnostics.hasErrors()) ? 1 : 0;
+        };
 
     if (options.targetLanguage == "ast")
     {
@@ -1146,8 +1157,10 @@ int main(int argc, char** argv)
         }
         if (embeddedCatalog)
         {
-            if (auto err =
-                    llvmdsdl::appendEmbeddedUavcanSchemasForKeys(*embeddedCatalog, *mlirModule, selectedKeys, diagnostics))
+            if (auto err = llvmdsdl::appendEmbeddedUavcanSchemasForKeys(*embeddedCatalog,
+                                                                        *mlirModule,
+                                                                        selectedKeys,
+                                                                        diagnostics))
             {
                 llvm::errs() << llvm::toString(std::move(err)) << "\n";
                 return finish("stdout", {}, true);
@@ -1181,14 +1194,14 @@ int main(int argc, char** argv)
     std::vector<std::string> selectedTypeKeys(selectedKeys.begin(), selectedKeys.end());
     std::sort(selectedTypeKeys.begin(), selectedTypeKeys.end());
 
-    std::vector<std::string> generatedOutputs;
+    std::vector<std::string>                                  generatedOutputs;
     std::unordered_map<std::string, std::vector<std::string>> generatedOutputRequiredTypeKeys;
 
     llvmdsdl::EmitWritePolicy writePolicy;
-    writePolicy.dryRun         = options.dryRun;
-    writePolicy.noOverwrite    = options.noOverwrite;
-    writePolicy.fileMode       = options.fileMode;
-    writePolicy.recordedOutputs = &generatedOutputs;
+    writePolicy.dryRun                         = options.dryRun;
+    writePolicy.noOverwrite                    = options.noOverwrite;
+    writePolicy.fileMode                       = options.fileMode;
+    writePolicy.recordedOutputs                = &generatedOutputs;
     writePolicy.recordedOutputRequiredTypeKeys = &generatedOutputRequiredTypeKeys;
 
     std::unique_ptr<llvmdsdl::DepfilePlanner> depfilePlanner;
@@ -1199,7 +1212,8 @@ int main(int argc, char** argv)
         if (options.verbose >= 2)
         {
             const std::string message =
-                "dep planner build: " + formatDurationMilliseconds(std::chrono::steady_clock::now() - plannerBuildStart);
+                "dep planner build: " +
+                formatDurationMilliseconds(std::chrono::steady_clock::now() - plannerBuildStart);
             logVerbose(2, message);
         }
     }
@@ -1222,7 +1236,7 @@ int main(int argc, char** argv)
                 metadataIt != generatedOutputRequiredTypeKeys.end())
             {
                 const auto depResolutionStart = std::chrono::steady_clock::now();
-                deps                         = &depfilePlanner->depsForRequiredTypeKeys(metadataIt->second);
+                deps                          = &depfilePlanner->depsForRequiredTypeKeys(metadataIt->second);
                 depResolutionElapsed += std::chrono::steady_clock::now() - depResolutionStart;
             }
 

@@ -30,11 +30,11 @@ typedef int8_t (*DifferentialDeserializeFn)(void*, const uint8_t*, size_t*);
 typedef struct
 {
     /// @brief Size in bytes of the object instance accepted by the callbacks.
-    size_t                    object_size;
+    size_t object_size;
     /// @brief Maximum serialized payload size in bytes for this type.
-    size_t                    max_serialized_size;
+    size_t max_serialized_size;
     /// @brief Serializer callback for this case.
-    DifferentialSerializeFn   serialize;
+    DifferentialSerializeFn serialize;
     /// @brief Deserializer callback for this case.
     DifferentialDeserializeFn deserialize;
 } DifferentialCaseInfo;

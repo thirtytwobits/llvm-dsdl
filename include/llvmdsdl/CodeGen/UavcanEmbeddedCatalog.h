@@ -55,16 +55,16 @@ struct UavcanEmbeddedCatalog final
 
 /// @brief Loads and parses embedded UAVCAN catalog artifacts.
 llvm::Expected<UavcanEmbeddedCatalog> loadUavcanEmbeddedCatalog(mlir::MLIRContext& context,
-                                                                DiagnosticEngine&   diagnostics);
+                                                                DiagnosticEngine&  diagnostics);
 
 /// @brief Returns true when `filePath` is synthetic embedded UAVCAN metadata.
 bool isEmbeddedUavcanSyntheticPath(const std::string& filePath);
 
 /// @brief Appends embedded schemas for selected keys into destination module.
-llvm::Error appendEmbeddedUavcanSchemasForKeys(const UavcanEmbeddedCatalog&        catalog,
-                                               mlir::ModuleOp                       destination,
+llvm::Error appendEmbeddedUavcanSchemasForKeys(const UavcanEmbeddedCatalog&           catalog,
+                                               mlir::ModuleOp                         destination,
                                                const std::unordered_set<std::string>& selectedTypeKeys,
-                                               DiagnosticEngine&                    diagnostics);
+                                               DiagnosticEngine&                      diagnostics);
 
 }  // namespace llvmdsdl
 

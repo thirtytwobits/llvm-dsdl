@@ -35,7 +35,7 @@ bool parseContentLengthHeader(const std::string& line, std::size_t& contentLengt
     {
         return false;
     }
-    header = header.trim();
+    header            = header.trim();
     std::size_t value = 0;
     for (const char ch : header)
     {
@@ -59,9 +59,9 @@ JsonRpcStdioTransport::JsonRpcStdioTransport(std::istream& in, std::ostream& out
 
 bool JsonRpcStdioTransport::readMessage(llvm::json::Value& message, std::string& error)
 {
-    std::size_t  contentLength = 0U;
-    bool         hasHeaders    = false;
-    std::string  line;
+    std::size_t contentLength = 0U;
+    bool        hasHeaders    = false;
+    std::string line;
     while (std::getline(input_, line))
     {
         if (!line.empty() && line.back() == '\r')
@@ -102,7 +102,7 @@ bool JsonRpcStdioTransport::readMessage(llvm::json::Value& message, std::string&
     llvm::Expected<llvm::json::Value> parsed = llvm::json::parse(payload);
     if (!parsed)
     {
-        std::string parseMessage;
+        std::string              parseMessage;
         llvm::raw_string_ostream parseStream(parseMessage);
         parseStream << parsed.takeError();
         parseStream.flush();
@@ -116,7 +116,7 @@ bool JsonRpcStdioTransport::readMessage(llvm::json::Value& message, std::string&
 
 bool JsonRpcStdioTransport::writeMessage(const llvm::json::Value& message)
 {
-    std::string             payload;
+    std::string              payload;
     llvm::raw_string_ostream payloadStream(payload);
     payloadStream << message;
     payloadStream.flush();
