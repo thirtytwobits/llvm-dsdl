@@ -825,12 +825,12 @@ void emitPyRuntimeDeserializeFieldValue(std::ostringstream&               out,
     emitLine(out, indent, targetExpr + " = " + arrVar);
 }
 
-void emitPyRuntimeFunctions(std::ostringstream&        out,
-                            const std::string&         typeName,
-                            const RuntimeSectionPlan&  plan,
-                            const EmitterContext&      ctx,
-                            const SemanticSection&     section,
-                            const LoweredSectionFacts* sectionFacts)
+llvm::Error emitPyRuntimeFunctions(std::ostringstream&        out,
+                                   const std::string&         typeName,
+                                   const RuntimeSectionPlan&  plan,
+                                   const EmitterContext&      ctx,
+                                   const SemanticSection&     section,
+                                   const LoweredSectionFacts* sectionFacts)
 {
     const auto serializeFn   = runtimeSerializeFn(typeName);
     const auto deserializeFn = runtimeDeserializeFn(typeName);
@@ -844,7 +844,11 @@ void emitPyRuntimeFunctions(std::ostringstream&        out,
         return helperBindingNamePy(symbol);
     };
     auto operationPlan = buildScriptedSectionOperationPlan(section, plan, sectionFacts, helperNameResolver);
-    for (auto& scriptedField : operationPlan.fields)
+    if (!operationPlan)
+    {
+        return operationPlan.takeError();
+    }
+    for (auto& scriptedField : operationPlan->fields)
     {
         auto&       field        = scriptedField.body.field;
         const auto& semanticName = field.semanticFieldName.empty() ? field.fieldName : field.semanticFieldName;
@@ -852,7 +856,7 @@ void emitPyRuntimeFunctions(std::ostringstream&        out,
             codegenSanitizeIdentifier(CodegenNamingLanguage::Python,
                                       codegenToSnakeCaseIdentifier(CodegenNamingLanguage::Python, semanticName));
     }
-    const auto& sectionHelperNames = operationPlan.sectionHelpers;
+    const auto& sectionHelperNames = operationPlan->sectionHelpers;
 
     const auto emitSerializeHelperBindings = [&]() {
         const auto lines = renderSectionHelperBindings(serializeHelpers,
@@ -886,7 +890,7 @@ void emitPyRuntimeFunctions(std::ostringstream&        out,
         }
     };
 
-    if (operationPlan.isUnion)
+    if (operationPlan->isUnion)
     {
         emitLine(out, 0, "def " + serializeFn + "(value: " + typeName + ") -> bytes:");
         emitLine(out, 1, "out = bytearray(" + std::to_string(maxByteLength) + ")");
@@ -909,12 +913,12 @@ void emitPyRuntimeFunctions(std::ostringstream&        out,
         }
         emitLine(out,
                  1,
-                 "dsdl_runtime.write_unsigned(out, offset_bits, " + std::to_string(operationPlan.unionTagBits) +
+                     "dsdl_runtime.write_unsigned(out, offset_bits, " + std::to_string(operationPlan->unionTagBits) +
                      ", tag, False)");
-        emitLine(out, 1, "offset_bits += " + std::to_string(operationPlan.unionTagBits));
+        emitLine(out, 1, "offset_bits += " + std::to_string(operationPlan->unionTagBits));
 
         bool first = true;
-        for (const auto& scriptedField : operationPlan.fields)
+        for (const auto& scriptedField : operationPlan->fields)
         {
             const auto& field     = scriptedField.body.field;
             const auto  optionTag = std::to_string(field.unionOptionIndex);
@@ -947,8 +951,8 @@ void emitPyRuntimeFunctions(std::ostringstream&        out,
         emitLine(out,
                  1,
                  "tag = int(dsdl_runtime.read_unsigned(data, offset_bits, " +
-                     std::to_string(operationPlan.unionTagBits) + "))");
-        emitLine(out, 1, "offset_bits += " + std::to_string(operationPlan.unionTagBits));
+                     std::to_string(operationPlan->unionTagBits) + "))");
+        emitLine(out, 1, "offset_bits += " + std::to_string(operationPlan->unionTagBits));
         if (!sectionHelperNames.deserUnionTagMask.empty())
         {
             emitLine(out, 1, "tag = int(" + sectionHelperNames.deserUnionTagMask + "(tag))");
@@ -963,7 +967,7 @@ void emitPyRuntimeFunctions(std::ostringstream&        out,
         emitLine(out, 1, "value = " + typeName + "(_tag=tag)");
 
         first = true;
-        for (const auto& scriptedField : operationPlan.fields)
+        for (const auto& scriptedField : operationPlan->fields)
         {
             const auto& field     = scriptedField.body.field;
             const auto  optionTag = std::to_string(field.unionOptionIndex);
@@ -976,7 +980,7 @@ void emitPyRuntimeFunctions(std::ostringstream&        out,
         emitLine(out, 1, "offset_bits = dsdl_runtime.byte_length_for_bits(offset_bits) * 8");
         emitLine(out, 1, "consumed = min(len(data), dsdl_runtime.byte_length_for_bits(offset_bits))");
         emitLine(out, 1, "return value, consumed");
-        return;
+        return llvm::Error::success();
     }
 
     emitLine(out, 0, "def " + serializeFn + "(value: " + typeName + ") -> bytes:");
@@ -988,7 +992,7 @@ void emitPyRuntimeFunctions(std::ostringstream&        out,
         emitLine(out, 1, "if not " + sectionHelperNames.capacityCheck + "(len(out) * 8):");
         emitLine(out, 2, "raise ValueError(\"" + codegen_diagnostic_text::serializationBufferTooSmall() + "\")");
     }
-    for (const auto& scriptedField : operationPlan.fields)
+    for (const auto& scriptedField : operationPlan->fields)
     {
         const auto& field = scriptedField.body.field;
         emitPyRuntimeSerializeFieldValue(out, 1, scriptedField, "value." + field.fieldName, ctx);
@@ -1004,13 +1008,14 @@ void emitPyRuntimeFunctions(std::ostringstream&        out,
     emitDeserializeHelperBindings();
     emitLine(out, 1, "value = " + typeName + "()");
     emitLine(out, 1, "offset_bits = 0");
-    for (const auto& scriptedField : operationPlan.fields)
+    for (const auto& scriptedField : operationPlan->fields)
     {
         const auto& field = scriptedField.body.field;
         emitPyRuntimeDeserializeFieldValue(out, 1, scriptedField, "value." + field.fieldName, ctx);
     }
     emitLine(out, 1, "consumed = min(len(data), dsdl_runtime.byte_length_for_bits(offset_bits))");
     emitLine(out, 1, "return value, consumed");
+    return llvm::Error::success();
 }
 
 llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
@@ -1106,7 +1111,10 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         {
             emitLine(out, 0, "");
         }
-        emitPyRuntimeFunctions(out, baseType, *requestRuntimePlan, ctx, def.request, requestSectionFacts);
+        if (auto err = emitPyRuntimeFunctions(out, baseType, *requestRuntimePlan, ctx, def.request, requestSectionFacts))
+        {
+            return std::move(err);
+        }
         return out.str();
     }
 
@@ -1117,7 +1125,10 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     emitLine(out, 0, "");
     emitSectionConstants(out, reqType, def.request);
     emitLine(out, 0, "");
-    emitPyRuntimeFunctions(out, reqType, *requestRuntimePlan, ctx, def.request, requestSectionFacts);
+    if (auto err = emitPyRuntimeFunctions(out, reqType, *requestRuntimePlan, ctx, def.request, requestSectionFacts))
+    {
+        return std::move(err);
+    }
     emitLine(out, 0, "");
 
     if (def.response)
@@ -1126,12 +1137,15 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         emitLine(out, 0, "");
         emitSectionConstants(out, respType, *def.response);
         emitLine(out, 0, "");
-        emitPyRuntimeFunctions(out,
-                               respType,
-                               *responseRuntimePlan,
-                               ctx,
-                               *def.response,
-                               lookupLoweredSectionFacts(loweredFacts, def, "response"));
+        if (auto err = emitPyRuntimeFunctions(out,
+                                              respType,
+                                              *responseRuntimePlan,
+                                              ctx,
+                                              *def.response,
+                                              lookupLoweredSectionFacts(loweredFacts, def, "response")))
+        {
+            return std::move(err);
+        }
         emitLine(out, 0, "");
     }
 
@@ -1274,6 +1288,8 @@ llvm::Error emitPython(const SemanticModule&    semantic,
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "output directory is required");
     }
 
+    const auto mlirCoverageDiagnostic =
+        codegen_diagnostic_text::mlirSchemaCoverageValidationFailedForEmission("Python");
     LoweredFactsMap loweredFacts;
     if (!collectLoweredFactsFromMlir(semantic,
                                      module,
@@ -1282,8 +1298,7 @@ llvm::Error emitPython(const SemanticModule&    semantic,
                                      &loweredFacts,
                                      options.optimizeLoweredSerDes))
     {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "MLIR schema coverage validation failed for Python emission");
+        return llvm::createStringError(llvm::inconvertibleErrorCode(), "%s", mlirCoverageDiagnostic.c_str());
     }
 
     const auto     packageComponents = splitPackageName(options.packageName);

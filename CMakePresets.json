@@ -12,8 +12,15 @@
       "generator": "Ninja Multi-Config",
       "binaryDir": "${sourceDir}/build/matrix/${presetName}",
       "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug;RelWithDebInfo;Release",
+        "CMAKE_DEFAULT_BUILD_TYPE": "RelWithDebInfo",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "LLVMDSDL_ENABLE_SELF_CONTAINED_TOOL_BUNDLE": "ON"
+        "LLVMDSDL_ENABLE_SELF_CONTAINED_TOOL_BUNDLE": "ON",
+        "LLVMDSDL_PY_RUNTIME_BENCH_ENABLE_THRESHOLDS": "ON",
+        "LLVMDSDL_RUST_RUNTIME_BENCH_ENABLE_THRESHOLDS": "ON",
+        "LLVMDSDL_RUST_RUNTIME_BENCH_ITERATIONS_SMALL": "120000",
+        "LLVMDSDL_RUST_RUNTIME_BENCH_ITERATIONS_MEDIUM": "45000",
+        "LLVMDSDL_RUST_RUNTIME_BENCH_ITERATIONS_LARGE": "10000"
       }
     },
     {
@@ -57,148 +64,26 @@
   ],
   "buildPresets": [
     {
-      "name": "build-dev-llvm-env-debug",
-      "displayName": "Build (dev-llvm-env, Debug)",
-      "configurePreset": "dev-llvm-env",
-      "configuration": "Debug"
+      "name": "build-dev-llvm-env",
+      "displayName": "Build (dev-llvm-env)",
+      "configurePreset": "dev-llvm-env"
     },
     {
-      "name": "build-dev-llvm-env-relwithdebinfo",
-      "displayName": "Build (dev-llvm-env, RelWithDebInfo)",
-      "configurePreset": "dev-llvm-env",
-      "configuration": "RelWithDebInfo"
+      "name": "build-dev-homebrew",
+      "displayName": "Build (dev-homebrew)",
+      "configurePreset": "dev-homebrew"
     },
     {
-      "name": "build-dev-llvm-env-release",
-      "displayName": "Build (dev-llvm-env, Release + bundle)",
-      "configurePreset": "dev-llvm-env",
-      "configuration": "Release",
-      "targets": [
-        "all",
-        "bundle-tools-self-contained"
-      ]
-    },
-    {
-      "name": "install-bin-dev-llvm-env-release",
-      "displayName": "Install (dev-llvm-env, Release, binaries-only)",
-      "configurePreset": "dev-llvm-env",
-      "configuration": "Release",
-      "targets": [
-        "install-bin"
-      ]
-    },
-    {
-      "name": "install-dev-dev-llvm-env-release",
-      "displayName": "Install (dev-llvm-env, Release, dev files)",
-      "configurePreset": "dev-llvm-env",
-      "configuration": "Release",
-      "targets": [
-        "install-dev"
-      ]
-    },
-    {
-      "name": "build-dev-homebrew-debug",
-      "displayName": "Build (dev-homebrew, Debug)",
-      "configurePreset": "dev-homebrew",
-      "configuration": "Debug"
-    },
-    {
-      "name": "build-dev-homebrew-relwithdebinfo",
-      "displayName": "Build (dev-homebrew, RelWithDebInfo)",
-      "configurePreset": "dev-homebrew",
-      "configuration": "RelWithDebInfo"
-    },
-    {
-      "name": "build-dev-homebrew-release",
-      "displayName": "Build (dev-homebrew, Release + bundle)",
-      "configurePreset": "dev-homebrew",
-      "configuration": "Release",
-      "targets": [
-        "all",
-        "bundle-tools-self-contained"
-      ]
-    },
-    {
-      "name": "install-bin-dev-homebrew-release",
-      "displayName": "Install (dev-homebrew, Release, binaries-only)",
-      "configurePreset": "dev-homebrew",
-      "configuration": "Release",
-      "targets": [
-        "install-bin"
-      ]
-    },
-    {
-      "name": "install-dev-dev-homebrew-release",
-      "displayName": "Install (dev-homebrew, Release, dev files)",
-      "configurePreset": "dev-homebrew",
-      "configuration": "Release",
-      "targets": [
-        "install-dev"
-      ]
-    },
-    {
-      "name": "build-ci-debug",
-      "displayName": "Build (ci, Debug)",
-      "configurePreset": "ci",
-      "configuration": "Debug"
-    },
-    {
-      "name": "build-ci-relwithdebinfo",
-      "displayName": "Build (ci, RelWithDebInfo)",
-      "configurePreset": "ci",
-      "configuration": "RelWithDebInfo"
-    },
-    {
-      "name": "build-ci-release",
-      "displayName": "Build (ci, Release + bundle)",
-      "configurePreset": "ci",
-      "configuration": "Release",
-      "targets": [
-        "all",
-        "bundle-tools-self-contained"
-      ]
-    },
-    {
-      "name": "install-bin-ci-debug",
-      "displayName": "Install (ci, Debug, binaries-only)",
-      "configurePreset": "ci",
-      "configuration": "Debug",
-      "targets": [
-        "install-bin"
-      ]
-    },
-    {
-      "name": "install-dev-ci-debug",
-      "displayName": "Install (ci, Debug, dev files)",
-      "configurePreset": "ci",
-      "configuration": "Debug",
-      "targets": [
-        "install-dev"
-      ]
-    },
-    {
-      "name": "install-bin-ci-release",
-      "displayName": "Install (ci, Release, binaries-only)",
-      "configurePreset": "ci",
-      "configuration": "Release",
-      "targets": [
-        "install-bin"
-      ]
-    },
-    {
-      "name": "install-dev-ci-release",
-      "displayName": "Install (ci, Release, dev files)",
-      "configurePreset": "ci",
-      "configuration": "Release",
-      "targets": [
-        "install-dev"
-      ]
+      "name": "build-ci",
+      "displayName": "Build (ci)",
+      "configurePreset": "ci"
     }
   ],
   "testPresets": [
     {
       "name": "test-base",
       "hidden": true,
+      "configuration": "Debug",
       "execution": {
         "noTestsAction": "error"
       },
@@ -207,11 +92,10 @@
       }
     },
     {
-      "name": "test-dev-llvm-env-smoke-debug",
-      "displayName": "Test (dev-llvm-env smoke, Debug)",
+      "name": "test-dev-llvm-env-smoke",
+      "displayName": "Test (dev-llvm-env smoke)",
       "inherits": "test-base",
       "configurePreset": "dev-llvm-env",
-      "configuration": "Debug",
       "filter": {
         "exclude": {
           "label": "integration"
@@ -219,35 +103,27 @@
       }
     },
     {
-      "name": "test-dev-llvm-env-smoke-relwithdebinfo",
-      "displayName": "Test (dev-llvm-env smoke, RelWithDebInfo)",
+      "name": "test-dev-llvm-env-full",
+      "displayName": "Test (dev-llvm-env full)",
+      "inherits": "test-base",
+      "configurePreset": "dev-llvm-env"
+    },
+    {
+      "name": "test-dev-llvm-env-release-blocking",
+      "displayName": "Test (dev-llvm-env release-blocking gates)",
       "inherits": "test-base",
       "configurePreset": "dev-llvm-env",
-      "configuration": "RelWithDebInfo",
       "filter": {
-        "exclude": {
-          "label": "integration"
+        "include": {
+          "label": "release-blocking"
         }
       }
     },
     {
-      "name": "test-dev-llvm-env-smoke-release",
-      "displayName": "Test (dev-llvm-env smoke, Release)",
-      "inherits": "test-base",
-      "configurePreset": "dev-llvm-env",
-      "configuration": "Release",
-      "filter": {
-        "exclude": {
-          "label": "integration"
-        }
-      }
-    },
-    {
-      "name": "test-dev-homebrew-smoke-debug",
-      "displayName": "Test (dev-homebrew smoke, Debug)",
+      "name": "test-dev-homebrew-smoke",
+      "displayName": "Test (dev-homebrew smoke)",
       "inherits": "test-base",
       "configurePreset": "dev-homebrew",
-      "configuration": "Debug",
       "filter": {
         "exclude": {
           "label": "integration"
@@ -255,11 +131,27 @@
       }
     },
     {
-      "name": "test-dev-homebrew-smoke-relwithdebinfo",
-      "displayName": "Test (dev-homebrew smoke, RelWithDebInfo)",
+      "name": "test-dev-homebrew-full",
+      "displayName": "Test (dev-homebrew full)",
+      "inherits": "test-base",
+      "configurePreset": "dev-homebrew"
+    },
+    {
+      "name": "test-dev-homebrew-release-blocking",
+      "displayName": "Test (dev-homebrew release-blocking gates)",
       "inherits": "test-base",
       "configurePreset": "dev-homebrew",
-      "configuration": "RelWithDebInfo",
+      "filter": {
+        "include": {
+          "label": "release-blocking"
+        }
+      }
+    },
+    {
+      "name": "test-ci-smoke",
+      "displayName": "Test (ci smoke)",
+      "inherits": "test-base",
+      "configurePreset": "ci",
       "filter": {
         "exclude": {
           "label": "integration"
@@ -267,80 +159,27 @@
       }
     },
     {
-      "name": "test-dev-homebrew-smoke-release",
-      "displayName": "Test (dev-homebrew smoke, Release)",
+      "name": "test-ci-full",
+      "displayName": "Test (ci full)",
       "inherits": "test-base",
-      "configurePreset": "dev-homebrew",
-      "configuration": "Release",
+      "configurePreset": "ci"
+    },
+    {
+      "name": "test-ci-release-blocking",
+      "displayName": "Test (ci release-blocking gates)",
+      "inherits": "test-base",
+      "configurePreset": "ci",
       "filter": {
-        "exclude": {
-          "label": "integration"
+        "include": {
+          "label": "release-blocking"
         }
       }
     },
     {
-      "name": "test-ci-smoke-debug",
-      "displayName": "Test (ci smoke, Debug)",
+      "name": "test-ci-python-accel-required",
+      "displayName": "Test (ci Python accelerator required gate)",
       "inherits": "test-base",
       "configurePreset": "ci",
-      "configuration": "Debug",
-      "filter": {
-        "exclude": {
-          "label": "integration"
-        }
-      }
-    },
-    {
-      "name": "test-ci-smoke-relwithdebinfo",
-      "displayName": "Test (ci smoke, RelWithDebInfo)",
-      "inherits": "test-base",
-      "configurePreset": "ci",
-      "configuration": "RelWithDebInfo",
-      "filter": {
-        "exclude": {
-          "label": "integration"
-        }
-      }
-    },
-    {
-      "name": "test-ci-smoke-release",
-      "displayName": "Test (ci smoke, Release)",
-      "inherits": "test-base",
-      "configurePreset": "ci",
-      "configuration": "Release",
-      "filter": {
-        "exclude": {
-          "label": "integration"
-        }
-      }
-    },
-    {
-      "name": "test-dev-llvm-env-full-relwithdebinfo",
-      "displayName": "Test (dev-llvm-env full, RelWithDebInfo)",
-      "inherits": "test-base",
-      "configurePreset": "dev-llvm-env",
-      "configuration": "RelWithDebInfo"
-    },
-    {
-      "name": "test-dev-homebrew-full-relwithdebinfo",
-      "displayName": "Test (dev-homebrew full, RelWithDebInfo)",
-      "inherits": "test-base",
-      "configurePreset": "dev-homebrew",
-      "configuration": "RelWithDebInfo"
-    },
-    {
-      "name": "test-ci-full-relwithdebinfo",
-      "displayName": "Test (ci full, RelWithDebInfo)",
-      "inherits": "test-base",
-      "configurePreset": "ci",
-      "configuration": "RelWithDebInfo"
-    },
-    {
-      "name": "test-ci-python-accel-required-relwithdebinfo",
-      "displayName": "Test (ci Python accelerator required gate, RelWithDebInfo)",
-      "inherits": "test-base",
-      "configurePreset": "ci",
-      "configuration": "RelWithDebInfo",
       "filter": {
         "include": {
           "label": "python-accel-required"
@@ -352,7 +191,7 @@
     {
       "name": "matrix-dev-llvm-env",
       "displayName": "Workflow (matrix dev-llvm-env)",
-      "description": "Configure once, then run Debug smoke, RelWithDebInfo full, and Release build+smoke+binaries-install+dev-install.",
+      "description": "Configure, build, and run smoke, release-blocking, and full test lanes.",
       "steps": [
         {
           "type": "configure",
@@ -360,42 +199,26 @@
         },
         {
           "type": "build",
-          "name": "build-dev-llvm-env-debug"
+          "name": "build-dev-llvm-env"
         },
         {
           "type": "test",
-          "name": "test-dev-llvm-env-smoke-debug"
-        },
-        {
-          "type": "build",
-          "name": "build-dev-llvm-env-relwithdebinfo"
+          "name": "test-dev-llvm-env-smoke"
         },
         {
           "type": "test",
-          "name": "test-dev-llvm-env-full-relwithdebinfo"
-        },
-        {
-          "type": "build",
-          "name": "build-dev-llvm-env-release"
+          "name": "test-dev-llvm-env-release-blocking"
         },
         {
           "type": "test",
-          "name": "test-dev-llvm-env-smoke-release"
-        },
-        {
-          "type": "build",
-          "name": "install-bin-dev-llvm-env-release"
-        },
-        {
-          "type": "build",
-          "name": "install-dev-dev-llvm-env-release"
+          "name": "test-dev-llvm-env-full"
         }
       ]
     },
     {
       "name": "matrix-dev-homebrew",
       "displayName": "Workflow (matrix dev-homebrew)",
-      "description": "Configure once, then run Debug smoke, RelWithDebInfo full, and Release build+smoke+binaries-install+dev-install.",
+      "description": "Configure, build, and run smoke, release-blocking, and full test lanes.",
       "steps": [
         {
           "type": "configure",
@@ -403,42 +226,26 @@
         },
         {
           "type": "build",
-          "name": "build-dev-homebrew-debug"
+          "name": "build-dev-homebrew"
         },
         {
           "type": "test",
-          "name": "test-dev-homebrew-smoke-debug"
-        },
-        {
-          "type": "build",
-          "name": "build-dev-homebrew-relwithdebinfo"
+          "name": "test-dev-homebrew-smoke"
         },
         {
           "type": "test",
-          "name": "test-dev-homebrew-full-relwithdebinfo"
-        },
-        {
-          "type": "build",
-          "name": "build-dev-homebrew-release"
+          "name": "test-dev-homebrew-release-blocking"
         },
         {
           "type": "test",
-          "name": "test-dev-homebrew-smoke-release"
-        },
-        {
-          "type": "build",
-          "name": "install-bin-dev-homebrew-release"
-        },
-        {
-          "type": "build",
-          "name": "install-dev-dev-homebrew-release"
+          "name": "test-dev-homebrew-full"
         }
       ]
     },
     {
       "name": "matrix-ci",
       "displayName": "Workflow (matrix ci)",
-      "description": "Configure once, then run Debug smoke, RelWithDebInfo Python-accelerator required gate + full suite, and Release build+smoke+binaries-install+dev-install.",
+      "description": "Configure, build, and run smoke, release-blocking, Python-accelerator-required, and full test lanes.",
       "steps": [
         {
           "type": "configure",
@@ -446,89 +253,23 @@
         },
         {
           "type": "build",
-          "name": "build-ci-debug"
+          "name": "build-ci"
         },
         {
           "type": "test",
-          "name": "test-ci-smoke-debug"
-        },
-        {
-          "type": "build",
-          "name": "build-ci-relwithdebinfo"
+          "name": "test-ci-smoke"
         },
         {
           "type": "test",
-          "name": "test-ci-python-accel-required-relwithdebinfo"
+          "name": "test-ci-release-blocking"
         },
         {
           "type": "test",
-          "name": "test-ci-full-relwithdebinfo"
-        },
-        {
-          "type": "build",
-          "name": "build-ci-release"
+          "name": "test-ci-python-accel-required"
         },
         {
           "type": "test",
-          "name": "test-ci-smoke-release"
-        },
-        {
-          "type": "build",
-          "name": "install-bin-ci-release"
-        },
-        {
-          "type": "build",
-          "name": "install-dev-ci-release"
-        }
-      ]
-    },
-    {
-      "name": "install-bin-release-ci",
-      "displayName": "Workflow (ci binary/release install)",
-      "description": "Configure once, build Release, run Release smoke tests, then install binaries only.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "ci"
-        },
-        {
-          "type": "build",
-          "name": "build-ci-release"
-        },
-        {
-          "type": "test",
-          "name": "test-ci-smoke-release"
-        },
-        {
-          "type": "build",
-          "name": "install-bin-ci-release"
-        }
-      ]
-    },
-    {
-      "name": "install-dev-debug-ci",
-      "displayName": "Workflow (ci binary/debug + dev install)",
-      "description": "Configure once, build Debug, run Debug smoke tests, then install debug binaries and development files.",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "ci"
-        },
-        {
-          "type": "build",
-          "name": "build-ci-debug"
-        },
-        {
-          "type": "test",
-          "name": "test-ci-smoke-debug"
-        },
-        {
-          "type": "build",
-          "name": "install-bin-ci-debug"
-        },
-        {
-          "type": "build",
-          "name": "install-dev-ci-debug"
+          "name": "test-ci-full"
         }
       ]
     }

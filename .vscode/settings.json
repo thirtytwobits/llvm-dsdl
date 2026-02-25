@@ -1,6 +1,6 @@
 {
     "clangd.arguments": [
-        "--compile-commands-dir=build/dev-homebrew"
+        "--compile-commands-dir=build"
     ],
     "cSpell.words": [
         "appendable",

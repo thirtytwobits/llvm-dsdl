@@ -56,18 +56,21 @@ def DSDL_SerializationPlanOp
   let summary = "Container for explicit wire-layout operations";
   let regions = (region AnyRegion:$body);
   let assemblyFormat = "attr-dict-with-keyword $body";
+  let hasVerifier = 1;
 }
 
 def DSDL_AlignOp : DSDL_Op<"align", [NoMemoryEffect]> {
   let summary = "Alignment event in serialization plan";
   let arguments = (ins I32Attr:$bits);
   let assemblyFormat = "attr-dict";
+  let hasVerifier = 1;
 }
 
 def DSDL_IOOp : DSDL_Op<"io", [NoMemoryEffect]> {
   let summary = "Wire I/O event in serialization plan";
   let arguments = (ins StrAttr:$kind, StrAttr:$name, StrAttr:$type_name);
   let assemblyFormat = "attr-dict";
+  let hasVerifier = 1;
 }
 
 #endif // LLVMDSDL_IR_DSDL_OPS_TD

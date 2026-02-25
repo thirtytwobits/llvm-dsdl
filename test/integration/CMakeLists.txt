@@ -22,7 +22,7 @@ set(LLVMDSDL_PY_RUNTIME_BENCH_ITERATIONS_LARGE
     CACHE STRING
     "Python runtime benchmark iterations for the large payload family.")
 set(LLVMDSDL_PY_RUNTIME_BENCH_ENABLE_THRESHOLDS
-    OFF
+    ON
     CACHE BOOL
     "Enable pass/fail threshold checks for the Python runtime benchmark integration test.")
 set(LLVMDSDL_PY_RUNTIME_BENCH_THRESHOLDS_JSON
@@ -34,19 +34,19 @@ set(LLVMDSDL_RUST_RUNTIME_BENCH_INLINE_THRESHOLD_BYTES
     CACHE STRING
     "Inline threshold in bytes used by Rust runtime memory-mode benchmark.")
 set(LLVMDSDL_RUST_RUNTIME_BENCH_ITERATIONS_SMALL
-    "12000"
+    "120000"
     CACHE STRING
     "Rust runtime benchmark iterations for the small payload family.")
 set(LLVMDSDL_RUST_RUNTIME_BENCH_ITERATIONS_MEDIUM
-    "4500"
+    "45000"
     CACHE STRING
     "Rust runtime benchmark iterations for the medium payload family.")
 set(LLVMDSDL_RUST_RUNTIME_BENCH_ITERATIONS_LARGE
-    "1000"
+    "10000"
     CACHE STRING
     "Rust runtime benchmark iterations for the large payload family.")
 set(LLVMDSDL_RUST_RUNTIME_BENCH_ENABLE_THRESHOLDS
-    OFF
+    ON
     CACHE BOOL
     "Enable pass/fail threshold checks for the Rust runtime benchmark integration test.")
 set(LLVMDSDL_RUST_RUNTIME_BENCH_THRESHOLDS_JSON
@@ -75,6 +75,128 @@ if(PYTHON_EXECUTABLE)
   set_tests_properties(
     llvmdsdl-convergence-scorecard
     PROPERTIES
+      LABELS "integration;convergence;release-blocking"
+  )
+
+  add_test(
+    NAME llvmdsdl-convergence-scorecard-selftest
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunConvergenceReportSelftest.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-convergence-scorecard-selftest
+    PROPERTIES
+      LABELS "integration;convergence"
+  )
+
+  add_test(
+    NAME llvmdsdl-convergence-matrix-reports-selftest
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DCTEST_TEST_DIR=${CMAKE_BINARY_DIR}
+        -DCTEST_CONFIG=$<CONFIG>
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunConvergenceMatrixReportsSelftest.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-convergence-matrix-reports-selftest
+    PROPERTIES
+      LABELS "integration;convergence"
+  )
+
+  add_test(
+    NAME llvmdsdl-runtime-semantic-wrapper-allowlist
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunRuntimeSemanticWrapperAllowlist.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-runtime-semantic-wrapper-allowlist
+    PROPERTIES
+      LABELS "integration;runtime;release-blocking"
+  )
+
+  add_test(
+    NAME llvmdsdl-runtime-semantic-wrapper-allowlist-selftest
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunRuntimeSemanticWrapperAllowlistSelftest.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-runtime-semantic-wrapper-allowlist-selftest
+    PROPERTIES
+      LABELS "integration;runtime"
+  )
+
+  add_test(
+    NAME llvmdsdl-execution-engine-boundary-guard
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunExecutionEngineBoundaryGuard.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-execution-engine-boundary-guard
+    PROPERTIES
+      LABELS "integration;convergence;release-blocking"
+  )
+
+  add_test(
+    NAME llvmdsdl-execution-engine-boundary-guard-selftest
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunExecutionEngineBoundaryGuardSelftest.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-execution-engine-boundary-guard-selftest
+    PROPERTIES
+      LABELS "integration;convergence"
+  )
+
+  add_test(
+    NAME llvmdsdl-hard-cut-integrity-guard
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunHardCutIntegrityGuard.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-hard-cut-integrity-guard
+    PROPERTIES
+      LABELS "integration;convergence;release-blocking"
+  )
+
+  add_test(
+    NAME llvmdsdl-hard-cut-integrity-guard-selftest
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunHardCutIntegrityGuardSelftest.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-hard-cut-integrity-guard-selftest
+    PROPERTIES
       LABELS "integration;convergence"
   )
 
@@ -87,6 +209,7 @@ if(PYTHON_EXECUTABLE)
         -DCTEST_TEST_DIR=${CMAKE_BINARY_DIR}
         -DOUTPUT_JSON=${CMAKE_CURRENT_BINARY_DIR}/parity-matrix-out/report.json
         -DOUTPUT_MD=${CMAKE_CURRENT_BINARY_DIR}/parity-matrix-out/PARITY_MATRIX.md
+        -DPARITY_BASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/tools/convergence/parity_matrix_baseline.json
         -DPARITY_MATRIX_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/convergence/parity_matrix_report.py
         -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunParityMatrixReport.cmake
   )
@@ -94,7 +217,7 @@ if(PYTHON_EXECUTABLE)
   set_tests_properties(
     llvmdsdl-parity-matrix-coverage
     PROPERTIES
-      LABELS "integration;convergence;parity"
+      LABELS "integration;convergence;parity;release-blocking"
   )
 
   add_test(
@@ -106,6 +229,7 @@ if(PYTHON_EXECUTABLE)
         -DCTEST_TEST_DIR=${CMAKE_BINARY_DIR}
         -DOUTPUT_JSON=${CMAKE_CURRENT_BINARY_DIR}/malformed-contract-matrix-out/report.json
         -DOUTPUT_MD=${CMAKE_CURRENT_BINARY_DIR}/malformed-contract-matrix-out/MALFORMED_INPUT_CONTRACT_MATRIX.md
+        -DMALFORMED_CONTRACT_BASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/tools/convergence/malformed_contract_matrix_baseline.json
         -DMALFORMED_CONTRACT_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/convergence/malformed_contract_matrix_report.py
         -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunMalformedContractMatrixReport.cmake
   )
@@ -113,7 +237,27 @@ if(PYTHON_EXECUTABLE)
   set_tests_properties(
     llvmdsdl-malformed-contract-matrix
     PROPERTIES
-      LABELS "integration;convergence;contract"
+      LABELS "integration;convergence;contract;release-blocking"
+  )
+
+  add_test(
+    NAME llvmdsdl-determinism-matrix-coverage
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DPYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
+        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DCTEST_TEST_DIR=${CMAKE_BINARY_DIR}
+        -DOUTPUT_JSON=${CMAKE_CURRENT_BINARY_DIR}/determinism-matrix-out/report.json
+        -DOUTPUT_MD=${CMAKE_CURRENT_BINARY_DIR}/determinism-matrix-out/DETERMINISM_MATRIX.md
+        -DDETERMINISM_BASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/tools/convergence/determinism_matrix_baseline.json
+        -DDETERMINISM_MATRIX_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/convergence/determinism_matrix_report.py
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunDeterminismMatrixReport.cmake
+  )
+
+  set_tests_properties(
+    llvmdsdl-determinism-matrix-coverage
+    PROPERTIES
+      LABELS "integration;convergence;determinism;release-blocking"
   )
 else()
   message(STATUS "Skipping convergence scorecard test: python3 unavailable")
@@ -1904,7 +2048,7 @@ if(PYTHON_EXECUTABLE)
   set_tests_properties(
     llvmdsdl-uavcan-python-runtime-bench
     PROPERTIES
-      LABELS "integration;uavcan;python;bench;slow"
+      LABELS "integration;uavcan;python;bench;slow;release-blocking"
   )
 
   add_test(
@@ -2150,7 +2294,7 @@ if(CARGO_EXECUTABLE AND RUSTC_EXECUTABLE)
   set_tests_properties(
     llvmdsdl-fixtures-rust-runtime-bench
     PROPERTIES
-      LABELS "integration;fixtures;rust;runtime;bench;slow;rust-memory-mode"
+      LABELS "integration;fixtures;rust;runtime;bench;slow;rust-memory-mode;release-blocking"
   )
 
   add_test(

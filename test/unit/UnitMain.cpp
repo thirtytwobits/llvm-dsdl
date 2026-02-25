@@ -40,6 +40,7 @@ bool runHelperSymbolResolverTests();
 bool runWireLayoutFactsTests();
 bool runTypeStorageTests();
 bool runStorageTypeTokensTests();
+bool runLoweredContractVersionTests();
 bool runLoweredMetadataHardeningTests();
 bool runLspDocumentStoreTests();
 bool runLspRequestSchedulerTests();
@@ -87,6 +88,7 @@ int main()
     ok      = runWireLayoutFactsTests() && ok;
     ok      = runTypeStorageTests() && ok;
     ok      = runStorageTypeTokensTests() && ok;
+    ok      = runLoweredContractVersionTests() && ok;
     ok      = runLoweredMetadataHardeningTests() && ok;
     ok      = runLspDocumentStoreTests() && ok;
     ok      = runLspRequestSchedulerTests() && ok;

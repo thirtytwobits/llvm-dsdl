@@ -92,7 +92,7 @@ cmake --workflow --preset matrix-dev-llvm-env
 cmake --workflow --preset matrix-ci
 ```
 
-These run configured build/test/install sequences using current preset policy.
+These run configured build/test sequences using current preset policy.
 
 ## 6. Install Modes
 
@@ -106,21 +106,7 @@ The CMake custom targets are:
 - `install-bin`
 - `install-dev`
 
-### 6.1 Dedicated Install Workflows
-
-Binary/release workflow:
-
-```bash
-cmake --workflow --preset install-bin-release-ci
-```
-
-Binary/debug + development install workflow:
-
-```bash
-cmake --workflow --preset install-dev-debug-ci
-```
-
-### 6.2 Manual Install Invocations
+### 6.1 Manual Install Invocations
 
 From an already-configured build tree:
 
@@ -149,10 +135,13 @@ cmake --build build/matrix/ci --config Debug --target install-dev
 
 ### 7.1 Build presets
 
+Each build preset builds the default configuration (`Debug`).  Pass `--config <cfg>` to
+override:
+
 ```bash
-cmake --build --preset build-dev-homebrew-debug
-cmake --build --preset build-dev-homebrew-relwithdebinfo
-cmake --build --preset build-dev-homebrew-release
+cmake --build --preset build-dev-homebrew
+cmake --build --preset build-dev-homebrew --config RelWithDebInfo
+cmake --build --preset build-dev-homebrew --config Release
 ```
 
 ### 7.2 Test presets
@@ -160,21 +149,45 @@ cmake --build --preset build-dev-homebrew-release
 Smoke tests (exclude integration-labeled tests):
 
 ```bash
-ctest --preset test-dev-homebrew-smoke-debug
-ctest --preset test-dev-homebrew-smoke-release
+ctest --preset test-dev-homebrew-smoke
+ctest --preset test-ci-smoke
 ```
 
 Full suite (preset-defined full lane):
 
 ```bash
-ctest --preset test-dev-homebrew-full-relwithdebinfo
-ctest --preset test-ci-full-relwithdebinfo
+ctest --preset test-dev-homebrew-full
+ctest --preset test-ci-full
 ```
+
+Release-blocking architecture gates:
+
+```bash
+ctest --preset test-dev-homebrew-release-blocking
+ctest --preset test-ci-release-blocking
+```
+
+These lanes include runtime benchmark threshold gates by default.
+They also include execution-engine boundary validation (shared emitter orchestration guards).
+They also include hard-cut integrity validation (no-shim canonical-path guard).
+Threshold policy is 5% regression budget vs in-repo baselines in:
+- [`test/integration/python_runtime_bench_thresholds.json`](./test/integration/python_runtime_bench_thresholds.json)
+- [`test/integration/rust_runtime_bench_thresholds.json`](./test/integration/rust_runtime_bench_thresholds.json)
+If an intentional performance shift is accepted, update these files in the same PR.
+
+Convergence/runtime validator self-tests:
+
+```bash
+ctest --preset test-dev-homebrew-full -R 'llvmdsdl-(convergence-scorecard-selftest|convergence-matrix-reports-selftest|runtime-semantic-wrapper-allowlist-selftest|execution-engine-boundary-guard-selftest|hard-cut-integrity-guard-selftest)'
+```
+
+Convergence scorecards include helper-binding completeness classification
+alongside verifier-first, contract-v2, and fallback-free dimensions.
 
 CI accelerator-required lane:
 
 ```bash
-ctest --preset test-ci-python-accel-required-relwithdebinfo
+ctest --preset test-ci-python-accel-required
 ```
 
 ### 7.3 Direct targeted test runs
@@ -189,29 +202,31 @@ ctest --test-dir build/matrix/dev-homebrew -C RelWithDebInfo --output-on-failure
 Generate all `uavcan` backends:
 
 ```bash
-cmake --build --preset build-dev-homebrew-relwithdebinfo --target generate-uavcan-all
+cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target generate-uavcan-all
 ```
 
 Common quality targets:
 
 ```bash
-cmake --build --preset build-dev-homebrew-relwithdebinfo --target check-format
-cmake --build --preset build-dev-homebrew-relwithdebinfo --target check-iwyu
-cmake --build --preset build-dev-homebrew-relwithdebinfo --target check-clang-tidy
+cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target check-format
+cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target check-iwyu
+cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target check-clang-tidy
 ```
 
 Formatting rewrite:
 
 ```bash
-cmake --build --preset build-dev-homebrew-relwithdebinfo --target format-source
+cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target format-source
 ```
 
 Convergence/parity/contract report targets:
 
 ```bash
-cmake --build --preset build-dev-homebrew-relwithdebinfo --target convergence-report
-cmake --build --preset build-dev-homebrew-relwithdebinfo --target parity-matrix-report
-cmake --build --preset build-dev-homebrew-relwithdebinfo --target malformed-contract-report
+cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target convergence-report
+cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target parity-matrix-report
+cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target malformed-contract-report
+cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target determinism-matrix-report
+cmake --build --preset build-dev-homebrew --config RelWithDebInfo --target release-blocking-report-gates
 ```
 
 ## 9. Optional Coverage Workflow
@@ -238,6 +253,15 @@ cmake --build build/coverage --config RelWithDebInfo --target coverage-report -j
 When touching backend code generation semantics, prefer shared planning and
 helper layers in [`lib/CodeGen`](./lib/CodeGen) and avoid re-introducing backend-local duplicate
 logic for core serdes semantics.
+When touching runtime behavior above primitive bit/number operations, keep
+exceptions explicit in [`runtime/semantic_wrapper_allowlist.json`](./runtime/semantic_wrapper_allowlist.json)
+with owner and rationale.
+Generate runtime semantic wrappers from templates before commit:
+`python3 tools/runtime/generate_runtime_semantic_wrappers.py --repo-root .`
+Validate allowlist integrity with the release-blocking integration lane
+`llvmdsdl-runtime-semantic-wrapper-allowlist` (includes semantic-wrapper generation drift checks).
+Use `llvmdsdl-runtime-semantic-wrapper-allowlist-selftest` to regression-test
+validator and generation-check mutation coverage.
 
 ### 10.2 Add tests with behavior changes
 

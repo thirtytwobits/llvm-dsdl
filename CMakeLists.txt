@@ -307,6 +307,7 @@ if(LLVMDSDL_PYTHON3_EXE)
         -DCTEST_CONFIG=$<CONFIG>
         -DOUTPUT_JSON=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/parity-matrix-report.json
         -DOUTPUT_MD=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/PARITY_MATRIX.md
+        -DPARITY_BASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/tools/convergence/parity_matrix_baseline.json
         -DPARITY_MATRIX_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/convergence/parity_matrix_report.py
         -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunParityMatrixReport.cmake
     USES_TERMINAL
@@ -333,6 +334,7 @@ if(LLVMDSDL_PYTHON3_EXE)
         -DCTEST_CONFIG=$<CONFIG>
         -DOUTPUT_JSON=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/malformed-contract-matrix-report.json
         -DOUTPUT_MD=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/MALFORMED_INPUT_CONTRACT_MATRIX.md
+        -DMALFORMED_CONTRACT_BASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/tools/convergence/malformed_contract_matrix_baseline.json
         -DMALFORMED_CONTRACT_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/convergence/malformed_contract_matrix_report.py
         -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunMalformedContractMatrixReport.cmake
     USES_TERMINAL
@@ -348,6 +350,37 @@ else()
     COMMENT "malformed-contract-report requires python3"
   )
 endif()
+
+if(LLVMDSDL_PYTHON3_EXE)
+  add_custom_target(determinism-matrix-report
+    COMMAND
+      ${CMAKE_COMMAND}
+        -DPYTHON_EXECUTABLE=${LLVMDSDL_PYTHON3_EXE}
+        -DREPO_ROOT=${LLVMDSDL_SOURCE_DIR}
+        -DCTEST_TEST_DIR=${LLVMDSDL_BINARY_DIR}
+        -DCTEST_CONFIG=$<CONFIG>
+        -DOUTPUT_JSON=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/determinism-matrix-report.json
+        -DOUTPUT_MD=${LLVMDSDL_BINARY_DIR}/convergence/$<CONFIG>/DETERMINISM_MATRIX.md
+        -DDETERMINISM_BASELINE_JSON=${LLVMDSDL_SOURCE_DIR}/tools/convergence/determinism_matrix_baseline.json
+        -DDETERMINISM_MATRIX_SCRIPT=${LLVMDSDL_SOURCE_DIR}/tools/convergence/determinism_matrix_report.py
+        -P ${LLVMDSDL_SOURCE_DIR}/cmake/RunDeterminismMatrixReport.cmake
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "Generating determinism matrix coverage report"
+  )
+else()
+  add_custom_target(determinism-matrix-report
+    COMMAND ${CMAKE_COMMAND} -E echo "python3 not found; cannot run determinism-matrix-report"
+    COMMAND ${CMAKE_COMMAND} -E false
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "determinism-matrix-report requires python3"
+  )
+endif()
+
+add_custom_target(release-blocking-report-gates
+  DEPENDS convergence-report parity-matrix-report malformed-contract-report determinism-matrix-report
+)
 
 add_subdirectory(include/llvmdsdl)
 add_subdirectory(lib)

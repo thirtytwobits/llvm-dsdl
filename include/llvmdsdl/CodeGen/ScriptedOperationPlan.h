@@ -21,7 +21,10 @@
 #include <cstdint>
 #include <vector>
 
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
 #include "llvmdsdl/CodeGen/ScriptedBodyPlan.h"
+#include "llvmdsdl/CodeGen/WireOperationContract.h"
 
 namespace llvmdsdl
 {
@@ -77,6 +80,9 @@ struct ScriptedFieldOperationPlan final
 /// @brief One scripted section operation plan.
 struct ScriptedSectionOperationPlan final
 {
+    /// @brief Wire-operation contract version consumed by this scripted plan.
+    std::int64_t contractVersion{kWireOperationContractVersion};
+
     /// @brief Union flag.
     bool isUnion{false};
 
@@ -99,10 +105,18 @@ struct ScriptedSectionOperationPlan final
 /// @param[in] sectionFacts Optional lowered helper facts.
 /// @param[in] helperNameResolver Lowered symbol-to-emitted-name callback.
 /// @return Scripted section operation plan.
-ScriptedSectionOperationPlan buildScriptedSectionOperationPlan(const SemanticSection&           section,
-                                                               const RuntimeSectionPlan&        runtimePlan,
-                                                               const LoweredSectionFacts*       sectionFacts,
-                                                               const RuntimeHelperNameResolver& helperNameResolver);
+llvm::Expected<ScriptedSectionOperationPlan> buildScriptedSectionOperationPlan(
+    const SemanticSection&           section,
+    const RuntimeSectionPlan&        runtimePlan,
+    const LoweredSectionFacts*       sectionFacts,
+    const RuntimeHelperNameResolver& helperNameResolver);
+
+/// @brief Validates wire-operation contract version for scripted section plans.
+/// @param[in] plan Scripted section operation plan.
+/// @param[in] consumerLabel Deterministic consumer label for diagnostics.
+/// @return Success on supported major version; error otherwise.
+llvm::Error validateScriptedSectionOperationPlanContract(const ScriptedSectionOperationPlan& plan,
+                                                         llvm::StringRef                     consumerLabel);
 
 }  // namespace llvmdsdl
 

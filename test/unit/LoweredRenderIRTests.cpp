@@ -19,6 +19,8 @@
 #include "llvmdsdl/CodeGen/SerDesHelperDescriptors.h"
 #include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
 #include "llvmdsdl/Semantics/Model.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
 
 bool runLoweredRenderIRTests()
 {
@@ -50,6 +52,11 @@ bool runLoweredRenderIRTests()
         if (!renderIR.helperBindings.capacityCheck || renderIR.helperBindings.capacityCheck->symbol != "cap")
         {
             std::cerr << "lowered render ir missing capacity helper\n";
+            return false;
+        }
+        if (renderIR.contractVersion != llvmdsdl::kWireOperationContractVersion)
+        {
+            std::cerr << "lowered render ir contract-version mismatch\n";
             return false;
         }
         if (renderIR.steps.size() != 2)
@@ -176,6 +183,23 @@ bool runLoweredRenderIRTests()
         if (fieldCalls != 0U || paddingCalls != 0U)
         {
             std::cerr << "lowered render traversal should skip null field/padding steps\n";
+            return false;
+        }
+    }
+
+    {
+        llvmdsdl::LoweredBodyRenderIR invalidRenderIR;
+        invalidRenderIR.contractVersion = llvmdsdl::kWireOperationContractVersion + 1;
+        auto err = llvmdsdl::validateLoweredBodyRenderIRContract(invalidRenderIR, "lowered-render-ir-tests");
+        if (!err)
+        {
+            std::cerr << "lowered render ir should reject unsupported wire-operation major version\n";
+            return false;
+        }
+        const std::string errText = llvm::toString(std::move(err));
+        if (!llvm::StringRef(errText).contains("unsupported wire-operation contract major version"))
+        {
+            std::cerr << "unexpected lowered render ir contract error text: " << errText << "\n";
             return false;
         }
     }

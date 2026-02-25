@@ -2,14 +2,14 @@
   "version": 1,
   "minimum_scores": {
     "backends": {
-      "c": 70,
+      "c": 85,
       "cpp": 90,
       "rust": 90,
       "go": 90,
       "ts": 90,
       "python": 90
     },
-    "project_floor": 85
+    "project_floor": 90
   },
   "expected": {
     "c": {
@@ -22,7 +22,11 @@
       "section_capacity_precheck": "shared",
       "alignment_padding_orchestration": "shared",
       "malformed_input_diagnostic_text": "backend-local",
-      "lowered_contract_validation": "shared"
+      "lowered_contract_validation": "shared",
+      "helper_binding_completeness": "shared",
+      "verifier_first_invariants": "shared",
+      "contract_v2_usage": "shared",
+      "fallback_free_semantic_execution": "shared"
     },
     "cpp": {
       "field_step_ordering": "shared",
@@ -34,7 +38,11 @@
       "section_capacity_precheck": "shared",
       "alignment_padding_orchestration": "shared",
       "malformed_input_diagnostic_text": "shared",
-      "lowered_contract_validation": "shared"
+      "lowered_contract_validation": "shared",
+      "helper_binding_completeness": "shared",
+      "verifier_first_invariants": "shared",
+      "contract_v2_usage": "shared",
+      "fallback_free_semantic_execution": "shared"
     },
     "rust": {
       "field_step_ordering": "shared",
@@ -46,7 +54,11 @@
       "section_capacity_precheck": "shared",
       "alignment_padding_orchestration": "shared",
       "malformed_input_diagnostic_text": "shared",
-      "lowered_contract_validation": "shared"
+      "lowered_contract_validation": "shared",
+      "helper_binding_completeness": "shared",
+      "verifier_first_invariants": "shared",
+      "contract_v2_usage": "shared",
+      "fallback_free_semantic_execution": "shared"
     },
     "go": {
       "field_step_ordering": "shared",
@@ -58,7 +70,11 @@
       "section_capacity_precheck": "shared",
       "alignment_padding_orchestration": "shared",
       "malformed_input_diagnostic_text": "shared",
-      "lowered_contract_validation": "shared"
+      "lowered_contract_validation": "shared",
+      "helper_binding_completeness": "shared",
+      "verifier_first_invariants": "shared",
+      "contract_v2_usage": "shared",
+      "fallback_free_semantic_execution": "shared"
     },
     "ts": {
       "field_step_ordering": "shared",
@@ -70,7 +86,11 @@
       "section_capacity_precheck": "shared",
       "alignment_padding_orchestration": "shared",
       "malformed_input_diagnostic_text": "shared",
-      "lowered_contract_validation": "shared"
+      "lowered_contract_validation": "shared",
+      "helper_binding_completeness": "shared",
+      "verifier_first_invariants": "shared",
+      "contract_v2_usage": "shared",
+      "fallback_free_semantic_execution": "shared"
     },
     "python": {
       "field_step_ordering": "shared",
@@ -82,7 +102,11 @@
       "section_capacity_precheck": "shared",
       "alignment_padding_orchestration": "shared",
       "malformed_input_diagnostic_text": "shared",
-      "lowered_contract_validation": "shared"
+      "lowered_contract_validation": "shared",
+      "helper_binding_completeness": "shared",
+      "verifier_first_invariants": "shared",
+      "contract_v2_usage": "shared",
+      "fallback_free_semantic_execution": "shared"
     }
   }
 }

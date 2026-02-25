@@ -1,31 +1,49 @@
 {
+  "meta": {
+    "regression_budget_percent": 5,
+    "aggregation": "max(observed_elapsed_sec) * 1.05",
+    "updated_utc": "2026-02-24T21:55:28Z",
+    "derived_from_reports": [
+      "build/matrix/dev-homebrew/test/integration/bench-threshold-calibration-v3/rust-runtime-bench-1.json",
+      "build/matrix/dev-homebrew/test/integration/bench-threshold-calibration-v3/rust-runtime-bench-2.json",
+      "build/matrix/dev-homebrew/test/integration/bench-threshold-calibration-v3/rust-runtime-bench-3.json",
+      "build/matrix/dev-homebrew/test/integration/bench-threshold-calibration-v3/rust-runtime-bench-4.json",
+      "build/matrix/dev-homebrew/test/integration/bench-threshold-calibration-v3/rust-runtime-bench-5.json",
+      "build/matrix/dev-homebrew/test/integration/bench-threshold-calibration-v3/rust-runtime-bench-6.json",
+      "build/matrix/dev-homebrew/test/integration/bench-threshold-calibration-v3/rust-runtime-bench-7.json"
+    ],
+    "outlier_observations": [
+      "release-blocking-2026-02-24 max-inline/small/encode observed=0.010259416",
+      "release-blocking-2026-02-24 inline-then-pool/small/encode observed=0.010117833"
+    ]
+  },
   "max_elapsed_sec": {
     "max-inline": {
       "small": {
-        "encode": 0.0,
-        "decode": 0.0
+        "encode": 0.010772,
+        "decode": 0.039112
       },
       "medium": {
-        "encode": 0.0,
-        "decode": 0.0
+        "encode": 0.014875,
+        "decode": 0.113054
       },
       "large": {
-        "encode": 0.0,
-        "decode": 0.0
+        "encode": 0.015267,
+        "decode": 0.145297
       }
     },
     "inline-then-pool": {
       "small": {
-        "encode": 0.0,
-        "decode": 0.0
+        "encode": 0.010624,
+        "decode": 0.038199
       },
       "medium": {
-        "encode": 0.0,
-        "decode": 0.0
+        "encode": 0.014827,
+        "decode": 0.113215
       },
       "large": {
-        "encode": 0.0,
-        "decode": 0.0
+        "encode": 0.015061,
+        "decode": 0.145025
       }
     }
   }

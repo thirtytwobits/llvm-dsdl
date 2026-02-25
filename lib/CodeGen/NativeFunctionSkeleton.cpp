@@ -20,6 +20,7 @@
 
 #include "llvmdsdl/CodeGen/LoweredRenderIR.h"
 #include "llvmdsdl/CodeGen/NativeHelperContract.h"
+#include "llvm/Support/Error.h"
 
 namespace llvmdsdl
 {
@@ -30,6 +31,14 @@ bool emitNativeFunctionSkeleton(const SemanticSection&                 section,
                                 const NativeFunctionSkeletonCallbacks& callbacks)
 {
     const auto renderIR = buildLoweredBodyRenderIR(section, sectionFacts, direction);
+    if (auto contractErr = validateLoweredBodyRenderIRContract(renderIR, "native-function-skeleton"))
+    {
+        if (callbacks.emitMissingHelperContract)
+        {
+            callbacks.emitMissingHelperContract(llvm::toString(std::move(contractErr)));
+        }
+        return false;
+    }
     if (callbacks.emitHelperBindings)
     {
         callbacks.emitHelperBindings(renderIR.helperBindings);

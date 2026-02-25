@@ -35,6 +35,7 @@
 #include <variant>
 
 #include "llvmdsdl/CodeGen/ArrayWirePlan.h"
+#include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
@@ -1236,11 +1237,12 @@ llvm::Error emitGo(const SemanticModule& semantic,
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "output directory is required");
     }
+    const auto mlirCoverageDiagnostic =
+        codegen_diagnostic_text::mlirSchemaCoverageValidationFailedForEmission("Go");
     LoweredFactsMap loweredFacts;
     if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "Go", &loweredFacts, options.optimizeLoweredSerDes))
     {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "MLIR schema coverage validation failed for Go emission");
+        return llvm::createStringError(llvm::inconvertibleErrorCode(), "%s", mlirCoverageDiagnostic.c_str());
     }
 
     std::filesystem::path outRoot(options.outDir);

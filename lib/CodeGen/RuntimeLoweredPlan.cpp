@@ -64,6 +64,10 @@ llvm::Expected<std::vector<RuntimeOrderedFieldStep>> buildRuntimeOrderedFieldSte
     }
 
     const auto renderIR = buildLoweredBodyRenderIR(section, sectionFacts, HelperBindingDirection::Serialize);
+    if (auto contractErr = validateLoweredBodyRenderIRContract(renderIR, "runtime-lowered-plan"))
+    {
+        return std::move(contractErr);
+    }
     std::vector<RuntimeOrderedFieldStep> out;
 
     if (section.isUnion)
@@ -145,7 +149,8 @@ llvm::Expected<RuntimeSectionPlan> buildRuntimeSectionPlan(const SemanticSection
                                                            const LoweredSectionFacts* const sectionFacts)
 {
     RuntimeSectionPlan plan;
-    plan.isUnion                      = section.isUnion;
+    plan.contractVersion             = kWireOperationContractVersion;
+    plan.isUnion                     = section.isUnion;
     std::int64_t                maxBits = 0;
     std::optional<std::int64_t> unionTagBits;
     std::set<std::uint32_t>     unionOptionIndexes;
@@ -388,7 +393,23 @@ llvm::Expected<RuntimeSectionPlan> buildRuntimeSectionPlan(const SemanticSection
     {
         plan.maxBits = std::max(section.maxBitLength, maxBits);
     }
+    if (auto contractErr = validateRuntimeSectionPlanContract(plan, "runtime-lowered-plan"))
+    {
+        return std::move(contractErr);
+    }
     return plan;
+}
+
+llvm::Error validateRuntimeSectionPlanContract(const RuntimeSectionPlan& plan, const llvm::StringRef consumerLabel)
+{
+    if (isSupportedWireOperationContractVersion(plan.contractVersion))
+    {
+        return llvm::Error::success();
+    }
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "unsupported wire-operation contract major version for %s: %s",
+                                   consumerLabel.str().c_str(),
+                                   wireOperationUnsupportedMajorVersionDiagnosticDetail(plan.contractVersion).c_str());
 }
 
 }  // namespace llvmdsdl

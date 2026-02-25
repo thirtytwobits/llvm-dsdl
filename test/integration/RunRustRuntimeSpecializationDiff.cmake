@@ -68,9 +68,11 @@ foreach(required
     "${portable_out}/Cargo.toml"
     "${portable_out}/src/lib.rs"
     "${portable_out}/src/dsdl_runtime.rs"
+    "${portable_out}/src/dsdl_runtime_semantic_wrappers.rs"
     "${fast_out}/Cargo.toml"
     "${fast_out}/src/lib.rs"
-    "${fast_out}/src/dsdl_runtime.rs")
+    "${fast_out}/src/dsdl_runtime.rs"
+    "${fast_out}/src/dsdl_runtime_semantic_wrappers.rs")
   if(NOT EXISTS "${required}")
     message(FATAL_ERROR "Missing required generated file: ${required}")
   endif()
@@ -110,7 +112,7 @@ file(GLOB_RECURSE fast_rs "${fast_src}/*.rs")
 set(portable_semantic_files "")
 foreach(path IN LISTS portable_rs)
   file(RELATIVE_PATH rel "${portable_src}" "${path}")
-  if(rel STREQUAL "lib.rs" OR rel STREQUAL "dsdl_runtime.rs")
+  if(rel STREQUAL "lib.rs" OR rel STREQUAL "dsdl_runtime.rs" OR rel STREQUAL "dsdl_runtime_semantic_wrappers.rs")
     continue()
   endif()
   list(APPEND portable_semantic_files "${rel}")
@@ -119,7 +121,7 @@ endforeach()
 set(fast_semantic_files "")
 foreach(path IN LISTS fast_rs)
   file(RELATIVE_PATH rel "${fast_src}" "${path}")
-  if(rel STREQUAL "lib.rs" OR rel STREQUAL "dsdl_runtime.rs")
+  if(rel STREQUAL "lib.rs" OR rel STREQUAL "dsdl_runtime.rs" OR rel STREQUAL "dsdl_runtime_semantic_wrappers.rs")
     continue()
   endif()
   list(APPEND fast_semantic_files "${rel}")

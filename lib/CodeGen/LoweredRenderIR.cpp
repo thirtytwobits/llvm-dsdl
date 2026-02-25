@@ -19,6 +19,7 @@
 #include <utility>
 
 #include "llvmdsdl/Semantics/Model.h"
+#include "llvm/Support/Error.h"
 
 namespace llvmdsdl
 {
@@ -29,6 +30,7 @@ LoweredBodyRenderIR buildLoweredBodyRenderIR(const SemanticSection&       sectio
                                              const HelperBindingDirection direction)
 {
     LoweredBodyRenderIR out;
+    out.contractVersion          = kWireOperationContractVersion;
     const auto          statementPlan = buildSectionStatementPlan(section, sectionFacts);
     out.helperBindings                = buildSectionHelperBindingPlan(section, sectionFacts, direction);
 
@@ -57,6 +59,20 @@ LoweredBodyRenderIR buildLoweredBodyRenderIR(const SemanticSection&       sectio
         out.steps.push_back(std::move(step));
     }
     return out;
+}
+
+llvm::Error validateLoweredBodyRenderIRContract(const LoweredBodyRenderIR& renderIR,
+                                                const llvm::StringRef       consumerLabel)
+{
+    if (isSupportedWireOperationContractVersion(renderIR.contractVersion))
+    {
+        return llvm::Error::success();
+    }
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "unsupported wire-operation contract major version for %s: %s",
+                                   consumerLabel.str().c_str(),
+                                   wireOperationUnsupportedMajorVersionDiagnosticDetail(renderIR.contractVersion)
+                                       .c_str());
 }
 
 void forEachLoweredRenderStep(const LoweredBodyRenderIR& renderIR, const LoweredRenderStepCallbacks& callbacks)

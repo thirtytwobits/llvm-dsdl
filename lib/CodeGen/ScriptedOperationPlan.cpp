@@ -60,18 +60,25 @@ ScriptedFieldValueKind classifyFieldValueKind(const RuntimeFieldKind kind)
 
 }  // namespace
 
-ScriptedSectionOperationPlan buildScriptedSectionOperationPlan(const SemanticSection&           section,
-                                                               const RuntimeSectionPlan&        runtimePlan,
-                                                               const LoweredSectionFacts*       sectionFacts,
-                                                               const RuntimeHelperNameResolver& helperNameResolver)
+llvm::Expected<ScriptedSectionOperationPlan> buildScriptedSectionOperationPlan(
+    const SemanticSection&           section,
+    const RuntimeSectionPlan&        runtimePlan,
+    const LoweredSectionFacts*       sectionFacts,
+    const RuntimeHelperNameResolver& helperNameResolver)
 {
+    if (auto contractErr = validateRuntimeSectionPlanContract(runtimePlan, "scripted-operation-plan"))
+    {
+        return std::move(contractErr);
+    }
+
     const auto bodyPlan = buildScriptedSectionBodyPlan(section, runtimePlan, sectionFacts, helperNameResolver);
 
     ScriptedSectionOperationPlan out;
-    out.isUnion        = runtimePlan.isUnion;
-    out.unionTagBits   = runtimePlan.unionTagBits;
-    out.maxBits        = runtimePlan.maxBits;
-    out.sectionHelpers = bodyPlan.sectionHelpers;
+    out.contractVersion = runtimePlan.contractVersion;
+    out.isUnion         = runtimePlan.isUnion;
+    out.unionTagBits    = runtimePlan.unionTagBits;
+    out.maxBits         = runtimePlan.maxBits;
+    out.sectionHelpers  = bodyPlan.sectionHelpers;
     out.fields.reserve(bodyPlan.fields.size());
     for (const auto& bodyField : bodyPlan.fields)
     {
@@ -81,7 +88,24 @@ ScriptedSectionOperationPlan buildScriptedSectionOperationPlan(const SemanticSec
         operation.valueKind   = classifyFieldValueKind(bodyField.field.kind);
         out.fields.push_back(std::move(operation));
     }
-    return out;
+    if (auto contractErr = validateScriptedSectionOperationPlanContract(out, "scripted-operation-plan"))
+    {
+        return std::move(contractErr);
+    }
+    return llvm::Expected<ScriptedSectionOperationPlan>(std::move(out));
+}
+
+llvm::Error validateScriptedSectionOperationPlanContract(const ScriptedSectionOperationPlan& plan,
+                                                         const llvm::StringRef               consumerLabel)
+{
+    if (isSupportedWireOperationContractVersion(plan.contractVersion))
+    {
+        return llvm::Error::success();
+    }
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "unsupported wire-operation contract major version for %s: %s",
+                                   consumerLabel.str().c_str(),
+                                   wireOperationUnsupportedMajorVersionDiagnosticDetail(plan.contractVersion).c_str());
 }
 
 }  // namespace llvmdsdl

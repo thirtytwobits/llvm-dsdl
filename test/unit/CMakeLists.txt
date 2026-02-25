@@ -33,6 +33,7 @@ add_executable(llvmdsdl-unit-tests
   WireLayoutFactsTests.cpp
   TypeStorageTests.cpp
   StorageTypeTokensTests.cpp
+  LoweredContractVersionTests.cpp
   LoweredMetadataHardeningTests.cpp
   LspDocumentStoreTests.cpp
   LspRequestSchedulerTests.cpp

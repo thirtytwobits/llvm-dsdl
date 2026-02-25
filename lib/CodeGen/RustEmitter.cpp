@@ -35,6 +35,7 @@
 #include <variant>
 
 #include "llvmdsdl/CodeGen/ArrayWirePlan.h"
+#include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
@@ -1374,14 +1375,14 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
     return out.str();
 }
 
-llvm::Expected<std::string> loadRustRuntime()
+llvm::Expected<std::string> loadRustRuntimeFile(const std::string& fileName)
 {
     const std::filesystem::path runtimePath =
-        std::filesystem::path(LLVMDSDL_SOURCE_DIR) / "runtime" / "rust" / "dsdl_runtime.rs";
+        std::filesystem::path(LLVMDSDL_SOURCE_DIR) / "runtime" / "rust" / fileName;
     std::ifstream in(runtimePath.string());
     if (!in)
     {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(), "failed to read Rust runtime");
+        return llvm::createStringError(llvm::inconvertibleErrorCode(), "failed to read Rust runtime file: %s", fileName.c_str());
     }
     std::ostringstream content;
     content << in.rdbuf();
@@ -1451,6 +1452,8 @@ llvm::Error emitRust(const SemanticModule&  semantic,
     {
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "output directory is required");
     }
+    const auto mlirCoverageDiagnostic =
+        codegen_diagnostic_text::mlirSchemaCoverageValidationFailedForEmission("Rust");
     LoweredFactsMap loweredFacts;
     if (!collectLoweredFactsFromMlir(semantic,
                                      module,
@@ -1459,8 +1462,7 @@ llvm::Error emitRust(const SemanticModule&  semantic,
                                      &loweredFacts,
                                      options.optimizeLoweredSerDes))
     {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "MLIR schema coverage validation failed for Rust emission");
+        return llvm::createStringError(llvm::inconvertibleErrorCode(), "%s", mlirCoverageDiagnostic.c_str());
     }
     std::filesystem::path outRoot(options.outDir);
     std::filesystem::path srcRoot          = outRoot / "src";
@@ -1474,13 +1476,26 @@ llvm::Error emitRust(const SemanticModule&  semantic,
         }
     }
 
-    auto runtime = loadRustRuntime();
+    auto runtime = loadRustRuntimeFile("dsdl_runtime.rs");
     if (!runtime)
     {
         return runtime.takeError();
     }
     if (auto err = writeGeneratedFile(srcRoot / "dsdl_runtime.rs",
                                       generatedCommentLine("Rust runtime scaffold") + "\n\n" + *runtime,
+                                      options.writePolicy))
+    {
+        return err;
+    }
+
+    auto semanticWrappers = loadRustRuntimeFile("dsdl_runtime_semantic_wrappers.rs");
+    if (!semanticWrappers)
+    {
+        return semanticWrappers.takeError();
+    }
+    if (auto err = writeGeneratedFile(srcRoot / "dsdl_runtime_semantic_wrappers.rs",
+                                      generatedCommentLine("Rust runtime semantic wrappers") + "\n\n" +
+                                          *semanticWrappers,
                                       options.writePolicy))
     {
         return err;

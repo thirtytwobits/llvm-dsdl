@@ -20,6 +20,12 @@ endif()
 if(NOT DEFINED PARITY_MATRIX_SCRIPT OR PARITY_MATRIX_SCRIPT STREQUAL "")
   message(FATAL_ERROR "PARITY_MATRIX_SCRIPT must be provided")
 endif()
+if(NOT DEFINED PARITY_BASELINE_JSON OR PARITY_BASELINE_JSON STREQUAL "")
+  message(FATAL_ERROR "PARITY_BASELINE_JSON must be provided")
+endif()
+if(NOT EXISTS "${PARITY_BASELINE_JSON}")
+  message(FATAL_ERROR "parity baseline file does not exist: ${PARITY_BASELINE_JSON}")
+endif()
 
 set(PARITY_MATRIX_ARGS
   "${PYTHON_EXECUTABLE}"
@@ -30,6 +36,8 @@ set(PARITY_MATRIX_ARGS
   "${OUTPUT_JSON}"
   --output-md
   "${OUTPUT_MD}"
+  --baseline
+  "${PARITY_BASELINE_JSON}"
   --check-regressions
 )
 

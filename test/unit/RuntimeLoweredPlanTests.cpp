@@ -63,7 +63,8 @@ bool runRuntimeLoweredPlanTests()
             return false;
         }
         const auto& runtimePlan = *runtimePlanOrErr;
-        if (runtimePlan.isUnion || runtimePlan.fields.size() != 2U ||
+        if (runtimePlan.contractVersion != llvmdsdl::kWireOperationContractVersion || runtimePlan.isUnion ||
+            runtimePlan.fields.size() != 2U ||
             runtimePlan.fields[0].semanticFieldName != "payload" ||
             runtimePlan.fields[0].arrayKind != llvmdsdl::RuntimeArrayKind::Variable ||
             runtimePlan.fields[0].arrayLengthPrefixBits != 12)
@@ -120,6 +121,23 @@ bool runRuntimeLoweredPlanTests()
             runtimePlan.fields[0].fieldName != "class")
         {
             std::cerr << "runtime plan should preserve semantic field identifiers without language projection\n";
+            return false;
+        }
+    }
+
+    {
+        llvmdsdl::RuntimeSectionPlan invalidPlan;
+        invalidPlan.contractVersion = llvmdsdl::kWireOperationContractVersion + 1;
+        auto err = llvmdsdl::validateRuntimeSectionPlanContract(invalidPlan, "runtime-lowered-plan-tests");
+        if (!err)
+        {
+            std::cerr << "runtime section plan should reject unsupported wire-operation major version\n";
+            return false;
+        }
+        const std::string errText = llvm::toString(std::move(err));
+        if (!llvm::StringRef(errText).contains("unsupported wire-operation contract major version"))
+        {
+            std::cerr << "unexpected runtime plan contract error text: " << errText << "\n";
             return false;
         }
     }

@@ -8,6 +8,7 @@
 #===----------------------------------------------------------------------===#
 
 add_library(llvmdsdlTransforms
+  LoweredSerDesContractValidation.cpp
   Passes.cpp
   ConvertDSDLToEmitC.cpp
 )

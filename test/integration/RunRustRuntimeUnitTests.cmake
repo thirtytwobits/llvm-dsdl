@@ -84,7 +84,8 @@ endif()
 foreach(required
     "${OUT_DIR}/Cargo.toml"
     "${OUT_DIR}/src/lib.rs"
-    "${OUT_DIR}/src/dsdl_runtime.rs")
+    "${OUT_DIR}/src/dsdl_runtime.rs"
+    "${OUT_DIR}/src/dsdl_runtime_semantic_wrappers.rs")
   if(NOT EXISTS "${required}")
     message(FATAL_ERROR "Missing required generated file: ${required}")
   endif()

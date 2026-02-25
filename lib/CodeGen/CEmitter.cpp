@@ -43,6 +43,7 @@
 
 #include "llvmdsdl/CodeGen/TypeStorage.h"
 #include "llvmdsdl/CodeGen/CHeaderRender.h"
+#include "llvmdsdl/CodeGen/CodegenDiagnosticText.h"
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
@@ -588,12 +589,13 @@ llvm::Error emitC(const SemanticModule& semantic,
     std::filesystem::path outRoot(options.outDir);
     EmitterContext        ctx(semantic);
     const auto            selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
+    const auto            mlirCoverageDiagnostic =
+        codegen_diagnostic_text::mlirSchemaCoverageValidationFailedForEmission("C");
 
     if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "C", nullptr, options.optimizeLoweredSerDes))
     {
-        diagnostics.error({"<mlir>", 1, 1}, "MLIR schema coverage validation failed for C emission");
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "MLIR schema coverage validation failed for C emission");
+        diagnostics.error({"<mlir>", 1, 1}, mlirCoverageDiagnostic);
+        return llvm::createStringError(llvm::inconvertibleErrorCode(), "%s", mlirCoverageDiagnostic.c_str());
     }
 
     std::unordered_map<std::string, mlir::Operation*> schemaByHeaderPath;

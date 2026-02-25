@@ -22,9 +22,11 @@
 #include <string>
 #include <vector>
 
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 #include "llvmdsdl/Frontend/AST.h"
 #include "llvmdsdl/Semantics/Model.h"
+#include "llvmdsdl/CodeGen/WireOperationContract.h"
 
 namespace llvmdsdl
 {
@@ -127,6 +129,9 @@ struct RuntimeFieldPlan final
 /// @brief Runtime plan for one semantic section.
 struct RuntimeSectionPlan final
 {
+    /// @brief Wire-operation contract version consumed by this runtime plan.
+    std::int64_t contractVersion{kWireOperationContractVersion};
+
     /// @brief True for union sections.
     bool isUnion{false};
 
@@ -154,6 +159,12 @@ llvm::Expected<std::vector<RuntimeOrderedFieldStep>> buildRuntimeOrderedFieldSte
 /// @return Runtime section plan or a contract-validation error.
 llvm::Expected<RuntimeSectionPlan> buildRuntimeSectionPlan(const SemanticSection&     section,
                                                            const LoweredSectionFacts* sectionFacts);
+
+/// @brief Validates wire-operation contract version for runtime section plans.
+/// @param[in] plan Runtime section plan.
+/// @param[in] consumerLabel Deterministic consumer label for diagnostics.
+/// @return Success on supported major version; error otherwise.
+llvm::Error validateRuntimeSectionPlanContract(const RuntimeSectionPlan& plan, llvm::StringRef consumerLabel);
 
 }  // namespace llvmdsdl
 

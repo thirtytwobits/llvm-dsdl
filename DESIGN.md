@@ -197,18 +197,22 @@ Key file:
 ## 5. Runtime Design
 
 Runtime primitives are intentionally hand-maintained so each language has a clear and testable baseline implementation of bit/number operations. Generated code calls these primitives rather than re-implementing low-level operations everywhere.
+Semantic wrappers above primitive runtime operations are generated and checked for drift from in-repo templates. The exception allowlist remains the only allowed place for residual non-generated wrappers.
 
 Runtime sources:
 
 - C core: [`runtime/dsdl_runtime.h`](runtime/dsdl_runtime.h)
 - C++ wrapper: [`runtime/cpp/dsdl_runtime.hpp`](runtime/cpp/dsdl_runtime.hpp)
 - Rust runtime: [`runtime/rust/dsdl_runtime.rs`](runtime/rust/dsdl_runtime.rs)
+- Generated Rust semantic wrappers: [`runtime/rust/dsdl_runtime_semantic_wrappers.rs`](runtime/rust/dsdl_runtime_semantic_wrappers.rs)
 - Go runtime: [`runtime/go/dsdl_runtime.go`](runtime/go/dsdl_runtime.go)
 - Python runtimes and loader:
   - [`runtime/python/_dsdl_runtime.py`](runtime/python/_dsdl_runtime.py)
   - [`runtime/python/_dsdl_runtime_fast.py`](runtime/python/_dsdl_runtime_fast.py)
   - [`runtime/python/_runtime_loader.py`](runtime/python/_runtime_loader.py)
 - Python accelerator source: [`runtime/python_accel/dsdl_runtime_accel.c`](runtime/python_accel/dsdl_runtime_accel.c)
+- Semantic-wrapper exception allowlist: [`runtime/semantic_wrapper_allowlist.json`](runtime/semantic_wrapper_allowlist.json)
+- Semantic-wrapper generation tooling: [`tools/runtime/generate_runtime_semantic_wrappers.py`](tools/runtime/generate_runtime_semantic_wrappers.py)
 
 This split keeps wire-core semantics explicit and reviewable while still allowing backend-specific ergonomics.
 
@@ -284,16 +288,16 @@ In short, MLIR is already operational infrastructure in this repo, not unused sc
 
 ## 10. Deliberate Tradeoffs and Current Boundaries
 
-This architecture is intentionally pragmatic. Some invariants are enforced in transform-contract code rather than op verifiers, and non-C backends still perform language-specific rendering outside direct EmitC translation. That is a conscious balance between convergence and delivery velocity.
+The architecture is intentionally hard-cut and single-path: shared lowering contracts are canonical, and compatibility shims/dual semantic paths are not part of the design surface.
 
 Current tradeoffs:
 
-- `dsdl` op verifiers are lightweight; transform contract checks are heavy.
-- C has the deepest direct MLIR-to-code path.
-- Other backends are MLIR-informed through shared lowered plans/facts, then rendered natively/scriptedly.
-- Runtime primitives remain hand-maintained to keep low-level behavior explicit.
+- C remains the deepest direct MLIR-to-code path (`convert-dsdl-to-emitc` + EmitC translation).
+- Non-C backends still render language syntax natively/scriptedly, but semantic planning/orchestration is shared.
+- Runtime primitives are hand-maintained on purpose; semantic wrappers above primitives are generated and drift-checked.
+- Guardrails are intentionally strict: convergence/parity/malformed/determinism and runtime/architecture gates are release-blocking.
 
-These decisions have produced a stable multi-backend compiler that can evolve incrementally toward deeper shared lowering while preserving deterministic behavior today.
+This gives the project a stable multi-backend compiler with one canonical semantic flow and explicit boundaries for where backend-specific code is allowed.
 
 ## 11. Additional Reading
 

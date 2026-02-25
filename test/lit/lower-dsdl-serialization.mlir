@@ -5,7 +5,7 @@ module {
     dsdl.serialization_plan attributes {c_deserialize_symbol = "test__Type__deserialize_", c_serialize_symbol = "test__Type__serialize_", c_type_name = "test__Type", is_union, max_bits = 16 : i64, min_bits = 8 : i64, union_option_count = 1 : i64, union_tag_bits = 8 : i64} {
       dsdl.align {bits = 1 : i32}
       dsdl.align {bits = 8 : i32}
-      dsdl.io {alignment_bits = 8 : i64, array_capacity = 0 : i64, array_kind = "none", array_length_prefix_bits = 0 : i64, bit_length = 8 : i64, c_name = "opt_a", cast_mode = "saturated", kind = "field", max_bits = 8 : i64, min_bits = -2 : i64, name = "opt_a", scalar_category = "unsigned", type_name = "saturated uint8", union_option_index = 3 : i64, union_tag_bits = 0 : i64}
+      dsdl.io {alignment_bits = 8 : i64, array_capacity = 0 : i64, array_kind = "none", array_length_prefix_bits = 0 : i64, bit_length = 8 : i64, c_name = "opt_a", cast_mode = "saturated", kind = "field", max_bits = 8 : i64, min_bits = 0 : i64, name = "opt_a", scalar_category = "unsigned", type_name = "saturated uint8", union_option_index = 3 : i64, union_tag_bits = 0 : i64}
       dsdl.io {alignment_bits = 1 : i64, array_capacity = 0 : i64, array_kind = "none", array_length_prefix_bits = 0 : i64, bit_length = 0 : i64, c_name = "_pad", cast_mode = "saturated", kind = "padding", max_bits = 0 : i64, min_bits = 0 : i64, name = "_pad", scalar_category = "void", type_name = "void0", union_option_index = 0 : i64, union_tag_bits = 0 : i64}
     }
   }
@@ -21,7 +21,7 @@ module {
 // CHECK-DAG: lowered_field_count = 1 : i64
 // CHECK-DAG: lowered_max_bits = 16 : i64
 // CHECK-DAG: lowered_min_bits = 8 : i64
-// CHECK-DAG: lowered_padding_count = 1 : i64
+// CHECK-DAG: lowered_padding_count = 0 : i64
 // CHECK-DAG: lowered_deser_union_tag_helper = "__llvmdsdl_plan_union_tag__test_Type_1_0__deser"
 // CHECK-DAG: lowered_ser_union_tag_helper = "__llvmdsdl_plan_union_tag__test_Type_1_0__ser"
 // CHECK-DAG: lowered_union_tag_validate_helper = "__llvmdsdl_plan_validate_union_tag__test_Type_1_0"

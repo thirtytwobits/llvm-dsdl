@@ -14,11 +14,15 @@
 #ifndef LLVMDSDL_CODEGEN_LOWERED_RENDER_IR_H
 #define LLVMDSDL_CODEGEN_LOWERED_RENDER_IR_H
 
+#include <cstdint>
 #include <functional>
 #include <vector>
 
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
 #include "llvmdsdl/CodeGen/SectionHelperBindingPlan.h"
 #include "llvmdsdl/CodeGen/SerDesStatementPlan.h"
+#include "llvmdsdl/CodeGen/WireOperationContract.h"
 
 namespace llvmdsdl
 {
@@ -58,6 +62,9 @@ struct LoweredRenderStep final
 /// @brief Complete render-IR body plus helper bindings.
 struct LoweredBodyRenderIR final
 {
+    /// @brief Wire-operation contract version consumed by this render plan.
+    std::int64_t contractVersion{kWireOperationContractVersion};
+
     /// @brief Ordered render steps.
     std::vector<LoweredRenderStep> steps;
 
@@ -86,6 +93,12 @@ struct LoweredRenderStepCallbacks final
 LoweredBodyRenderIR buildLoweredBodyRenderIR(const SemanticSection&     section,
                                              const LoweredSectionFacts* sectionFacts,
                                              HelperBindingDirection     direction);
+
+/// @brief Validates wire-operation contract version for lowered render IR.
+/// @param[in] renderIR Render IR produced/consumed by shared planners.
+/// @param[in] consumerLabel Deterministic consumer label for diagnostics.
+/// @return Success on supported major version; error otherwise.
+llvm::Error validateLoweredBodyRenderIRContract(const LoweredBodyRenderIR& renderIR, llvm::StringRef consumerLabel);
 
 /// @brief Traverses lowered render steps with shared dispatch semantics.
 /// @param[in] renderIR Lowered render body.

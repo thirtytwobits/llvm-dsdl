@@ -73,7 +73,8 @@ endif()
 foreach(required
     "${OUT_DIR}/Cargo.toml"
     "${OUT_DIR}/src/lib.rs"
-    "${OUT_DIR}/src/dsdl_runtime.rs")
+    "${OUT_DIR}/src/dsdl_runtime.rs"
+    "${OUT_DIR}/src/dsdl_runtime_semantic_wrappers.rs")
   if(NOT EXISTS "${required}")
     message(FATAL_ERROR "Missing required generated file: ${required}")
   endif()
@@ -135,7 +136,8 @@ foreach(rs IN LISTS rust_files)
   get_filename_component(name "${rs}" NAME)
   if(NOT name STREQUAL "lib.rs" AND
      NOT name STREQUAL "mod.rs" AND
-     NOT name STREQUAL "dsdl_runtime.rs")
+     NOT name STREQUAL "dsdl_runtime.rs" AND
+     NOT name STREQUAL "dsdl_runtime_semantic_wrappers.rs")
     list(APPEND type_rs_files "${rs}")
   endif()
 endforeach()

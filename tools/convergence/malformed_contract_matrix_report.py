@@ -360,6 +360,60 @@ def _write_markdown(path: Path, report: Dict[str, object]) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _check_baseline(report: Dict[str, object], baseline_path: Path) -> List[str]:
+    baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+    failures: List[str] = []
+    report_backends = report["backends"]
+
+    expected_covered = baseline.get("expected_covered", {})
+    for backend_name, expected_categories in expected_covered.items():
+        if backend_name not in report_backends:
+            failures.append(f"baseline backend missing from report: {backend_name}")
+            continue
+        actual_cells = report_backends[backend_name]["cells"]
+        for category_id, expected_value in expected_categories.items():
+            if category_id not in actual_cells:
+                failures.append(f"baseline references unknown category '{category_id}' for backend '{backend_name}'")
+                continue
+            actual_covered = bool(actual_cells[category_id]["covered"])
+            if bool(expected_value) != actual_covered:
+                failures.append(
+                    f"coverage drift: backend '{backend_name}' category '{category_id}' expected "
+                    f"{bool(expected_value)} but found {actual_covered}"
+                )
+
+    minimum_scores = baseline.get("minimum_scores", {})
+    for backend_name, minimum_score in minimum_scores.get("backends", {}).items():
+        if backend_name not in report_backends:
+            failures.append(f"minimum score references unknown backend: {backend_name}")
+            continue
+        actual_score = int(report_backends[backend_name]["score"])
+        if actual_score < int(minimum_score):
+            failures.append(
+                f"score regression: backend '{backend_name}' score {actual_score} is below minimum {minimum_score}"
+            )
+
+    minimum_overall = minimum_scores.get("overall")
+    if minimum_overall is not None:
+        actual_overall = int(report["overall_score"])
+        if actual_overall < int(minimum_overall):
+            failures.append(f"score regression: overall score {actual_overall} is below minimum {minimum_overall}")
+
+    guard_baseline = baseline.get("native_behavior_guards", {})
+    required_pass = list(guard_baseline.get("required_pass", []))
+    actual_guards = report.get("native_behavior_guards", {}).get("checks", {})
+    for guard_name in required_pass:
+        if guard_name not in actual_guards:
+            failures.append(f"native-behavior guard missing from report: {guard_name}")
+            continue
+        if not actual_guards[guard_name].get("pass", False):
+            failures.append(f"native-behavior guard failed: {guard_name}")
+    if guard_baseline.get("all_passed") is True and not report.get("native_behavior_guards", {}).get("all_passed", False):
+        failures.append("native-behavior guard set expected all_passed=true but report indicates failures")
+
+    return failures
+
+
 def parse_args(argv: List[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate malformed-input contract matrix coverage.")
     parser.add_argument("--repo-root", required=True, help="Repository root.")
@@ -367,6 +421,7 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     parser.add_argument("--ctest-config", help="CTest configuration (for multi-config generators).")
     parser.add_argument("--output-json", help="Output JSON path.")
     parser.add_argument("--output-md", help="Output Markdown path.")
+    parser.add_argument("--baseline", help="Path to baseline JSON used for strict regression checks.")
     parser.add_argument("--check-regressions", action="store_true", help="Fail if any matrix cell is uncovered.")
     return parser.parse_args(argv)
 
@@ -387,29 +442,40 @@ def main(argv: List[str]) -> int:
     if args.output_md:
         _write_markdown(Path(args.output_md), report)
 
-    if args.check_regressions and report["missing_cells"]:
-        for cell in report["missing_cells"]:
-            print(
-                f"malformed-contract regression: backend '{cell['backend']}' category '{cell['category']}' has no coverage evidence",
-                file=sys.stderr,
-            )
-        return 1
-    if args.check_regressions and not report.get("native_behavior_guards", {}).get("all_passed", False):
-        for guard_name, guard in sorted(report.get("native_behavior_guards", {}).get("checks", {}).items()):
-            if guard.get("pass", False):
-                continue
-            print(f"malformed-contract native-behavior guard failed: '{guard_name}'", file=sys.stderr)
-            if "missing_categories" in guard and guard["missing_categories"]:
-                print("  missing categories: " + ", ".join(guard["missing_categories"]), file=sys.stderr)
-            if "missing_patterns" in guard and guard["missing_patterns"]:
-                print("  missing patterns: " + ", ".join(guard["missing_patterns"]), file=sys.stderr)
-            if "missing_in_c_rust" in guard and guard["missing_in_c_rust"]:
-                print("  missing in c-rust: " + ", ".join(guard["missing_in_c_rust"]), file=sys.stderr)
-            if "extra_in_c_rust" in guard and guard["extra_in_c_rust"]:
-                print("  extra in c-rust: " + ", ".join(guard["extra_in_c_rust"]), file=sys.stderr)
-            if "reason" in guard:
-                print("  reason: " + str(guard["reason"]), file=sys.stderr)
-        return 1
+    if args.check_regressions:
+        if args.baseline:
+            baseline_path = Path(args.baseline).resolve()
+            if not baseline_path.exists():
+                print(f"error: baseline not found: {baseline_path}", file=sys.stderr)
+                return 2
+            failures = _check_baseline(report, baseline_path)
+            if failures:
+                for failure in failures:
+                    print(f"malformed-contract regression: {failure}", file=sys.stderr)
+                return 1
+        elif report["missing_cells"]:
+            for cell in report["missing_cells"]:
+                print(
+                    f"malformed-contract regression: backend '{cell['backend']}' category '{cell['category']}' has no coverage evidence",
+                    file=sys.stderr,
+                )
+            return 1
+        elif not report.get("native_behavior_guards", {}).get("all_passed", False):
+            for guard_name, guard in sorted(report.get("native_behavior_guards", {}).get("checks", {}).items()):
+                if guard.get("pass", False):
+                    continue
+                print(f"malformed-contract native-behavior guard failed: '{guard_name}'", file=sys.stderr)
+                if "missing_categories" in guard and guard["missing_categories"]:
+                    print("  missing categories: " + ", ".join(guard["missing_categories"]), file=sys.stderr)
+                if "missing_patterns" in guard and guard["missing_patterns"]:
+                    print("  missing patterns: " + ", ".join(guard["missing_patterns"]), file=sys.stderr)
+                if "missing_in_c_rust" in guard and guard["missing_in_c_rust"]:
+                    print("  missing in c-rust: " + ", ".join(guard["missing_in_c_rust"]), file=sys.stderr)
+                if "extra_in_c_rust" in guard and guard["extra_in_c_rust"]:
+                    print("  extra in c-rust: " + ", ".join(guard["extra_in_c_rust"]), file=sys.stderr)
+                if "reason" in guard:
+                    print("  reason: " + str(guard["reason"]), file=sys.stderr)
+            return 1
     return 0
 
 

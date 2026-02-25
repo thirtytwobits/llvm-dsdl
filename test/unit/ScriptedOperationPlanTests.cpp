@@ -6,9 +6,12 @@
 //===----------------------------------------------------------------------===//
 
 #include <iostream>
+#include <string>
 
 #include "llvmdsdl/CodeGen/MlirLoweredFacts.h"
 #include "llvmdsdl/CodeGen/ScriptedOperationPlan.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
 #include "llvmdsdl/Semantics/Model.h"
 
 bool runScriptedOperationPlanTests()
@@ -64,12 +67,20 @@ bool runScriptedOperationPlanTests()
     varPlan.arrayLengthPrefixBits = 12;
     runtimePlan.fields.push_back(varPlan);
 
-    const auto operationPlan =
+    auto operationPlanOrErr =
         llvmdsdl::buildScriptedSectionOperationPlan(section, runtimePlan, nullptr, [](const std::string& symbol) {
             return symbol;
         });
+    if (!operationPlanOrErr)
+    {
+        std::cerr << "scripted operation plan unexpectedly failed: " << llvm::toString(operationPlanOrErr.takeError())
+                  << "\n";
+        return false;
+    }
+    const auto& operationPlan = *operationPlanOrErr;
 
-    if (!operationPlan.isUnion || operationPlan.unionTagBits != 3U || operationPlan.maxBits != 128 ||
+    if (operationPlan.contractVersion != llvmdsdl::kWireOperationContractVersion || !operationPlan.isUnion ||
+        operationPlan.unionTagBits != 3U || operationPlan.maxBits != 128 ||
         operationPlan.fields.size() != 3U)
     {
         std::cerr << "scripted operation section metadata mismatch\n";
@@ -91,6 +102,21 @@ bool runScriptedOperationPlanTests()
         operationPlan.fields[2].valueKind != llvmdsdl::ScriptedFieldValueKind::Composite)
     {
         std::cerr << "scripted operation variable-array classification mismatch\n";
+        return false;
+    }
+
+    runtimePlan.contractVersion = llvmdsdl::kWireOperationContractVersion + 1;
+    operationPlanOrErr          = llvmdsdl::buildScriptedSectionOperationPlan(
+        section, runtimePlan, nullptr, [](const std::string& symbol) { return symbol; });
+    if (operationPlanOrErr)
+    {
+        std::cerr << "scripted operation plan should reject unsupported wire-operation major version\n";
+        return false;
+    }
+    const std::string errText = llvm::toString(operationPlanOrErr.takeError());
+    if (!llvm::StringRef(errText).contains("unsupported wire-operation contract major version"))
+    {
+        std::cerr << "unexpected scripted-operation contract error text: " << errText << "\n";
         return false;
     }
 

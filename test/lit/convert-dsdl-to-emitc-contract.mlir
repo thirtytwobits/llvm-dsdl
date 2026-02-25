@@ -8,4 +8,4 @@ module {
   }
 }
 
-// CHECK: error: lowered SerDes contract missing module attribute 'llvmdsdl.lowered_contract_version'
+// CHECK: error: lowered SerDes contract missing module attribute 'llvmdsdl.lowered_contract_version'; run lower-dsdl-serialization before convert-dsdl-to-emitc

@@ -92,9 +92,11 @@ foreach(required
     "${max_inline_out}/Cargo.toml"
     "${max_inline_out}/src/lib.rs"
     "${max_inline_out}/src/dsdl_runtime.rs"
+    "${max_inline_out}/src/dsdl_runtime_semantic_wrappers.rs"
     "${inline_pool_out}/Cargo.toml"
     "${inline_pool_out}/src/lib.rs"
-    "${inline_pool_out}/src/dsdl_runtime.rs")
+    "${inline_pool_out}/src/dsdl_runtime.rs"
+    "${inline_pool_out}/src/dsdl_runtime_semantic_wrappers.rs")
   if(NOT EXISTS "${required}")
     message(FATAL_ERROR "Missing required generated file: ${required}")
   endif()
@@ -127,7 +129,7 @@ file(GLOB_RECURSE inline_pool_rs "${inline_pool_src}/*.rs")
 set(max_inline_semantic_files "")
 foreach(path IN LISTS max_inline_rs)
   file(RELATIVE_PATH rel "${max_inline_src}" "${path}")
-  if(rel STREQUAL "lib.rs" OR rel STREQUAL "dsdl_runtime.rs")
+  if(rel STREQUAL "lib.rs" OR rel STREQUAL "dsdl_runtime.rs" OR rel STREQUAL "dsdl_runtime_semantic_wrappers.rs")
     continue()
   endif()
   list(APPEND max_inline_semantic_files "${rel}")
@@ -136,7 +138,7 @@ endforeach()
 set(inline_pool_semantic_files "")
 foreach(path IN LISTS inline_pool_rs)
   file(RELATIVE_PATH rel "${inline_pool_src}" "${path}")
-  if(rel STREQUAL "lib.rs" OR rel STREQUAL "dsdl_runtime.rs")
+  if(rel STREQUAL "lib.rs" OR rel STREQUAL "dsdl_runtime.rs" OR rel STREQUAL "dsdl_runtime_semantic_wrappers.rs")
     continue()
   endif()
   list(APPEND inline_pool_semantic_files "${rel}")

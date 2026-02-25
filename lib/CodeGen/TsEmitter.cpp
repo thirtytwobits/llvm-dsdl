@@ -493,12 +493,12 @@ void emitTsRuntimeDeserializePadding(std::ostringstream& out, int indent, const 
     emitLine(out, indent, "offsetBits += " + std::to_string(field.bitLength) + ";");
 }
 
-void emitTsRuntimeFunctions(std::ostringstream&        out,
-                            const std::string&         typeName,
-                            const RuntimeSectionPlan&  plan,
-                            const EmitterContext&      ctx,
-                            const SemanticSection&     section,
-                            const LoweredSectionFacts* sectionFacts)
+llvm::Error emitTsRuntimeFunctions(std::ostringstream&        out,
+                                   const std::string&         typeName,
+                                   const RuntimeSectionPlan&  plan,
+                                   const EmitterContext&      ctx,
+                                   const SemanticSection&     section,
+                                   const LoweredSectionFacts* sectionFacts)
 {
     const auto serializeFn   = tsRuntimeSerializeFn(typeName);
     const auto deserializeFn = tsRuntimeDeserializeFn(typeName);
@@ -512,7 +512,11 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
         return helperBindingNameTs(symbol);
     };
     auto operationPlan = buildScriptedSectionOperationPlan(section, plan, sectionFacts, helperNameResolver);
-    for (auto& scriptedField : operationPlan.fields)
+    if (!operationPlan)
+    {
+        return operationPlan.takeError();
+    }
+    for (auto& scriptedField : operationPlan->fields)
     {
         auto&       field        = scriptedField.body.field;
         const auto& semanticName = field.semanticFieldName.empty() ? field.fieldName : field.semanticFieldName;
@@ -520,7 +524,7 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
             codegenSanitizeIdentifier(CodegenNamingLanguage::TypeScript,
                                       codegenToSnakeCaseIdentifier(CodegenNamingLanguage::TypeScript, semanticName));
     }
-    const auto& sectionHelperNames = operationPlan.sectionHelpers;
+    const auto& sectionHelperNames = operationPlan->sectionHelpers;
 
     const auto emitSerializeHelperBindings = [&]() {
         const auto lines = renderSectionHelperBindings(serializeHelpers,
@@ -554,9 +558,9 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
         }
     };
 
-    if (operationPlan.isUnion)
+    if (operationPlan->isUnion)
     {
-        const auto tagBits = std::to_string(operationPlan.unionTagBits);
+        const auto tagBits = std::to_string(operationPlan->unionTagBits);
         emitLine(out, 0, "export function " + serializeFn + "(value: " + typeName + "): Uint8Array {");
         emitLine(out, 1, "const out = new Uint8Array(" + std::to_string(maxByteLength) + ");");
         emitLine(out, 1, "let offsetBits = 0;");
@@ -581,7 +585,7 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
         emitLine(out, 1, "dsdlRuntime.writeUnsigned(out, offsetBits, " + tagBits + ", tag, false);");
         emitLine(out, 1, "offsetBits += " + tagBits + ";");
         emitLine(out, 1, "switch (tag) {");
-        for (const auto& scriptedField : operationPlan.fields)
+        for (const auto& scriptedField : operationPlan->fields)
         {
             const auto& field       = scriptedField.body.field;
             const auto& helpers     = scriptedField.body.helpers;
@@ -847,7 +851,7 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
         }
         emitLine(out, 1, "let value: " + typeName + ";");
         emitLine(out, 1, "switch (tag) {");
-        for (const auto& scriptedField : operationPlan.fields)
+        for (const auto& scriptedField : operationPlan->fields)
         {
             const auto& field       = scriptedField.body.field;
             const auto& helpers     = scriptedField.body.helpers;
@@ -1009,7 +1013,7 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
         emitLine(out, 1, "const consumed = Math.min(bytes.length, dsdlRuntime.byteLengthForBits(offsetBits));");
         emitLine(out, 1, "return { value, consumed };");
         emitLine(out, 0, "}");
-        return;
+        return llvm::Error::success();
     }
 
     emitLine(out, 0, "export function " + serializeFn + "(value: " + typeName + "): Uint8Array {");
@@ -1022,7 +1026,7 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
         emitLine(out, 2, "throw new Error(\"" + codegen_diagnostic_text::serializationBufferTooSmall() + "\");");
         emitLine(out, 1, "}");
     }
-    for (const auto& scriptedField : operationPlan.fields)
+    for (const auto& scriptedField : operationPlan->fields)
     {
         const auto& field       = scriptedField.body.field;
         const auto& helpers     = scriptedField.body.helpers;
@@ -1242,7 +1246,7 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
     emitDeserializeHelperBindings();
     emitLine(out, 1, "const value = {} as " + typeName + ";");
     emitLine(out, 1, "let offsetBits = 0;");
-    for (const auto& scriptedField : operationPlan.fields)
+    for (const auto& scriptedField : operationPlan->fields)
     {
         const auto& field       = scriptedField.body.field;
         const auto& helpers     = scriptedField.body.helpers;
@@ -1434,6 +1438,7 @@ void emitTsRuntimeFunctions(std::ostringstream&        out,
     emitLine(out, 1, "const consumed = Math.min(bytes.length, dsdlRuntime.byteLengthForBits(offsetBits));");
     emitLine(out, 1, "return { value, consumed };");
     emitLine(out, 0, "}");
+    return llvm::Error::success();
 }
 
 llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
@@ -1563,7 +1568,10 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         emitLine(out, 0, "");
         emitSectionConstants(out, baseType, def.request);
         emitLine(out, 0, "");
-        emitTsRuntimeFunctions(out, baseType, *requestRuntimePlan, ctx, def.request, requestSectionFacts);
+        if (auto err = emitTsRuntimeFunctions(out, baseType, *requestRuntimePlan, ctx, def.request, requestSectionFacts))
+        {
+            return std::move(err);
+        }
         return out.str();
     }
 
@@ -1574,7 +1582,10 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     emitLine(out, 0, "");
     emitSectionConstants(out, reqType, def.request);
     emitLine(out, 0, "");
-    emitTsRuntimeFunctions(out, reqType, *requestRuntimePlan, ctx, def.request, requestSectionFacts);
+    if (auto err = emitTsRuntimeFunctions(out, reqType, *requestRuntimePlan, ctx, def.request, requestSectionFacts))
+    {
+        return std::move(err);
+    }
     emitLine(out, 0, "");
 
     if (def.response)
@@ -1583,12 +1594,15 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
         emitLine(out, 0, "");
         emitSectionConstants(out, respType, *def.response);
         emitLine(out, 0, "");
-        emitTsRuntimeFunctions(out,
-                               respType,
-                               *responseRuntimePlan,
-                               ctx,
-                               *def.response,
-                               lookupLoweredSectionFacts(loweredFacts, def, "response"));
+        if (auto err = emitTsRuntimeFunctions(out,
+                                              respType,
+                                              *responseRuntimePlan,
+                                              ctx,
+                                              *def.response,
+                                              lookupLoweredSectionFacts(loweredFacts, def, "response")))
+        {
+            return std::move(err);
+        }
         emitLine(out, 0, "");
     }
 
@@ -1963,6 +1977,8 @@ llvm::Error emitTs(const SemanticModule& semantic,
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "output directory is required");
     }
 
+    const auto mlirCoverageDiagnostic =
+        codegen_diagnostic_text::mlirSchemaCoverageValidationFailedForEmission("TypeScript");
     LoweredFactsMap loweredFacts;
     if (!collectLoweredFactsFromMlir(semantic,
                                      module,
@@ -1971,8 +1987,7 @@ llvm::Error emitTs(const SemanticModule& semantic,
                                      &loweredFacts,
                                      options.optimizeLoweredSerDes))
     {
-        return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                       "MLIR schema coverage validation failed for TypeScript emission");
+        return llvm::createStringError(llvm::inconvertibleErrorCode(), "%s", mlirCoverageDiagnostic.c_str());
     }
 
     std::filesystem::path outRoot(options.outDir);

@@ -30,34 +30,151 @@ SEMANTIC_CLASSES: List[Tuple[str, str]] = [
     ("alignment_padding_orchestration", "Alignment/padding orchestration"),
     ("malformed_input_diagnostic_text", "Malformed-input diagnostic category text"),
     ("lowered_contract_validation", "Lowered contract schema/version validation"),
+    ("helper_binding_completeness", "Helper-binding completeness gates"),
+    ("verifier_first_invariants", "Verifier-first invariant enforcement"),
+    ("contract_v2_usage", "Contract-v2 wire-program usage"),
+    ("fallback_free_semantic_execution", "Fallback-free semantic execution gates"),
 ]
 
 BACKEND_CONFIG = {
     "c": {
         "kind": "c",
         "path": "lib/CodeGen/CEmitter.cpp",
+        "semantic_gate": {
+            "path": "test/integration/RunUavcanGeneration.cmake",
+            "helper_patterns": [
+                r"did not use lowered union-tag validation helper",
+                r"did not use lowered scalar unsigned helper",
+                r"did not use lowered array-length validation helper",
+                r"did not call lowered delimiter-header validation helper",
+            ],
+            "fallback_patterns": [
+                r"array_length_fallback_hits",
+                r"scalar_saturation_fallback_hits",
+                r"delimiter_fallback_hits",
+                r"scalar_deser_fallback_hits",
+                r"still contain array-length fallback logic",
+            ],
+        },
     },
     "cpp": {
         "kind": "native",
         "path": "lib/CodeGen/CppEmitter.cpp",
+        "semantic_gate": {
+            "path": "test/integration/RunUavcanCppGeneration.cmake",
+            "helper_patterns": [
+                r"Missing MLIR union-tag",
+                r"Missing MLIR capacity-check",
+                r"Missing MLIR array-prefix",
+                r"Missing MLIR scalar-unsigned",
+                r"Missing MLIR delimiter-validate",
+            ],
+            "fallback_patterns": [
+                r"found_backend_fallback_signature",
+                r"found_backend_array_length_fallback_signature",
+                r"found_backend_delimiter_fallback_signature",
+                r"found_backend_scalar_deser_fallback_signature",
+                r"Found backend fallback saturation signatures",
+            ],
+        },
     },
     "rust": {
         "kind": "native",
         "path": "lib/CodeGen/RustEmitter.cpp",
+        "semantic_gate": {
+            "path": "test/integration/RunUavcanRustGeneration.cmake",
+            "helper_patterns": [
+                r"Missing MLIR union-tag",
+                r"Missing MLIR capacity-check",
+                r"Missing MLIR array-prefix",
+                r"Missing MLIR scalar-unsigned",
+                r"Missing MLIR delimiter-validate",
+            ],
+            "fallback_patterns": [
+                r"found_backend_fallback_signature",
+                r"found_backend_array_length_fallback_signature",
+                r"found_backend_delimiter_fallback_signature",
+                r"found_backend_scalar_deser_fallback_signature",
+                r"Found backend fallback saturation signatures",
+            ],
+        },
     },
     "go": {
         "kind": "native",
         "path": "lib/CodeGen/GoEmitter.cpp",
+        "semantic_gate": {
+            "path": "test/integration/RunUavcanGoGeneration.cmake",
+            "helper_patterns": [
+                r"Missing MLIR union-tag",
+                r"Missing MLIR capacity-check",
+                r"Missing MLIR array-prefix",
+                r"Missing MLIR scalar-unsigned",
+                r"Missing MLIR delimiter-validate",
+            ],
+            "fallback_patterns": [
+                r"found_backend_fallback_signature",
+                r"found_backend_array_length_fallback_signature",
+                r"found_backend_delimiter_fallback_signature",
+                r"found_backend_scalar_deser_fallback_signature",
+                r"Found backend fallback saturation signatures",
+            ],
+        },
     },
     "ts": {
         "kind": "scripted",
         "path": "lib/CodeGen/TsEmitter.cpp",
+        "semantic_gate": {
+            "path": "test/integration/RunUavcanTsGeneration.cmake",
+            "helper_patterns": [
+                r"Missing MLIR union-tag",
+                r"Missing MLIR capacity-check",
+                r"Missing MLIR array-prefix",
+                r"Missing MLIR scalar-unsigned",
+                r"Missing MLIR delimiter-validate",
+            ],
+            "fallback_patterns": [
+                r"found_backend_fallback_signature",
+                r"found_backend_array_length_fallback_signature",
+                r"found_backend_delimiter_fallback_signature",
+                r"found_backend_scalar_deser_fallback_signature",
+                r"Found backend fallback saturation signatures",
+            ],
+        },
     },
     "python": {
         "kind": "scripted",
         "path": "lib/CodeGen/PythonEmitter.cpp",
+        "semantic_gate": {
+            "path": "test/integration/RunUavcanPythonGeneration.cmake",
+            "helper_patterns": [
+                r"Missing MLIR union-tag",
+                r"Missing MLIR capacity-check",
+                r"Missing MLIR array-prefix",
+                r"Missing MLIR scalar-unsigned",
+                r"Missing MLIR delimiter-validate",
+            ],
+            "fallback_patterns": [
+                r"found_backend_fallback_signature",
+                r"found_backend_array_length_fallback_signature",
+                r"found_backend_delimiter_fallback_signature",
+                r"found_backend_scalar_deser_fallback_signature",
+                r"Found backend fallback saturation signatures",
+            ],
+        },
     },
 }
+
+VERIFIER_NEGATIVE_TEST_FILES = [
+    "lower-dsdl-serialization-missing-kind-contract.mlir",
+    "lower-dsdl-serialization-schema-empty-body-contract.mlir",
+    "lower-dsdl-serialization-lowered-envelope-contract.mlir",
+    "lower-dsdl-serialization-lowered-step-count-mismatch-contract.mlir",
+    "lower-dsdl-serialization-plan-missing-bounds-contract.mlir",
+    "lower-dsdl-serialization-unsupported-array-kind-contract.mlir",
+    "lower-dsdl-serialization-unsupported-cast-mode-contract.mlir",
+    "lower-dsdl-serialization-variable-array-prefix-width-contract.mlir",
+    "lower-dsdl-serialization-union-missing-metadata-contract.mlir",
+]
 
 
 def _has_all(text: str, patterns: Iterable[str]) -> bool:
@@ -73,8 +190,25 @@ def _load_text(repo_root: Path, rel_path: str) -> str:
     return file_path.read_text(encoding="utf-8")
 
 
-def _detect_traits(kind: str, text: str) -> Dict[str, bool]:
-    traits: Dict[str, bool] = {}
+def _detect_traits(repo_root: Path, cfg: Dict[str, object], text: str) -> Dict[str, bool]:
+    kind = str(cfg["kind"])
+    traits: Dict[str, bool] = {
+        "semantic_gate_helper_checks": False,
+        "semantic_gate_fallback_checks": False,
+        "semantic_gate": False,
+    }
+
+    semantic_gate_cfg = cfg.get("semantic_gate")
+    if isinstance(semantic_gate_cfg, dict):
+        gate_path = repo_root / str(semantic_gate_cfg["path"])
+        if gate_path.exists():
+            gate_text = gate_path.read_text(encoding="utf-8")
+            helper_patterns = semantic_gate_cfg.get("helper_patterns", [])
+            fallback_patterns = semantic_gate_cfg.get("fallback_patterns", [])
+            traits["semantic_gate_helper_checks"] = _has_all(gate_text, helper_patterns)
+            traits["semantic_gate_fallback_checks"] = _has_all(gate_text, fallback_patterns)
+            traits["semantic_gate"] = traits["semantic_gate_helper_checks"] and traits["semantic_gate_fallback_checks"]
+
     if kind == "c":
         traits["lower_pass"] = _has_any(text, [r"createLowerDSDLSerializationPass\("])
         traits["convert_pass"] = _has_any(text, [r"createConvertDSDLToEmitCPass\("])
@@ -135,7 +269,147 @@ def _detect_traits(kind: str, text: str) -> Dict[str, bool]:
     raise ValueError(f"unknown backend kind: {kind}")
 
 
-def _classifications(kind: str, traits: Dict[str, bool]) -> Dict[str, str]:
+def _detect_global_traits(repo_root: Path) -> Dict[str, bool]:
+    traits: Dict[str, bool] = {}
+
+    ops_text = _load_text(repo_root, "lib/IR/DSDLOps.cpp")
+    traits["verifier_invariants_in_ops"] = _has_all(
+        ops_text,
+        [
+            r"LogicalResult SerializationPlanOp::verify\(\)",
+            r"LogicalResult IOOp::verify\(\)",
+            r"union plan missing union_tag_bits/union_option_count metadata",
+            r"unsupported 'array_kind' value",
+            r"unsupported 'cast_mode' value",
+        ],
+    )
+    lit_root = repo_root / "test/lit"
+    traits["verifier_negative_lit_coverage"] = all((lit_root / name).exists() for name in VERIFIER_NEGATIVE_TEST_FILES)
+    traits["verifier_first_checks"] = traits["verifier_invariants_in_ops"] and traits["verifier_negative_lit_coverage"]
+
+    contract_validation_text = _load_text(repo_root, "lib/Transforms/LoweredSerDesContractValidation.cpp")
+    lowered_facts_text = _load_text(repo_root, "lib/CodeGen/MlirLoweredFacts.cpp")
+    emitc_text = _load_text(repo_root, "lib/Transforms/ConvertDSDLToEmitC.cpp")
+    wire_contract_text = _load_text(repo_root, "include/llvmdsdl/CodeGen/WireOperationContract.h")
+    render_ir_text = _load_text(repo_root, "lib/CodeGen/LoweredRenderIR.cpp")
+    runtime_plan_text = _load_text(repo_root, "lib/CodeGen/RuntimeLoweredPlan.cpp")
+    scripted_plan_text = _load_text(repo_root, "lib/CodeGen/ScriptedOperationPlan.cpp")
+
+    traits["contract_v2_validation_api"] = _has_all(
+        contract_validation_text,
+        [
+            r"findLoweredContractEnvelopeViolation",
+            r"findLoweredPlanContractViolation",
+            r"kLoweredSerDesContractVersionAttr",
+            r"kLoweredSerDesContractProducerAttr",
+        ],
+    )
+    traits["contract_v2_codegen_consumer"] = _has_all(
+        lowered_facts_text,
+        [
+            r"findLoweredContractEnvelopeViolation",
+            r"findLoweredPlanContractViolation",
+        ],
+    ) and _has_any(
+        lowered_facts_text,
+        [
+            r"kLoweredSerDesContractMajor",
+            r"loweredSerDesUnsupportedMajorVersionDiagnosticDetail",
+        ],
+    )
+    traits["contract_v2_c_consumer"] = _has_all(
+        emitc_text,
+        [
+            r"findLoweredContractEnvelopeViolation",
+            r"findLoweredPlanContractViolation",
+        ],
+    ) and _has_any(
+        emitc_text,
+        [
+            r"kLoweredSerDesContractMajor",
+            r"loweredSerDesUnsupportedMajorVersionDiagnosticDetail",
+        ],
+    )
+    traits["contract_v2_wire_operation_contract_marker"] = _has_all(
+        wire_contract_text,
+        [
+            r"kWireOperationContractMajor",
+            r"kWireOperationContractVersion",
+            r"wireOperationUnsupportedMajorVersionDiagnosticDetail",
+        ],
+    )
+    traits["contract_v2_wire_operation_contract_consumers"] = _has_all(
+        render_ir_text,
+        [
+            r"validateLoweredBodyRenderIRContract",
+            r"unsupported wire-operation contract major version",
+        ],
+    ) and _has_all(
+        runtime_plan_text,
+        [
+            r"validateRuntimeSectionPlanContract",
+            r"validateLoweredBodyRenderIRContract",
+        ],
+    ) and _has_all(
+        scripted_plan_text,
+        [
+            r"validateScriptedSectionOperationPlanContract",
+            r"validateRuntimeSectionPlanContract",
+        ],
+    )
+    traits["contract_v2_checks"] = (
+        traits["contract_v2_validation_api"]
+        and traits["contract_v2_codegen_consumer"]
+        and traits["contract_v2_c_consumer"]
+        and traits["contract_v2_wire_operation_contract_marker"]
+        and traits["contract_v2_wire_operation_contract_consumers"]
+    )
+
+    native_helper_contract_tests = _load_text(repo_root, "test/unit/NativeHelperContractTests.cpp")
+    helper_binding_render_tests = _load_text(repo_root, "test/unit/HelperBindingRenderTests.cpp")
+    unit_main_text = _load_text(repo_root, "test/unit/UnitMain.cpp")
+    unit_cmake_text = _load_text(repo_root, "test/unit/CMakeLists.txt")
+    traits["helper_binding_unit_contract_coverage"] = _has_all(
+        native_helper_contract_tests,
+        [
+            r"runNativeHelperContractTests\(\)",
+            r"missing scalar helper bindings",
+            r"missing array validate helper binding",
+            r"missing delimiter helper binding",
+        ],
+    )
+    traits["helper_binding_render_coverage"] = _has_all(
+        helper_binding_render_tests,
+        [
+            r"runHelperBindingRenderTests\(\)",
+            r"renderSectionHelperBindings\(",
+            r"go section helper binding render mismatch",
+            r"section helper binding render mismatch",
+        ],
+    )
+    traits["helper_binding_unit_wiring"] = _has_all(
+        unit_main_text,
+        [
+            r"runNativeHelperContractTests\(\)",
+            r"runHelperBindingRenderTests\(\)",
+        ],
+    ) and _has_all(
+        unit_cmake_text,
+        [
+            r"NativeHelperContractTests\.cpp",
+            r"HelperBindingRenderTests\.cpp",
+        ],
+    )
+    traits["helper_binding_completeness_checks"] = (
+        traits["helper_binding_unit_contract_coverage"]
+        and traits["helper_binding_render_coverage"]
+        and traits["helper_binding_unit_wiring"]
+    )
+
+    return traits
+
+
+def _classifications(kind: str, traits: Dict[str, bool], global_traits: Dict[str, bool]) -> Dict[str, str]:
     classes = {name: "backend-local" for name, _ in SEMANTIC_CLASSES}
 
     if kind == "c":
@@ -145,9 +419,7 @@ def _classifications(kind: str, traits: Dict[str, bool]) -> Dict[str, str]:
         classes["malformed_input_diagnostic_text"] = "backend-local"
         if traits["emitc_pipeline"] and traits["schema_scan"] and traits["schema_selection_guard"]:
             classes["lowered_contract_validation"] = "shared"
-        return classes
-
-    if kind == "native":
+    elif kind == "native":
         if traits["shared_pipeline"]:
             for name, _ in SEMANTIC_CLASSES[:8]:
                 classes[name] = "shared"
@@ -155,9 +427,7 @@ def _classifications(kind: str, traits: Dict[str, bool]) -> Dict[str, str]:
             classes["malformed_input_diagnostic_text"] = "shared"
         if traits["collect_lowered_facts"]:
             classes["lowered_contract_validation"] = "shared"
-        return classes
-
-    if kind == "scripted":
+    elif kind == "scripted":
         if traits["runtime_plan"]:
             classes["field_step_ordering"] = "shared"
         if traits["union_helper_usage"] and traits["helper_binding_render"]:
@@ -177,20 +447,37 @@ def _classifications(kind: str, traits: Dict[str, bool]) -> Dict[str, str]:
             classes["malformed_input_diagnostic_text"] = "shared"
         if traits["collect_lowered_facts"]:
             classes["lowered_contract_validation"] = "shared"
-        return classes
+    else:
+        raise ValueError(f"unknown backend kind: {kind}")
 
-    raise ValueError(f"unknown backend kind: {kind}")
+    if global_traits.get("verifier_first_checks", False):
+        classes["verifier_first_invariants"] = "shared"
+
+    if global_traits.get("helper_binding_completeness_checks", False) and traits.get("semantic_gate_helper_checks", False):
+        classes["helper_binding_completeness"] = "shared"
+
+    if global_traits.get("contract_v2_checks", False):
+        if kind == "c" and traits.get("emitc_pipeline", False):
+            classes["contract_v2_usage"] = "shared"
+        if kind in {"native", "scripted"} and traits.get("collect_lowered_facts", False):
+            classes["contract_v2_usage"] = "shared"
+
+    if traits.get("semantic_gate", False):
+        classes["fallback_free_semantic_execution"] = "shared"
+
+    return classes
 
 
 def _build_report(repo_root: Path) -> Dict[str, object]:
     backends: Dict[str, object] = {}
     per_backend_scores: Dict[str, int] = {}
     total_classes = len(SEMANTIC_CLASSES)
+    global_traits = _detect_global_traits(repo_root)
 
     for backend_name, cfg in BACKEND_CONFIG.items():
         emitter_text = _load_text(repo_root, cfg["path"])
-        traits = _detect_traits(cfg["kind"], emitter_text)
-        classifications = _classifications(cfg["kind"], traits)
+        traits = _detect_traits(repo_root, cfg, emitter_text)
+        classifications = _classifications(cfg["kind"], traits, global_traits)
         shared_count = sum(1 for status in classifications.values() if status == "shared")
         score = int(round((shared_count * 100.0) / total_classes))
         per_backend_scores[backend_name] = score
@@ -209,6 +496,7 @@ def _build_report(repo_root: Path) -> Dict[str, object]:
         "version": 1,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "semantic_classes": [{"id": class_id, "label": label} for class_id, label in SEMANTIC_CLASSES],
+        "global_traits": global_traits,
         "backends": backends,
         "project_floor_score": min(per_backend_scores.values()),
     }
