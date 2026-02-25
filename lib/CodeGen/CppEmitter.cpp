@@ -1780,6 +1780,7 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
         {
             continue;
         }
+        const std::vector<std::string> requiredTypeKeys{definitionTypeKey(def.info)};
 
         std::filesystem::path dir = outRoot;
         for (const auto& ns : def.info.namespaceComponents)
@@ -1788,7 +1789,8 @@ llvm::Error emitProfile(const SemanticModule&                  semantic,
         }
         if (auto err = writeGeneratedFile(dir / headerFileName(def.info),
                                           renderHeader(def, ctx, flavor, loweredFacts),
-                                          options.writePolicy))
+                                          options.writePolicy,
+                                          requiredTypeKeys))
         {
             return err;
         }

@@ -12,6 +12,7 @@ add_library(llvmdsdlFrontend
   Lexer.cpp
   Parser.cpp
   TargetResolution.cpp
+  DepfilePlanner.cpp
   ASTPrinter.cpp
 )
 

@@ -1383,6 +1383,7 @@ llvm::Error emitPython(const SemanticModule&    semantic,
 
     for (const auto* def : ordered)
     {
+        const std::vector<std::string> requiredTypeKeys{definitionTypeKey(def->info)};
         const auto relPath  = ctx.relativeFilePath(def->info);
         const auto fullPath = packageRoot / relPath;
 
@@ -1398,7 +1399,7 @@ llvm::Error emitPython(const SemanticModule&    semantic,
             return rendered.takeError();
         }
 
-        if (auto err = writeGeneratedFile(fullPath, *rendered, options.writePolicy))
+        if (auto err = writeGeneratedFile(fullPath, *rendered, options.writePolicy, requiredTypeKeys))
         {
             return err;
         }

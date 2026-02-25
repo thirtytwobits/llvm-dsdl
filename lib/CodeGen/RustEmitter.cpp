@@ -1512,6 +1512,7 @@ llvm::Error emitRust(const SemanticModule&  semantic,
         {
             continue;
         }
+        const std::vector<std::string> requiredTypeKeys{definitionTypeKey(def.info)};
 
         std::vector<std::string> ns;
         ns.reserve(def.info.namespaceComponents.size());
@@ -1543,7 +1544,8 @@ llvm::Error emitRust(const SemanticModule&  semantic,
         }
         if (auto err = writeGeneratedFile(dir / (modName + ".rs"),
                                           renderDefinitionFile(def, ctx, loweredFacts, options),
-                                          options.writePolicy))
+                                          options.writePolicy,
+                                          requiredTypeKeys))
         {
             return err;
         }
@@ -1574,7 +1576,7 @@ llvm::Error emitRust(const SemanticModule&  semantic,
         }
     }
 
-    if (auto err = writeGeneratedFile(srcRoot / "lib.rs", lib.str(), options.writePolicy))
+    if (auto err = writeGeneratedFile(srcRoot / "lib.rs", lib.str(), options.writePolicy, options.selectedTypeKeys))
     {
         return err;
     }
@@ -1615,7 +1617,7 @@ llvm::Error emitRust(const SemanticModule&  semantic,
         }
 
         std::filesystem::path dir = srcRoot / dirRel;
-        if (auto err = writeGeneratedFile(dir / "mod.rs", mod.str(), options.writePolicy))
+        if (auto err = writeGeneratedFile(dir / "mod.rs", mod.str(), options.writePolicy, options.selectedTypeKeys))
         {
             return err;
         }

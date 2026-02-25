@@ -40,3 +40,6 @@ venv/
 # JavaScript / VSCode extension
 node_modules/
 editors/vscode/dsdld-client/.vscode-test/
+
+#nnvg
+nunavut_out

@@ -5,6 +5,7 @@ add_executable(dsdl-opt
 target_link_libraries(dsdl-opt
   PRIVATE
   llvmdsdlTransforms
+  llvmdsdlCodeGen
   MLIROptLib
 )
 

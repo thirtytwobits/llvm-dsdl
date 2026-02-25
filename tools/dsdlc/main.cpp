@@ -24,6 +24,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <queue>
 #include <string>
@@ -41,6 +42,7 @@
 #include "llvmdsdl/CodeGen/TsEmitter.h"
 #include "llvmdsdl/CodeGen/UavcanEmbeddedCatalog.h"
 #include "llvmdsdl/Frontend/ASTPrinter.h"
+#include "llvmdsdl/Frontend/DepfilePlanner.h"
 #include "llvmdsdl/Frontend/Parser.h"
 #include "llvmdsdl/Frontend/SourceLocation.h"
 #include "llvmdsdl/Frontend/TargetResolution.h"
@@ -258,6 +260,12 @@ void printRunSummary(llvm::StringRef                           command,
         llvm::errs() << "0";
     }
     llvm::errs() << elapsedFractionMs << "s\n";
+}
+
+std::string formatDurationMilliseconds(const std::chrono::steady_clock::duration elapsed)
+{
+    const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+    return std::to_string(elapsedMs) + " ms";
 }
 
 std::string normalizePathForCompare(const std::string& path)
@@ -1174,11 +1182,27 @@ int main(int argc, char** argv)
     std::sort(selectedTypeKeys.begin(), selectedTypeKeys.end());
 
     std::vector<std::string> generatedOutputs;
+    std::unordered_map<std::string, std::vector<std::string>> generatedOutputRequiredTypeKeys;
+
     llvmdsdl::EmitWritePolicy writePolicy;
     writePolicy.dryRun         = options.dryRun;
     writePolicy.noOverwrite    = options.noOverwrite;
     writePolicy.fileMode       = options.fileMode;
     writePolicy.recordedOutputs = &generatedOutputs;
+    writePolicy.recordedOutputRequiredTypeKeys = &generatedOutputRequiredTypeKeys;
+
+    std::unique_ptr<llvmdsdl::DepfilePlanner> depfilePlanner;
+    if (options.emitDepfiles)
+    {
+        const auto plannerBuildStart = std::chrono::steady_clock::now();
+        depfilePlanner               = std::make_unique<llvmdsdl::DepfilePlanner>(*semantic);
+        if (options.verbose >= 2)
+        {
+            const std::string message =
+                "dep planner build: " + formatDurationMilliseconds(std::chrono::steady_clock::now() - plannerBuildStart);
+            logVerbose(2, message);
+        }
+    }
 
     const auto emitDepfilesForGeneratedOutputs = [&](const std::vector<std::string>& regularOutputs) -> llvm::Error {
         if (!options.emitDepfiles)
@@ -1186,12 +1210,36 @@ int main(int argc, char** argv)
             return llvm::Error::success();
         }
 
+        std::chrono::steady_clock::duration depResolutionElapsed{0};
+        std::chrono::steady_clock::duration depWriteElapsed{0};
+        const std::vector<std::string>      noDeps;
+
         for (const auto& output : regularOutputs)
         {
-            if (auto err = llvmdsdl::writeDepfileForGeneratedOutput(output, inputsForListing, writePolicy))
+            const std::vector<std::string>* deps = &noDeps;
+
+            if (const auto metadataIt = generatedOutputRequiredTypeKeys.find(output);
+                metadataIt != generatedOutputRequiredTypeKeys.end())
+            {
+                const auto depResolutionStart = std::chrono::steady_clock::now();
+                deps                         = &depfilePlanner->depsForRequiredTypeKeys(metadataIt->second);
+                depResolutionElapsed += std::chrono::steady_clock::now() - depResolutionStart;
+            }
+
+            const auto depWriteStart = std::chrono::steady_clock::now();
+            if (auto err = llvmdsdl::writeDepfileForGeneratedOutputPrepared(output, *deps, writePolicy))
             {
                 return err;
             }
+            depWriteElapsed += std::chrono::steady_clock::now() - depWriteStart;
+        }
+
+        if (options.verbose >= 2)
+        {
+            const std::string resolutionMessage = "dep resolution: " + formatDurationMilliseconds(depResolutionElapsed);
+            const std::string writeMessage      = "depfile writes: " + formatDurationMilliseconds(depWriteElapsed);
+            logVerbose(2, resolutionMessage);
+            logVerbose(2, writeMessage);
         }
 
         return llvm::Error::success();

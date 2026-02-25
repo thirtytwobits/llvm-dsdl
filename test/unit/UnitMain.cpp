@@ -11,6 +11,7 @@ bool runParserTests();
 bool runBitLengthSetTests();
 bool runEvaluatorTests();
 bool runDepfileRenderTests();
+bool runDepfilePlannerTests();
 bool runAnalyzerTests();
 bool runRuntimeTests();
 bool runArrayWirePlanTests();
@@ -60,6 +61,7 @@ int main()
     ok      = runBitLengthSetTests() && ok;
     ok      = runEvaluatorTests() && ok;
     ok      = runDepfileRenderTests() && ok;
+    ok      = runDepfilePlannerTests() && ok;
     ok      = runAnalyzerTests() && ok;
     ok      = runRuntimeTests() && ok;
     ok      = runArrayWirePlanTests() && ok;

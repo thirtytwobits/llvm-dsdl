@@ -154,6 +154,24 @@ bool runDepfileRenderTests()
         return fail("depfile write did not record one .d output path");
     }
 
+    const std::filesystem::path preparedOutputPath = tmpRoot / "prepared" / "generated_prepared.c";
+    std::vector<std::string>    preparedDeps       = normalizedDeps;
+    if (auto err = llvmdsdl::writeDepfileForGeneratedOutputPrepared(preparedOutputPath, preparedDeps, policy))
+    {
+        std::cerr << "writeDepfileForGeneratedOutputPrepared failed unexpectedly: " << llvm::toString(std::move(err))
+                  << "\n";
+        std::filesystem::remove_all(tmpRoot, ec);
+        return false;
+    }
+    const std::filesystem::path preparedDepfilePath = preparedOutputPath.string() + ".d";
+    const std::string           preparedDepfileText = readTextFile(preparedDepfilePath);
+    const std::string expectedPreparedDepfile       = llvmdsdl::renderMakeDepfile(
+        std::filesystem::absolute(preparedOutputPath, ec).lexically_normal().string(), normalizedDeps);
+    if (preparedDepfileText != expectedPreparedDepfile)
+    {
+        return fail("prepared depfile writer content mismatch");
+    }
+
     llvmdsdl::EmitWritePolicy noOverwritePolicy = policy;
     noOverwritePolicy.noOverwrite               = true;
     noOverwritePolicy.recordedOutputs           = nullptr;

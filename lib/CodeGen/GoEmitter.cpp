@@ -1276,6 +1276,7 @@ llvm::Error emitGo(const SemanticModule& semantic,
         {
             continue;
         }
+        const std::vector<std::string> requiredTypeKeys{definitionTypeKey(def.info)};
 
         const auto            dirRel = ctx.packagePath(def.info);
         std::filesystem::path dir    = outRoot;
@@ -1285,7 +1286,8 @@ llvm::Error emitGo(const SemanticModule& semantic,
         }
         if (auto err = writeGeneratedFile(dir / ctx.goFileName(def.info),
                                           renderDefinitionFile(def, ctx, options.moduleName, loweredFacts),
-                                          options.writePolicy))
+                                          options.writePolicy,
+                                          requiredTypeKeys))
         {
             return err;
         }

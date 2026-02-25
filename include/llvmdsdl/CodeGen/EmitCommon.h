@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -42,6 +43,9 @@ struct EmitWritePolicy final
 
     /// @brief Optional sink of absolute generated output paths.
     std::vector<std::string>* recordedOutputs{nullptr};
+
+    /// @brief Optional sink of generated-output path to required type keys.
+    std::unordered_map<std::string, std::vector<std::string>>* recordedOutputRequiredTypeKeys{nullptr};
 };
 
 /// @brief Returns a canonical type key for one discovered definition.
@@ -71,7 +75,10 @@ bool shouldEmitDefinition(const DiscoveredDefinition& info, const std::unordered
 /// @param[in] content File contents.
 /// @param[in] policy Write policy.
 /// @return Success or a descriptive I/O error.
-llvm::Error writeGeneratedFile(const std::filesystem::path& path, llvm::StringRef content, const EmitWritePolicy& policy);
+llvm::Error writeGeneratedFile(const std::filesystem::path& path,
+                               llvm::StringRef               content,
+                               const EmitWritePolicy&        policy,
+                               const std::vector<std::string>& requiredTypeKeys = {});
 
 /// @brief Renders one make-style depfile body.
 ///
@@ -98,6 +105,21 @@ std::string renderMakeDepfile(const std::string& target, const std::vector<std::
 llvm::Error writeDepfileForGeneratedOutput(const std::filesystem::path& outputPath,
                                            const std::vector<std::string>& deps,
                                            const EmitWritePolicy&          policy);
+
+/// @brief Writes `<outputPath>.d` depfile from pre-normalized sorted dependencies.
+///
+/// @details
+/// This fast path assumes `normalizedSortedDedupDeps` are already absolute (or
+/// otherwise final-form), sorted, and de-duplicated. No dependency
+/// normalization, sorting, or de-duplication is performed in this overload.
+///
+/// @param[in] outputPath Generated output path the depfile describes.
+/// @param[in] normalizedSortedDedupDeps Prepared dependency path list.
+/// @param[in] policy Write policy.
+/// @return Success or a descriptive I/O error.
+llvm::Error writeDepfileForGeneratedOutputPrepared(const std::filesystem::path& outputPath,
+                                                   const std::vector<std::string>& normalizedSortedDedupDeps,
+                                                   const EmitWritePolicy&          policy);
 
 }  // namespace llvmdsdl
 

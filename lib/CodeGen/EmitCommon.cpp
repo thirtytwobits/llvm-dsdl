@@ -83,13 +83,27 @@ std::string absoluteNormalizedPath(const std::filesystem::path& path)
     return absolute.lexically_normal().string();
 }
 
-void recordOutputPath(const std::filesystem::path& path, const EmitWritePolicy& policy)
+void recordOutputPath(const std::filesystem::path& path,
+                      const EmitWritePolicy&        policy,
+                      const std::vector<std::string>& requiredTypeKeys)
 {
+    const std::string normalizedPath = absoluteNormalizedPath(path);
+
     if (policy.recordedOutputs == nullptr)
     {
-        return;
+        if (policy.recordedOutputRequiredTypeKeys != nullptr && !requiredTypeKeys.empty())
+        {
+            policy.recordedOutputRequiredTypeKeys->insert_or_assign(normalizedPath, requiredTypeKeys);
+        }
     }
-    policy.recordedOutputs->push_back(absoluteNormalizedPath(path));
+    else
+    {
+        policy.recordedOutputs->push_back(normalizedPath);
+        if (policy.recordedOutputRequiredTypeKeys != nullptr && !requiredTypeKeys.empty())
+        {
+            policy.recordedOutputRequiredTypeKeys->insert_or_assign(normalizedPath, requiredTypeKeys);
+        }
+    }
 }
 
 std::string escapeMakeToken(llvm::StringRef text)
@@ -129,6 +143,21 @@ std::string escapeMakeToken(llvm::StringRef text)
     return out;
 }
 
+std::string renderMakeRuleFromPreparedDeps(llvm::StringRef target, const std::vector<std::string>& preparedDeps)
+{
+    std::string out;
+    out += escapeMakeToken(target);
+    out += ':';
+
+    for (const auto& dep : preparedDeps)
+    {
+        out.push_back(' ');
+        out += escapeMakeToken(dep);
+    }
+    out.push_back('\n');
+    return out;
+}
+
 }  // namespace
 
 std::string definitionTypeKey(const DiscoveredDefinition& info)
@@ -150,9 +179,12 @@ bool shouldEmitDefinition(const DiscoveredDefinition& info, const std::unordered
     return selectedTypeKeys.contains(definitionTypeKey(info));
 }
 
-llvm::Error writeGeneratedFile(const std::filesystem::path& path, llvm::StringRef content, const EmitWritePolicy& policy)
+llvm::Error writeGeneratedFile(const std::filesystem::path& path,
+                               llvm::StringRef               content,
+                               const EmitWritePolicy&        policy,
+                               const std::vector<std::string>& requiredTypeKeys)
 {
-    recordOutputPath(path, policy);
+    recordOutputPath(path, policy, requiredTypeKeys);
 
     if (policy.dryRun)
     {
@@ -215,18 +247,7 @@ std::string renderMakeDepfile(const std::string& target, const std::vector<std::
     std::vector<std::string> normalizedDeps = deps;
     std::sort(normalizedDeps.begin(), normalizedDeps.end());
     normalizedDeps.erase(std::unique(normalizedDeps.begin(), normalizedDeps.end()), normalizedDeps.end());
-
-    std::string out;
-    out += escapeMakeToken(target);
-    out += ':';
-
-    for (const auto& dep : normalizedDeps)
-    {
-        out.push_back(' ');
-        out += escapeMakeToken(dep);
-    }
-    out.push_back('\n');
-    return out;
+    return renderMakeRuleFromPreparedDeps(target, normalizedDeps);
 }
 
 llvm::Error writeDepfileForGeneratedOutput(const std::filesystem::path& outputPath,
@@ -243,6 +264,16 @@ llvm::Error writeDepfileForGeneratedOutput(const std::filesystem::path& outputPa
     }
 
     const std::string depfileContent = renderMakeDepfile(absoluteNormalizedPath(outputPath), normalizedDeps);
+    return writeGeneratedFile(depfilePath, depfileContent, policy);
+}
+
+llvm::Error writeDepfileForGeneratedOutputPrepared(const std::filesystem::path& outputPath,
+                                                   const std::vector<std::string>& normalizedSortedDedupDeps,
+                                                   const EmitWritePolicy&          policy)
+{
+    const std::filesystem::path depfilePath = outputPath.string() + ".d";
+    const std::string depfileContent =
+        renderMakeRuleFromPreparedDeps(absoluteNormalizedPath(outputPath), normalizedSortedDedupDeps);
     return writeGeneratedFile(depfilePath, depfileContent, policy);
 }
 

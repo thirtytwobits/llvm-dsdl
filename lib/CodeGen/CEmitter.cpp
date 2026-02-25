@@ -619,6 +619,7 @@ llvm::Error emitC(const SemanticModule& semantic,
         {
             continue;
         }
+        const std::vector<std::string> requiredTypeKeys{definitionTypeKey(def.info)};
 
         auto perDefModuleRef = mlir::OwningOpRef<mlir::ModuleOp>(mlir::ModuleOp::create(module.getLoc()));
         auto perDefModule    = *perDefModuleRef;
@@ -671,7 +672,10 @@ llvm::Error emitC(const SemanticModule& semantic,
             generatedCommentLine("C backend implementation") + "\n" +
             "/* Source: " + def.info.fullName + "." + std::to_string(def.info.majorVersion) + "." +
             std::to_string(def.info.minorVersion) + " */\n\n";
-        if (auto err = writeGeneratedFile(implDir / implFileName(def.info), implPreamble + emitted, options.writePolicy))
+        if (auto err = writeGeneratedFile(implDir / implFileName(def.info),
+                                          implPreamble + emitted,
+                                          options.writePolicy,
+                                          requiredTypeKeys))
         {
             return err;
         }
@@ -695,13 +699,15 @@ llvm::Error emitC(const SemanticModule& semantic,
         {
             continue;
         }
+        const std::vector<std::string> requiredTypeKeys{definitionTypeKey(def.info)};
 
         std::filesystem::path dir = outRoot;
         for (const auto& ns : def.info.namespaceComponents)
         {
             dir /= ns;
         }
-        if (auto err = writeGeneratedFile(dir / headerFileName(def.info), renderHeader(def, ctx), options.writePolicy))
+        if (auto err =
+                writeGeneratedFile(dir / headerFileName(def.info), renderHeader(def, ctx), options.writePolicy, requiredTypeKeys))
         {
             return err;
         }
