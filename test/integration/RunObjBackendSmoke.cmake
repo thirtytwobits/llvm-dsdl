@@ -35,7 +35,7 @@ execute_process(
   COMMAND
     "${CMAKE_COMMAND}" -E env "CC=${C_COMPILER}"
       "${DSDLC}" --target-language obj --target-endianness little
-      --obj-archive-name "${archive_name}" --outdir "${little_out}" "${FIXTURES_ROOT}"
+      --jobs 1 --obj-archive-name "${archive_name}" --outdir "${little_out}" "${FIXTURES_ROOT}"
   RESULT_VARIABLE little_result
   OUTPUT_VARIABLE little_stdout
   ERROR_VARIABLE little_stderr
@@ -50,7 +50,7 @@ execute_process(
   COMMAND
     "${CMAKE_COMMAND}" -E env "CC=${C_COMPILER}"
       "${DSDLC}" --target-language obj --target-endianness big
-      --obj-archive-name "${archive_name}" --outdir "${big_out}" "${FIXTURES_ROOT}"
+      --jobs 2 --obj-archive-name "${archive_name}" --outdir "${big_out}" "${FIXTURES_ROOT}"
   RESULT_VARIABLE big_result
   OUTPUT_VARIABLE big_stdout
   ERROR_VARIABLE big_stderr
@@ -65,7 +65,7 @@ execute_process(
   COMMAND
     "${CMAKE_COMMAND}" -E env "CC=${C_COMPILER}"
       "${DSDLC}" --target-language obj --target-endianness little
-      --obj-no-archive --outdir "${no_archive_out}" "${FIXTURES_ROOT}"
+      --jobs 4 --obj-no-archive --outdir "${no_archive_out}" "${FIXTURES_ROOT}"
   RESULT_VARIABLE no_archive_result
   OUTPUT_VARIABLE no_archive_stdout
   ERROR_VARIABLE no_archive_stderr

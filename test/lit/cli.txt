@@ -10,6 +10,11 @@
 # RUN: not %dsdlc --target-language ast -MD %S/fixtures 2>&1 | FileCheck %s --check-prefix=GATED_MD
 # RUN: not %dsdlc --target-language obj %S/fixtures 2>&1 | FileCheck %s --check-prefix=OBJ_ENDIAN_REQUIRED
 # RUN: not %dsdlc --target-language c --target-endianness little %S/fixtures 2>&1 | FileCheck %s --check-prefix=OBJ_GATED_ENDIAN
+# RUN: %dsdlc --target-language obj --target-endianness little --jobs 3 --dry-run --list-outputs --outdir %t.obj-jobs %S/fixtures | FileCheck %s --check-prefix=OBJ_OUTPUTS
+# RUN: %dsdlc --target-language ast --jobs 2 %S/fixtures 2>&1 | FileCheck %s --check-prefix=SUMMARY
+# RUN: %dsdlc --target-language ast -j 2 %S/fixtures 2>&1 | FileCheck %s --check-prefix=SUMMARY
+# RUN: not %dsdlc --target-language obj --target-endianness little --jobs 0 %S/fixtures 2>&1 | FileCheck %s --check-prefix=BAD_JOBS
+# RUN: not %dsdlc --target-language obj --target-endianness little --jobs nope %S/fixtures 2>&1 | FileCheck %s --check-prefix=BAD_JOBS
 # RUN: %dsdlc --target-language obj --target-endianness little --dry-run --list-outputs --outdir %t.obj %S/fixtures | FileCheck %s --check-prefix=OBJ_OUTPUTS
 # RUN: %dsdlc --target-language obj --obj-abi-language cpp --target-endianness little --dry-run --list-outputs --outdir %t.obj-cpp %S/fixtures | FileCheck %s --check-prefix=OBJ_CPP_OUTPUTS
 # RUN: not %dsdlc --target-language obj --obj-abi-language bad --target-endianness little %S/fixtures 2>&1 | FileCheck %s --check-prefix=OBJ_BAD_ABI_LANG
@@ -25,6 +30,7 @@
 # HELP: --outdir, -O <dir>
 # HELP: --allow-unregulated-fixed-port-id
 # HELP: --no-embedded-uavcan
+# HELP: --jobs, -j <N>
 # HELP: -MD
 # HELP: --list-inputs
 # HELP: --list-outputs
@@ -60,6 +66,8 @@
 # OBJ_GATED_ENDIAN: --target-endianness/--target-triple/--obj-abi-language/--obj-* is only valid when --target-language is 'obj'
 
 # OBJ_GATED_ABI_LANG: --target-endianness/--target-triple/--obj-abi-language/--obj-* is only valid when --target-language is 'obj'
+
+# BAD_JOBS: invalid --jobs value:
 
 # OBJ_BAD_ABI_LANG: invalid --obj-abi-language value: bad
 

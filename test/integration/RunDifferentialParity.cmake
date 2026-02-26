@@ -65,10 +65,10 @@ if(DEFINED DSDLC_EXTRA_ARGS AND NOT "${DSDLC_EXTRA_ARGS}" STREQUAL "")
 endif()
 
 set(ours_out "${OUT_DIR}/ours")
-set(nunavut_out "${OUT_DIR}/nunavut")
+set(dsdl_out "${OUT_DIR}/nunavut")
 set(build_out "${OUT_DIR}/build")
 file(MAKE_DIRECTORY "${ours_out}")
-file(MAKE_DIRECTORY "${nunavut_out}")
+file(MAKE_DIRECTORY "${dsdl_out}")
 file(MAKE_DIRECTORY "${build_out}")
 
 execute_process(
@@ -94,7 +94,7 @@ execute_process(
       "${PYTHON_EXECUTABLE}" -m nunavut
       --jobs 1
       --target-language c
-      --outdir "${nunavut_out}"
+      --outdir "${dsdl_out}"
       --lookup-dir "${UAVCAN_ROOT}"
       "${UAVCAN_ROOT}:node/7509.Heartbeat.1.0.dsdl"
       "${UAVCAN_ROOT}:node/435.ExecuteCommand.1.3.dsdl"
@@ -117,11 +117,11 @@ set(OURS_VALUE_HEADER "${ours_out}/uavcan/register/Value_1_0.h")
 set(OURS_FRAME_HEADER "${ours_out}/uavcan/metatransport/can/Frame_0_2.h")
 set(OURS_REAL32_HEADER "${ours_out}/uavcan/primitive/array/Real32_1_0.h")
 
-set(NV_HEARTBEAT_HEADER "${nunavut_out}/uavcan/node/Heartbeat_1_0.h")
-set(NV_EXECUTECOMMAND_HEADER "${nunavut_out}/uavcan/node/ExecuteCommand_1_3.h")
-set(NV_VALUE_HEADER "${nunavut_out}/uavcan/_register/Value_1_0.h")
-set(NV_FRAME_HEADER "${nunavut_out}/uavcan/metatransport/can/Frame_0_2.h")
-set(NV_REAL32_HEADER "${nunavut_out}/uavcan/primitive/array/Real32_1_0.h")
+set(NV_HEARTBEAT_HEADER "${dsdl_out}/uavcan/node/Heartbeat_1_0.h")
+set(NV_EXECUTECOMMAND_HEADER "${dsdl_out}/uavcan/node/ExecuteCommand_1_3.h")
+set(NV_VALUE_HEADER "${dsdl_out}/uavcan/_register/Value_1_0.h")
+set(NV_FRAME_HEADER "${dsdl_out}/uavcan/metatransport/can/Frame_0_2.h")
+set(NV_REAL32_HEADER "${dsdl_out}/uavcan/primitive/array/Real32_1_0.h")
 
 foreach(header
     "${OURS_HEARTBEAT_HEADER}"
@@ -207,7 +207,7 @@ execute_process(
       -Wextra
       -Werror
       -I "${SOURCE_ROOT}/test/integration"
-      -I "${nunavut_out}"
+      -I "${dsdl_out}"
       -c "${nv_case_c}"
       -o "${nv_case_obj}"
   RESULT_VARIABLE cc_result

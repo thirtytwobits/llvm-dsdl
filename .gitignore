@@ -43,3 +43,6 @@ editors/vscode/dsdld-client/.vscode-test/
 
 #nnvg
 nunavut_out
+
+#dsdlc
+dsdl_out

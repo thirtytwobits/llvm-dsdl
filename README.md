@@ -173,7 +173,7 @@ that reference core `uavcan` definitions resolve without needing external
 
 ### Useful options
 
-- `--outdir <dir>`: output directory (default: `nunavut_out`)
+- `--outdir <dir>`: output directory (default: `dsdl_out`)
 - `--no-overwrite`: fail if output file exists
 - `--no-embedded-uavcan`: disable embedded `uavcan` catalog for `mlir`/codegen
 - `--dry-run`: validate/plan without writing files

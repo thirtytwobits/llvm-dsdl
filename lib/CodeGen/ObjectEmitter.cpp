@@ -26,9 +26,11 @@
 #include <mlir/Pass/PassManager.h>
 #include <cstdlib>
 #include <filesystem>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 #include "llvmdsdl/CodeGen/CEmitter.h"
@@ -192,6 +194,108 @@ bool hasClangStyleTargetFlag(llvm::StringRef compilerProgram)
     return llvm::StringRef(basename).contains_insensitive("clang");
 }
 
+struct CompileTask final
+{
+    std::string                 compiler;
+    std::vector<std::string>    args;
+    std::string                 failContext;
+    std::filesystem::path       objectPath;
+};
+
+std::size_t resolveCompileJobCount(const ObjectEmitOptions& options, const std::size_t taskCount)
+{
+    if (taskCount == 0U)
+    {
+        return 0U;
+    }
+    std::uint32_t jobCount = options.compileJobs;
+    if (jobCount == 0U)
+    {
+        jobCount = std::thread::hardware_concurrency();
+    }
+    if (jobCount == 0U)
+    {
+        jobCount = 1U;
+    }
+    const auto requested = static_cast<std::size_t>(jobCount);
+    return (requested < taskCount) ? requested : taskCount;
+}
+
+llvm::Error runCompileTasks(const std::vector<CompileTask>& tasks, const ObjectEmitOptions& options)
+{
+    if (tasks.empty() || options.writePolicy.dryRun)
+    {
+        return llvm::Error::success();
+    }
+
+    const std::size_t workerCount = resolveCompileJobCount(options, tasks.size());
+    if (workerCount == 0U)
+    {
+        return llvm::Error::success();
+    }
+
+    std::mutex                stateMutex;
+    std::size_t               nextTaskIndex = 0U;
+    bool                      stopScheduling{false};
+    std::optional<std::string> firstFailure;
+
+    auto worker = [&]() {
+        while (true)
+        {
+            std::size_t taskIndex = 0U;
+            {
+                std::lock_guard<std::mutex> lock(stateMutex);
+                if (stopScheduling || nextTaskIndex >= tasks.size())
+                {
+                    return;
+                }
+                taskIndex = nextTaskIndex++;
+            }
+
+            const auto& task = tasks[taskIndex];
+            if (auto err = executeCommand(task.compiler, task.args, task.failContext))
+            {
+                const std::string message = llvm::toString(std::move(err));
+                std::lock_guard<std::mutex> lock(stateMutex);
+                if (!firstFailure)
+                {
+                    firstFailure = message;
+                }
+                stopScheduling = true;
+                return;
+            }
+            if (auto err = setPathMode(task.objectPath, options.writePolicy.fileMode))
+            {
+                const std::string message = llvm::toString(std::move(err));
+                std::lock_guard<std::mutex> lock(stateMutex);
+                if (!firstFailure)
+                {
+                    firstFailure = message;
+                }
+                stopScheduling = true;
+                return;
+            }
+        }
+    };
+
+    std::vector<std::thread> workers;
+    workers.reserve(workerCount);
+    for (std::size_t i = 0U; i < workerCount; ++i)
+    {
+        workers.emplace_back(worker);
+    }
+    for (auto& thread : workers)
+    {
+        thread.join();
+    }
+
+    if (firstFailure)
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(), "%s", firstFailure->c_str());
+    }
+    return llvm::Error::success();
+}
+
 }  // namespace
 
 llvm::Error emitObject(const SemanticModule&    semantic,
@@ -285,6 +389,8 @@ llvm::Error emitObject(const SemanticModule&    semantic,
 
     std::vector<std::filesystem::path> objectOutputs;
     objectOutputs.reserve(sources.size());
+    std::vector<CompileTask> compileTasks;
+    compileTasks.reserve(sources.size());
 
     for (const auto& source : sources)
     {
@@ -317,20 +423,17 @@ llvm::Error emitObject(const SemanticModule&    semantic,
         args.push_back("-o");
         args.push_back(objectPath.string());
 
-        if (!options.writePolicy.dryRun)
-        {
-            if (auto err = executeCommand(cCompiler, args, "C compiler invocation"))
-            {
-                return err;
-            }
-            if (auto err = setPathMode(objectPath, options.writePolicy.fileMode))
-            {
-                return err;
-            }
-        }
+        compileTasks.push_back(CompileTask{cCompiler, std::move(args), "C compiler invocation", objectPath});
+    }
 
-        recordOutput(options.writePolicy, objectPath, options.selectedTypeKeys);
-        objectOutputs.push_back(objectPath);
+    if (auto err = runCompileTasks(compileTasks, options))
+    {
+        return err;
+    }
+    for (const auto& task : compileTasks)
+    {
+        recordOutput(options.writePolicy, task.objectPath, options.selectedTypeKeys);
+        objectOutputs.push_back(task.objectPath);
     }
 
     if (options.abiLanguage == ObjectAbiLanguage::Cpp)
@@ -377,6 +480,8 @@ llvm::Error emitObject(const SemanticModule&    semantic,
         }
 
         objectOutputs.reserve(objectOutputs.size() + cppSources.size());
+        std::vector<CompileTask> cppCompileTasks;
+        cppCompileTasks.reserve(cppSources.size());
         for (const auto& source : cppSources)
         {
             std::filesystem::path relative = source.filename();
@@ -414,20 +519,18 @@ llvm::Error emitObject(const SemanticModule&    semantic,
             args.push_back("-o");
             args.push_back(objectPath.string());
 
-            if (!options.writePolicy.dryRun)
-            {
-                if (auto err = executeCommand(cxxCompiler, args, "C++ compiler invocation"))
-                {
-                    return err;
-                }
-                if (auto err = setPathMode(objectPath, options.writePolicy.fileMode))
-                {
-                    return err;
-                }
-            }
+            cppCompileTasks.push_back(
+                CompileTask{cxxCompiler, std::move(args), "C++ compiler invocation", objectPath});
+        }
 
-            recordOutput(options.writePolicy, objectPath, options.selectedTypeKeys);
-            objectOutputs.push_back(objectPath);
+        if (auto err = runCompileTasks(cppCompileTasks, options))
+        {
+            return err;
+        }
+        for (const auto& task : cppCompileTasks)
+        {
+            recordOutput(options.writePolicy, task.objectPath, options.selectedTypeKeys);
+            objectOutputs.push_back(task.objectPath);
         }
     }
 

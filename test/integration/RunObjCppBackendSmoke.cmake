@@ -34,7 +34,7 @@ execute_process(
   COMMAND
     "${CMAKE_COMMAND}" -E env "CC=${C_COMPILER}" "CXX=${CXX_COMPILER}"
       "${DSDLC}" --target-language obj --obj-abi-language cpp --target-endianness little
-      --obj-archive-name "${archive_name}" --outdir "${little_out}" "${FIXTURES_ROOT}"
+      --jobs 1 --obj-archive-name "${archive_name}" --outdir "${little_out}" "${FIXTURES_ROOT}"
   RESULT_VARIABLE little_result
   OUTPUT_VARIABLE little_stdout
   ERROR_VARIABLE little_stderr
@@ -49,7 +49,7 @@ execute_process(
   COMMAND
     "${CMAKE_COMMAND}" -E env "CC=${C_COMPILER}" "CXX=${CXX_COMPILER}"
       "${DSDLC}" --target-language obj --obj-abi-language cpp --target-endianness big
-      --obj-archive-name "${archive_name}" --outdir "${big_out}" "${FIXTURES_ROOT}"
+      --jobs 2 --obj-archive-name "${archive_name}" --outdir "${big_out}" "${FIXTURES_ROOT}"
   RESULT_VARIABLE big_result
   OUTPUT_VARIABLE big_stdout
   ERROR_VARIABLE big_stderr
@@ -64,7 +64,7 @@ execute_process(
   COMMAND
     "${CMAKE_COMMAND}" -E env "CC=${C_COMPILER}" "CXX=${CXX_COMPILER}"
       "${DSDLC}" --target-language obj --obj-abi-language cpp --target-endianness little
-      --obj-no-archive --outdir "${no_archive_out}" "${FIXTURES_ROOT}"
+      --jobs 4 --obj-no-archive --outdir "${no_archive_out}" "${FIXTURES_ROOT}"
   RESULT_VARIABLE no_archive_result
   OUTPUT_VARIABLE no_archive_stdout
   ERROR_VARIABLE no_archive_stderr
@@ -313,9 +313,53 @@ if(NOT shim_cmp EQUAL 0)
 endif()
 
 file(GLOB_RECURSE no_archive_objects "${no_archive_out}/*.o")
+list(SORT no_archive_objects)
 list(LENGTH no_archive_objects no_archive_count)
 if(no_archive_count EQUAL 0)
   message(FATAL_ERROR "obj-cpp no-archive run emitted zero objects")
+endif()
+
+set(no_archive_cpp_exe "${OUT_DIR}/no-archive-cpp-harness")
+execute_process(
+  COMMAND
+    "${CXX_COMPILER}" -std=c++17 -Wall -Wextra -Werror
+    -I
+    "${no_archive_out}/.obj_stage_cpp"
+    "${cpp_harness}"
+    ${no_archive_objects}
+    -o
+    "${no_archive_cpp_exe}"
+  RESULT_VARIABLE no_archive_cpp_build_result
+  OUTPUT_VARIABLE no_archive_cpp_build_stdout
+  ERROR_VARIABLE no_archive_cpp_build_stderr
+)
+if(NOT no_archive_cpp_build_result EQUAL 0)
+  message(STATUS "no-archive cpp harness build stdout:\n${no_archive_cpp_build_stdout}")
+  message(STATUS "no-archive cpp harness build stderr:\n${no_archive_cpp_build_stderr}")
+  message(FATAL_ERROR "failed to build no-archive C++ harness")
+endif()
+
+execute_process(
+  COMMAND "${no_archive_cpp_exe}"
+  RESULT_VARIABLE no_archive_cpp_run_result
+  OUTPUT_FILE "${OUT_DIR}/no-archive-cpp.out"
+  ERROR_VARIABLE no_archive_cpp_run_stderr
+)
+if(NOT no_archive_cpp_run_result EQUAL 0)
+  message(STATUS "no-archive cpp harness stderr:\n${no_archive_cpp_run_stderr}")
+  message(FATAL_ERROR "no-archive C++ harness failed")
+endif()
+
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -E compare_files "${OUT_DIR}/little-cpp.out" "${OUT_DIR}/no-archive-cpp.out"
+  RESULT_VARIABLE no_archive_cmp
+)
+if(NOT no_archive_cmp EQUAL 0)
+  file(READ "${OUT_DIR}/little-cpp.out" little_cpp)
+  file(READ "${OUT_DIR}/no-archive-cpp.out" no_archive_cpp)
+  message(STATUS "little cpp output:\n${little_cpp}")
+  message(STATUS "no-archive cpp output:\n${no_archive_cpp}")
+  message(FATAL_ERROR "archived and no-archive obj-cpp outputs differ")
 endif()
 
 set(adapter_exe "${OUT_DIR}/adapter-smoke")
@@ -335,4 +379,4 @@ if(NOT adapter_result EQUAL 0)
   message(FATAL_ERROR "adapter include smoke failed")
 endif()
 
-message(STATUS "obj-cpp backend smoke/parity passed (little+big, shim, adapters)")
+message(STATUS "obj-cpp backend smoke/parity passed (little+big+no-archive, shim, adapters)")

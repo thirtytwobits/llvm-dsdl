@@ -68,7 +68,7 @@ struct CliOptions final
     std::vector<std::string> lookupDirs;
 
     std::string targetLanguage;
-    std::string outDir{"nunavut_out"};
+    std::string outDir{"dsdl_out"};
 
     bool helpRequested{false};
     bool versionRequested{false};
@@ -100,6 +100,7 @@ struct CliOptions final
     std::string                           objTargetTriple;
     std::string                           objArchiveName{"llvmdsdl_generated"};
     std::string                           objAbiLanguage{"c"};
+    std::uint32_t                         jobs{0U};
     bool                                  objNoArchive{false};
 
     bool sawCppProfile{false};
@@ -174,7 +175,7 @@ void printHelp()
                  << "  --target-language, -l <lang>\n"
                  << "      Required output mode selector.\n"
                  << "  --outdir, -O <dir>\n"
-                 << "      Output directory root for codegen languages (default: nunavut_out).\n"
+                 << "      Output directory root for codegen languages (default: dsdl_out).\n"
                  << "  --optimize-lowered-serdes\n"
                  << "      Enable optional MLIR optimization for lowered serialization plans.\n"
                  << "  --no-overwrite\n"
@@ -191,6 +192,8 @@ void printHelp()
                  << "      Increase verbosity (-v, -vv).\n"
                  << "  --dry-run, -d\n"
                  << "      Run full planning/validation without filesystem writes.\n"
+                 << "  --jobs, -j <N>\n"
+                 << "      Worker parallelism hint (N>=1). Currently used by the obj backend compile stage.\n"
                  << "  -MD\n"
                  << "      Emit make-style .d dependency files alongside generated outputs.\n"
                  << "  --list-inputs\n"
@@ -466,6 +469,24 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
         if (arg == "--list-inputs")
         {
             options.listInputs = true;
+            continue;
+        }
+        if (arg == "--jobs" || arg == "-j")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            std::uint64_t parsed{};
+            if (llvm::StringRef(*value).getAsInteger(10, parsed) || parsed == 0U ||
+                parsed > std::numeric_limits<std::uint32_t>::max())
+            {
+                return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                               "invalid --jobs value: %s",
+                                               value->c_str());
+            }
+            options.jobs = static_cast<std::uint32_t>(parsed);
             continue;
         }
         if (arg == "--verbose")
@@ -750,7 +771,6 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
             options.objNoArchive    = true;
             continue;
         }
-
         if (arg.starts_with('-'))
         {
             return llvm::createStringError(llvm::inconvertibleErrorCode(), "unknown argument: %s", arg.str().c_str());
@@ -1510,6 +1530,7 @@ int main(int argc, char** argv)
         emitOptions.noArchive             = options.objNoArchive;
         emitOptions.abiLanguage           = (options.objAbiLanguage == "cpp") ? llvmdsdl::ObjectAbiLanguage::Cpp
                                                                                 : llvmdsdl::ObjectAbiLanguage::C;
+        emitOptions.compileJobs           = options.jobs;
         emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
         emitOptions.selectedTypeKeys      = selectedTypeKeys;
         emitOptions.writePolicy           = writePolicy;

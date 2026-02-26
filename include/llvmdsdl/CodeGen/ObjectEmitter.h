@@ -18,6 +18,7 @@
 
 #include "llvm/Support/Error.h"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -61,6 +62,9 @@ struct ObjectEmitOptions final
 
     /// @brief Source language lane used by object emission.
     ObjectAbiLanguage abiLanguage{ObjectAbiLanguage::C};
+
+    /// @brief Number of concurrent compile jobs (`0` means auto).
+    std::uint32_t compileJobs{0U};
 
     /// @brief Enables optional lowered-serdes optimization pipeline.
     bool optimizeLoweredSerDes{false};
