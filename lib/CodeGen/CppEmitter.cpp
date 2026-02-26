@@ -1320,6 +1320,16 @@ void emitFunctionPrototypes(std::ostringstream& out, const std::string& typeName
              "inline std::int8_t " + typeName + "__deserialize_(" + typeName +
                  "* out_obj, const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes" +
                  (isPmrFlavor(flavor) ? ", ::llvmdsdl::cpp::MemoryResource* memory_resource" : "") + ");");
+    emitLine(out,
+             0,
+             "inline std::int8_t " + typeName +
+                 "__try_deserialize_view_(const std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes, "
+                 "const std::uint8_t** out_view_bytes);");
+    emitLine(out,
+             0,
+             "inline std::int8_t " + typeName +
+                 "__try_serialize_view_(const std::uint8_t* view_bytes, std::size_t view_size_bytes, "
+                 "std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes);");
     out << "\n";
 }
 
@@ -1331,7 +1341,8 @@ void emitSectionStruct(std::ostringstream&    out,
                        const SemanticSection& section,
                        const EmitterContext&  ctx,
                        const CppFlavor        flavor,
-                       const AttachedDoc&     typeDoc)
+                       const AttachedDoc&     typeDoc,
+                       const LoweredSectionFacts* const sectionFacts)
 {
     emitAttachedDocCpp(out, 0, typeDoc);
     emitLine(out, 0, "struct " + typeName + " {");
@@ -1488,6 +1499,13 @@ void emitSectionStruct(std::ostringstream&    out,
              1,
              "static constexpr std::size_t SERIALIZATION_BUFFER_SIZE_BYTES = " +
                  std::to_string((section.serializationBufferSizeBits + 7) / 8) + "U;");
+    const bool zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
+    const std::string zohAliasReason =
+        (sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty()) ? sectionFacts->zohAliasReason : "not-proven";
+    emitLine(out,
+             1,
+             std::string("static constexpr bool ZOH_ALIAS_ELIGIBLE = ") + (zohAliasEligible ? "true;" : "false;"));
+    emitLine(out, 1, "static constexpr const char* ZOH_ALIAS_REASON = \"" + zohAliasReason + "\";");
     if (section.isUnion)
     {
         std::size_t optionCount = 0;
@@ -1542,6 +1560,22 @@ void emitSectionStruct(std::ostringstream&    out,
     }
     emitLine(out, 1, "}");
 
+    emitLine(out,
+             1,
+             "LLVMDSDL_NODISCARD static inline std::int8_t try_deserialize_view(const std::uint8_t* buffer, "
+             "std::size_t* inout_buffer_size_bytes, const std::uint8_t** out_view_bytes) {");
+    emitLine(out, 2, "return " + typeName + "__try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
+    emitLine(out, 1, "}");
+    emitLine(out,
+             1,
+             "LLVMDSDL_NODISCARD static inline std::int8_t try_serialize_view(const std::uint8_t* view_bytes, "
+             "std::size_t view_size_bytes, std::uint8_t* buffer, std::size_t* inout_buffer_size_bytes) {");
+    emitLine(out,
+             2,
+             "return " + typeName +
+                 "__try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
+    emitLine(out, 1, "}");
+
     if (isPmrFlavor(flavor))
     {
         emitLine(out,
@@ -1567,6 +1601,71 @@ void emitSectionStruct(std::ostringstream&    out,
     out << "\n";
 }
 
+void emitViewFunctions(std::ostringstream& out, const std::string& typeName)
+{
+    emitLine(out,
+             0,
+             "inline std::int8_t " + typeName +
+                 "__try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
+                 "inout_buffer_size_bytes, const std::uint8_t** const out_view_bytes)");
+    emitLine(out, 0, "{");
+    emitLine(out, 1, "if ((buffer == nullptr) || (inout_buffer_size_bytes == nullptr) || (out_view_bytes == nullptr)) {");
+    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "*out_view_bytes = nullptr;");
+    emitLine(out, 1, "constexpr std::size_t required = " + typeName + "::SERIALIZATION_BUFFER_SIZE_BYTES;");
+    emitLine(out, 1, "if (*inout_buffer_size_bytes < required) {");
+    emitLine(out, 2, "*inout_buffer_size_bytes = required;");
+    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "#if defined(LLVMDSDL_TARGET_ENDIANNESS_BIG)");
+    emitLine(out, 2, "*inout_buffer_size_bytes = 0U;");
+    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    emitLine(out, 1, "#else");
+    emitLine(out, 2, "if (" + typeName + "::ZOH_ALIAS_ELIGIBLE) {");
+    emitLine(out, 3, "*out_view_bytes = buffer;");
+    emitLine(out, 3, "*inout_buffer_size_bytes = required;");
+    emitLine(out, 3, "return DSDL_RUNTIME_SUCCESS;");
+    emitLine(out, 2, "}");
+    emitLine(out, 2, "*inout_buffer_size_bytes = 0U;");
+    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    emitLine(out, 1, "#endif");
+    emitLine(out, 0, "}");
+    out << "\n";
+
+    emitLine(out,
+             0,
+             "inline std::int8_t " + typeName +
+                 "__try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
+                 "std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
+    emitLine(out, 0, "{");
+    emitLine(out, 1, "if ((view_bytes == nullptr) || (buffer == nullptr) || (inout_buffer_size_bytes == nullptr)) {");
+    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "constexpr std::size_t required = " + typeName + "::SERIALIZATION_BUFFER_SIZE_BYTES;");
+    emitLine(out, 1, "if (view_size_bytes != required) {");
+    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "if (*inout_buffer_size_bytes < required) {");
+    emitLine(out, 2, "*inout_buffer_size_bytes = required;");
+    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "#if defined(LLVMDSDL_TARGET_ENDIANNESS_BIG)");
+    emitLine(out, 2, "*inout_buffer_size_bytes = 0U;");
+    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    emitLine(out, 1, "#else");
+    emitLine(out, 2, "if (" + typeName + "::ZOH_ALIAS_ELIGIBLE) {");
+    emitLine(out, 3, "std::memcpy(buffer, view_bytes, required);");
+    emitLine(out, 3, "*inout_buffer_size_bytes = required;");
+    emitLine(out, 3, "return DSDL_RUNTIME_SUCCESS;");
+    emitLine(out, 2, "}");
+    emitLine(out, 2, "*inout_buffer_size_bytes = 0U;");
+    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    emitLine(out, 1, "#endif");
+    emitLine(out, 0, "}");
+    out << "\n";
+}
+
 void emitSection(std::ostringstream&              out,
                  const EmitterContext&            ctx,
                  const SemanticDefinition&        def,
@@ -1587,11 +1686,13 @@ void emitSection(std::ostringstream&              out,
                       section,
                       ctx,
                       flavor,
-                      typeDoc);
+                      typeDoc,
+                      sectionFacts);
 
     FunctionBodyEmitter bodyEmitter(ctx, flavor);
     bodyEmitter.emitSerializeFunction(out, typeName, section, sectionFacts);
     bodyEmitter.emitDeserializeFunction(out, typeName, section, sectionFacts);
+    emitViewFunctions(out, typeName);
 }
 
 llvm::Expected<std::string> loadCRuntimeHeader()
@@ -1649,6 +1750,7 @@ std::string renderHeader(const SemanticDefinition& def,
     out << "#include <array>\n";
     out << "#include <cstddef>\n";
     out << "#include <cstdint>\n";
+    out << "#include <cstring>\n";
     out << "#include <utility>\n";
     if (!isAutosarFlavor(flavor))
     {
@@ -1712,6 +1814,12 @@ std::string renderHeader(const SemanticDefinition& def,
                  0,
                  "constexpr std::size_t " + baseTypeName + "_SERIALIZATION_BUFFER_SIZE_BYTES = " + requestType +
                      "::SERIALIZATION_BUFFER_SIZE_BYTES;");
+        emitLine(out,
+                 0,
+                 "constexpr bool " + baseTypeName + "_ZOH_ALIAS_ELIGIBLE = " + requestType + "::ZOH_ALIAS_ELIGIBLE;");
+        emitLine(out,
+                 0,
+                 "constexpr const char* " + baseTypeName + "_ZOH_ALIAS_REASON = " + requestType + "::ZOH_ALIAS_REASON;");
         out << "\n";
 
         emitLine(out,
@@ -1741,6 +1849,31 @@ std::string renderHeader(const SemanticDefinition& def,
                  "return " + requestType + "__deserialize_(reinterpret_cast<" + requestType +
                      "*>(out_obj), buffer, inout_buffer_size_bytes" + (isPmrFlavor(flavor) ? ", memory_resource" : "") +
                      ");");
+        emitLine(out, 0, "}");
+        out << "\n";
+
+        emitLine(out,
+                 0,
+                 "inline std::int8_t " + baseTypeName +
+                     "__try_deserialize_view_(const std::uint8_t* const buffer, std::size_t* const "
+                     "inout_buffer_size_bytes, const std::uint8_t** const out_view_bytes)");
+        emitLine(out, 0, "{");
+        emitLine(out,
+                 1,
+                 "return " + requestType + "__try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);");
+        emitLine(out, 0, "}");
+        out << "\n";
+
+        emitLine(out,
+                 0,
+                 "inline std::int8_t " + baseTypeName +
+                     "__try_serialize_view_(const std::uint8_t* const view_bytes, const std::size_t view_size_bytes, "
+                     "std::uint8_t* const buffer, std::size_t* const inout_buffer_size_bytes)");
+        emitLine(out, 0, "{");
+        emitLine(out,
+                 1,
+                 "return " + requestType +
+                     "__try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);");
         emitLine(out, 0, "}");
     }
     else

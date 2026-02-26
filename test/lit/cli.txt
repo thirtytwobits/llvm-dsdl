@@ -8,6 +8,13 @@
 # RUN: not %dsdlc --target-language cpp --cpp-profile not-a-profile %S/fixtures --outdir %t 2>&1 | FileCheck %s --check-prefix=BAD_CPP_PROFILE
 # RUN: not %dsdlc --target-language c --py-package bad %S/fixtures 2>&1 | FileCheck %s --check-prefix=GATED_PY
 # RUN: not %dsdlc --target-language ast -MD %S/fixtures 2>&1 | FileCheck %s --check-prefix=GATED_MD
+# RUN: not %dsdlc --target-language obj %S/fixtures 2>&1 | FileCheck %s --check-prefix=OBJ_ENDIAN_REQUIRED
+# RUN: not %dsdlc --target-language c --target-endianness little %S/fixtures 2>&1 | FileCheck %s --check-prefix=OBJ_GATED_ENDIAN
+# RUN: %dsdlc --target-language obj --target-endianness little --dry-run --list-outputs --outdir %t.obj %S/fixtures | FileCheck %s --check-prefix=OBJ_OUTPUTS
+# RUN: %dsdlc --target-language obj --obj-abi-language cpp --target-endianness little --dry-run --list-outputs --outdir %t.obj-cpp %S/fixtures | FileCheck %s --check-prefix=OBJ_CPP_OUTPUTS
+# RUN: not %dsdlc --target-language obj --obj-abi-language bad --target-endianness little %S/fixtures 2>&1 | FileCheck %s --check-prefix=OBJ_BAD_ABI_LANG
+# RUN: not %dsdlc --target-language c --obj-abi-language cpp %S/fixtures 2>&1 | FileCheck %s --check-prefix=OBJ_GATED_ABI_LANG
+# RUN: %dsdlc --target-language obj --target-endianness little --obj-no-archive --dry-run --list-outputs --outdir %t.obj-no-archive %S/fixtures | FileCheck %s --check-prefix=OBJ_NO_ARCHIVE
 # RUN: not %dsdlc --target-language cpp --cpp-profile 2>&1 | FileCheck %s --check-prefix=MISSING_VALUE_CPP
 # RUN: %dsdlc --target-language ast %S/fixtures 2>&1 | FileCheck %s --check-prefix=SUMMARY
 
@@ -23,11 +30,15 @@
 # HELP: --list-outputs
 # HELP: --version, -V
 # HELP: --cpp-profile <std|pmr|both|autosar>
+# HELP: --target-endianness <little|big>
+# HELP: --obj-archive-name <name>
+# HELP: --obj-abi-language <c|cpp>
+# HELP: --obj-no-archive
 
 # VERSION: dsdlc [[MAJOR:[0-9]+]].[[MINOR:[0-9]+]].[[PATCH:[0-9]+]]
 
 # MISSING_LANGUAGE: --target-language is required
-# MISSING_LANGUAGE: Usage: dsdlc --target-language <ast|mlir|c|cpp|rust|go|ts|python> [options] [target_files_or_root_namespace ...]
+# MISSING_LANGUAGE: Usage: dsdlc --target-language <ast|mlir|c|cpp|rust|go|ts|python|obj> [options] [target_files_or_root_namespace ...]
 
 # BAD_LANGUAGE: unknown --target-language value: unknown
 
@@ -38,14 +49,58 @@
 # BAD_TARGET: error: target path does not exist:
 
 # BAD_CPP_PROFILE: invalid --cpp-profile value: not-a-profile
-# BAD_CPP_PROFILE: Usage: dsdlc --target-language <ast|mlir|c|cpp|rust|go|ts|python> [options] [target_files_or_root_namespace ...]
+# BAD_CPP_PROFILE: Usage: dsdlc --target-language <ast|mlir|c|cpp|rust|go|ts|python|obj> [options] [target_files_or_root_namespace ...]
 
 # GATED_PY: --py-* is only valid when --target-language is 'python'
 
-# GATED_MD: -MD is only valid when --target-language is one of: c, cpp, rust, go, ts, python
+# GATED_MD: -MD is only valid when --target-language is one of: c, cpp, rust, go, ts, python, obj
+
+# OBJ_ENDIAN_REQUIRED: --target-endianness is required when --target-language is 'obj'
+
+# OBJ_GATED_ENDIAN: --target-endianness/--target-triple/--obj-abi-language/--obj-* is only valid when --target-language is 'obj'
+
+# OBJ_GATED_ABI_LANG: --target-endianness/--target-triple/--obj-abi-language/--obj-* is only valid when --target-language is 'obj'
+
+# OBJ_BAD_ABI_LANG: invalid --obj-abi-language value: bad
+
+# OBJ_CPP_OUTPUTS: Delimited_1_0_abi.o
+# OBJ_CPP_OUTPUTS: EmptyService_1_0_abi.o
+# OBJ_CPP_OUTPUTS: Helpers_1_0_abi.o
+# OBJ_CPP_OUTPUTS: Type_1_0_abi.o
+# OBJ_CPP_OUTPUTS: UnionTag_1_0_abi.o
+# OBJ_CPP_OUTPUTS: UsesDelimited_1_0_abi.o
+# OBJ_CPP_OUTPUTS: Delimited_1_0_c_shim.o
+# OBJ_CPP_OUTPUTS: EmptyService_1_0_c_shim.o
+# OBJ_CPP_OUTPUTS: Helpers_1_0_c_shim.o
+# OBJ_CPP_OUTPUTS: Type_1_0_c_shim.o
+# OBJ_CPP_OUTPUTS: UnionTag_1_0_c_shim.o
+# OBJ_CPP_OUTPUTS: UsesDelimited_1_0_c_shim.o
+# OBJ_CPP_OUTPUTS: Delimited_1_0.o
+# OBJ_CPP_OUTPUTS: EmptyService_1_0.o
+# OBJ_CPP_OUTPUTS: Helpers_1_0.o
+# OBJ_CPP_OUTPUTS: Type_1_0.o
+# OBJ_CPP_OUTPUTS: UnionTag_1_0.o
+# OBJ_CPP_OUTPUTS: UsesDelimited_1_0.o
+# OBJ_CPP_OUTPUTS: llvmdsdl_generated.a
+
+# OBJ_OUTPUTS: Delimited_1_0.o
+# OBJ_OUTPUTS: EmptyService_1_0.o
+# OBJ_OUTPUTS: Helpers_1_0.o
+# OBJ_OUTPUTS: Type_1_0.o
+# OBJ_OUTPUTS: UnionTag_1_0.o
+# OBJ_OUTPUTS: UsesDelimited_1_0.o
+# OBJ_OUTPUTS: llvmdsdl_generated.a
+
+# OBJ_NO_ARCHIVE: Delimited_1_0.o
+# OBJ_NO_ARCHIVE: EmptyService_1_0.o
+# OBJ_NO_ARCHIVE: Helpers_1_0.o
+# OBJ_NO_ARCHIVE: Type_1_0.o
+# OBJ_NO_ARCHIVE: UnionTag_1_0.o
+# OBJ_NO_ARCHIVE: UsesDelimited_1_0.o
+# OBJ_NO_ARCHIVE-NOT: llvmdsdl_generated.a
 
 # MISSING_VALUE_CPP: missing value for --cpp-profile
-# MISSING_VALUE_CPP: Usage: dsdlc --target-language <ast|mlir|c|cpp|rust|go|ts|python> [options] [target_files_or_root_namespace ...]
+# MISSING_VALUE_CPP: Usage: dsdlc --target-language <ast|mlir|c|cpp|rust|go|ts|python|obj> [options] [target_files_or_root_namespace ...]
 
 # SUMMARY: Run summary:
 # SUMMARY: command: ast

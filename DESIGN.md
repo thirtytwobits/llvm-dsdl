@@ -16,7 +16,7 @@ This repo currently ships three user-facing tools:
 - [`dsdl-opt`](tools/dsdl-opt/main.cpp): pass-driver over the custom dialect.
 - [`dsdld`](tools/dsdld/main.cpp): language server for editor workflows.
 
-Supported `dsdlc --target-language` values today are `ast`, `mlir`, `c`, `cpp`, `rust`, `go`, `ts`, and `python`.
+Supported `dsdlc --target-language` values today are `ast`, `mlir`, `c`, `cpp`, `rust`, `go`, `ts`, `python`, and `obj`.
 
 ## 2. Realized Architecture
 
@@ -31,13 +31,15 @@ flowchart LR
   E --> F["lowerToMLIR"]
   F --> G["dsdl.schema + dsdl.serialization_plan\n(dsdl.align/dsdl.io)"]
   G --> H["lower-dsdl-serialization\n(contract stamping + helper synthesis)"]
-  H --> I{"Backend path"}
-  I --> J["C: convert-dsdl-to-emitc\n+ emitc translation\n=> .c impl TUs"]
-  I --> K["C++/Rust/Go/TS/Python:\ncollect lowered facts\n+ shared planning\n=> native/scripted emitters"]
+  H --> I["dsdl-prove-zero-overhead + dsdl-legalize-endianness"]
+  I --> K{"Backend path"}
+  K --> J["C: convert-dsdl-to-emitc\n+ emitc translation\n=> .c impl TUs"]
+  K --> O["C++/Rust/Go/TS/Python:\ncollect lowered facts\n+ shared planning\n=> native/scripted emitters"]
+  K --> N["Obj: compile generated C\n=> .o (+ optional .a)"]
   E --> L["Header/type/model emission"]
   J --> M["Generated sources"]
-  K --> M
-  L --> M
+  O --> M
+  N --> M
 ```
 
 A useful way to read this diagram is: syntax and semantics happen once, wire-layout intent is normalized once, then that normalized intent is reused broadly.
@@ -104,6 +106,9 @@ This stage is the bridge where DSDL-specific semantic facts become compiler IR f
 Transforms are where normalization and contract hardening happen. The pass set currently includes:
 
 - `lower-dsdl-serialization`
+- `lower-dsdl-exec` (executable-contract alias for lowering)
+- `dsdl-prove-zero-overhead`
+- `dsdl-legalize-endianness`
 - `convert-dsdl-to-emitc`
 - optional `optimize-dsdl-lowered-serdes` pipeline
 
@@ -197,6 +202,23 @@ Python emission generates dataclass models, package metadata, runtime modules, a
 Key file:
 
 - [`lib/CodeGen/PythonEmitter.cpp`](lib/CodeGen/PythonEmitter.cpp)
+
+### 4.7 Object backend (`emitObject`)
+
+The object backend emits static `.o` artifacts and optional `.a` archives using an executable-contract pass lane with explicit target-endianness selection.
+
+Key files:
+
+- [`include/llvmdsdl/CodeGen/ObjectEmitter.h`](include/llvmdsdl/CodeGen/ObjectEmitter.h)
+- [`lib/CodeGen/ObjectEmitter.cpp`](lib/CodeGen/ObjectEmitter.cpp)
+
+Current path:
+
+1. Clone MLIR module and stamp `llvmdsdl.target_endianness`.
+2. Run `lower-dsdl-exec`, `dsdl-prove-zero-overhead`, `dsdl-legalize-endianness`, optional optimize.
+3. For `--obj-abi-language c` (default), stage C artifacts and invoke host C compiler to produce `.o`.
+4. For `--obj-abi-language cpp`, stage canonical profile-agnostic C++ ABI artifacts under `.obj_stage_cpp`, emit C shim wrappers with distinct shim symbols, compile with host C++ compiler, and include C-lane objects.
+5. Optionally invoke archiver to produce `.a`.
 
 ## 5. Runtime Design
 
@@ -297,6 +319,7 @@ The architecture is intentionally hard-cut and single-path: shared lowering cont
 Current tradeoffs:
 
 - C remains the deepest direct MLIR-to-code path (`convert-dsdl-to-emitc` + EmitC translation).
+- The `obj` lane is currently staged through generated C and toolchain compilation; direct LLVM object emission is planned as the next step.
 - Non-C backends still render language syntax natively/scriptedly, but semantic planning/orchestration is shared.
 - Runtime primitives are hand-maintained on purpose; semantic wrappers above primitives are generated and drift-checked.
 - Standard `uavcan` dependency resolution for `mlir`/codegen uses an embedded, drift-checked MLIR catalog; `ast` remains source-only.

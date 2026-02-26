@@ -6,6 +6,10 @@ export const LLVMDSDL_GENERATOR_VERSION = "<LLVMDSDL_VERSION>";
 export const DSDL_FULL_NAME = "fixtures.vendor.UnionTag";
 export const DSDL_VERSION_MAJOR = 1;
 export const DSDL_VERSION_MINOR = 0;
+export const DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE = false;
+export const DSDL_REQUEST_ZOH_ALIAS_REASON = "not-fixed-size";
+export const DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = false;
+export const DSDL_RESPONSE_ZOH_ALIAS_REASON = "not-applicable";
 
 export type UnionTag_1_0 =
   | { _tag: 0; first: number; }

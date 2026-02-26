@@ -90,6 +90,12 @@ struct LoweredSectionFacts final
     /// @brief Deserialize union-tag helper symbol.
     std::string deserUnionTagHelper;
 
+    /// @brief True when conservative proof allows zero-overhead alias/view path.
+    bool zohAliasEligible{false};
+
+    /// @brief Canonical ineligibility reason when @ref zohAliasEligible is false.
+    std::string zohAliasReason;
+
     /// @brief Field facts keyed by field name.
     std::unordered_map<std::string, LoweredFieldFacts> fieldsByName;
 };

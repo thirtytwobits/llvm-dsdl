@@ -66,6 +66,7 @@ dsdlc --target-language <lang> [options] <root_namespace_or_files...>
 - `go`
 - `ts`
 - `python`
+- `obj`
 
 ### Practical examples
 
@@ -132,6 +133,26 @@ dsdlc --target-language python path/to/root_namespace \
   --outdir out/python
 ```
 
+Generate object/archive output:
+
+```bash
+dsdlc --target-language obj path/to/root_namespace \
+  --target-endianness little \
+  --target-triple x86_64-unknown-linux-gnu \
+  --obj-archive-name my_dsdl_objects \
+  --outdir out/obj
+```
+
+Generate profile-agnostic canonical C++ ABI object/archive output with C shim exports:
+
+```bash
+dsdlc --target-language obj path/to/root_namespace \
+  --obj-abi-language cpp \
+  --target-endianness little \
+  --obj-archive-name my_dsdl_cppabi_objects \
+  --outdir out/obj-cpp
+```
+
 ### Dependency lookup
 
 Use `--lookup-dir` (repeatable) when your definitions import other namespaces:
@@ -146,7 +167,7 @@ dsdlc --target-language c path/to/root_namespace \
 `dsdlc` also reads `DSDL_INCLUDE_PATH` and `CYPHAL_PATH`.
 
 For the standard `uavcan.*` namespace, `dsdlc` ships an embedded catalog for
-`mlir` and codegen targets (`c`, `cpp`, `rust`, `go`, `ts`, `python`). Types
+`mlir` and codegen targets (`c`, `cpp`, `rust`, `go`, `ts`, `python`, `obj`). Types
 that reference core `uavcan` definitions resolve without needing external
 `uavcan` source roots. Use `--no-embedded-uavcan` to disable this behavior.
 
@@ -160,6 +181,11 @@ that reference core `uavcan` definitions resolve without needing external
 - `--list-outputs`: print semicolon-separated output files
 - `-MD`: emit make-style `.d` dependency files for generated outputs
 - `--optimize-lowered-serdes`: enable optional lowered serdes optimization
+- `--target-endianness <little|big>`: required for `--target-language obj`
+- `--target-triple <triple>`: optional target triple for `obj` compiler invocation
+- `--obj-archive-name <name>`: archive stem for `obj` output (default: `llvmdsdl_generated`)
+- `--obj-abi-language <c|cpp>`: object lane ABI language (`c` default; `cpp` adds canonical ABI + C shim exports)
+- `--obj-no-archive`: emit only `.o` files for `obj`
 
 ## `dsdld` Quick Start
 

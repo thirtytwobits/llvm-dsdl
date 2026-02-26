@@ -98,7 +98,8 @@ bool collectLoweredFactsFromMlir(const SemanticModule&  semantic,
     LoweredFactsMap                                        loweredFacts;
     auto              loweredModule = mlir::OwningOpRef<mlir::ModuleOp>(mlir::cast<mlir::ModuleOp>(module->clone()));
     mlir::PassManager pm(module.getContext());
-    pm.addPass(createLowerDSDLSerializationPass());
+    pm.addPass(createLowerDSDLExecPass());
+    pm.addPass(createDSDLProveZeroOverheadPass());
     if (optimizeLoweredSerDes)
     {
         addOptimizeLoweredSerDesPipeline(pm);
@@ -106,7 +107,7 @@ bool collectLoweredFactsFromMlir(const SemanticModule&  semantic,
     if (mlir::failed(pm.run(*loweredModule)))
     {
         diagnostics.error({"<mlir>", 1, 1},
-                          "failed to run lower-dsdl-serialization for " + backendLabel + " backend validation");
+                          "failed to run lower-dsdl-exec for " + backendLabel + " backend validation");
         return false;
     }
     if (const auto envelopeViolation = findLoweredContractEnvelopeViolation(loweredModule->getOperation()))
@@ -230,6 +231,22 @@ bool collectLoweredFactsFromMlir(const SemanticModule&  semantic,
                     child.getAttrOfType<mlir::StringAttr>(kLoweredSerUnionTagHelperAttr).getValue().str();
                 sectionFacts.deserUnionTagHelper =
                     child.getAttrOfType<mlir::StringAttr>(kLoweredDeserUnionTagHelperAttr).getValue().str();
+            }
+            sectionFacts.zohAliasEligible = child.hasAttr("zoh_alias_eligible");
+            if (!sectionFacts.zohAliasEligible)
+            {
+                if (const auto reasonAttr = child.getAttrOfType<mlir::StringAttr>("zoh_alias_reason"))
+                {
+                    sectionFacts.zohAliasReason = reasonAttr.getValue().str();
+                }
+                if (sectionFacts.zohAliasReason.empty())
+                {
+                    sectionFacts.zohAliasReason = "not-proven";
+                }
+            }
+            else
+            {
+                sectionFacts.zohAliasReason = "eligible";
             }
 
             for (mlir::Operation& step : child.getRegion(0).front())

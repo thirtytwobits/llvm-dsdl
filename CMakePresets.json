@@ -76,7 +76,8 @@
     {
       "name": "build-ci",
       "displayName": "Build (ci)",
-      "configurePreset": "ci"
+      "configurePreset": "ci",
+      "configuration": "Debug"
     }
   ],
   "testPresets": [

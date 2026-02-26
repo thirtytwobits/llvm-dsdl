@@ -263,7 +263,7 @@ mlir::LogicalResult createPlanCapacityCheckFunction(mlir::ModuleOp   module,
     {
         fn->setAttr("llvmdsdl.section", sectionAttr);
     }
-    fn->setAttr("llvmdsdl.plan_origin", builder.getStringAttr("lower-dsdl-serialization"));
+    fn->setAttr("llvmdsdl.plan_origin", builder.getStringAttr(kLoweredSerDesContractProducer));
 
     mlir::Block* entry = fn.addEntryBlock();
     builder.setInsertionPointToStart(entry);
@@ -367,7 +367,7 @@ mlir::LogicalResult createUnionTagValidationFunction(mlir::ModuleOp   module,
     {
         fn->setAttr("llvmdsdl.section", sectionAttr);
     }
-    fn->setAttr("llvmdsdl.plan_origin", builder.getStringAttr("lower-dsdl-serialization"));
+    fn->setAttr("llvmdsdl.plan_origin", builder.getStringAttr(kLoweredSerDesContractProducer));
 
     mlir::Block* entry = fn.addEntryBlock();
     builder.setInsertionPointToStart(entry);
@@ -1180,6 +1180,81 @@ mlir::LogicalResult createDelimiterHeaderValidationHelpers(mlir::ModuleOp   modu
     return mlir::success();
 }
 
+mlir::LogicalResult runLowerDSDLSerializationLowering(mlir::ModuleOp module)
+{
+    mlir::OpBuilder               builder(module.getContext());
+    std::vector<mlir::Operation*> plans;
+    bool                          sawPlan = false;
+
+    for (mlir::Operation& op : module.getBodyRegion().front())
+    {
+        if (op.getName().getStringRef() != "dsdl.schema")
+        {
+            continue;
+        }
+        for (mlir::Operation& child : op.getRegion(0).front())
+        {
+            if (child.getName().getStringRef() != "dsdl.serialization_plan")
+            {
+                continue;
+            }
+            if (mlir::failed(canonicalizePlan(&child, builder)))
+            {
+                return mlir::failure();
+            }
+            sawPlan = true;
+            plans.push_back(&child);
+        }
+    }
+
+    if (sawPlan)
+    {
+        stampLoweredContractAttributes(module, builder);
+    }
+
+    for (mlir::Operation* plan : plans)
+    {
+        if (mlir::failed(createPlanCapacityCheckFunction(module, plan, builder)))
+        {
+            return mlir::failure();
+        }
+        if (mlir::failed(createUnionTagValidationFunction(module, plan, builder)))
+        {
+            return mlir::failure();
+        }
+        if (mlir::failed(createScalarUnsignedFieldHelpers(module, plan, builder)))
+        {
+            return mlir::failure();
+        }
+        if (mlir::failed(createScalarSignedFieldHelpers(module, plan, builder)))
+        {
+            return mlir::failure();
+        }
+        if (mlir::failed(createScalarFloatFieldHelpers(module, plan, builder)))
+        {
+            return mlir::failure();
+        }
+        if (mlir::failed(createUnionTagIoHelpers(module, plan, builder)))
+        {
+            return mlir::failure();
+        }
+        if (mlir::failed(createArrayLengthValidationHelpers(module, plan, builder)))
+        {
+            return mlir::failure();
+        }
+        if (mlir::failed(createArrayLengthPrefixHelpers(module, plan, builder)))
+        {
+            return mlir::failure();
+        }
+        if (mlir::failed(createDelimiterHeaderValidationHelpers(module, plan, builder)))
+        {
+            return mlir::failure();
+        }
+    }
+
+    return mlir::success();
+}
+
 struct LowerDSDLSerializationPass
     : public mlir::PassWrapper<LowerDSDLSerializationPass, mlir::OperationPass<mlir::ModuleOp>>
 {
@@ -1198,14 +1273,57 @@ struct LowerDSDLSerializationPass
 
     void runOnOperation() override
     {
-        auto                          module = getOperation();
-        mlir::OpBuilder               builder(module.getContext());
-        std::vector<mlir::Operation*> plans;
-        bool                          sawPlan = false;
+        if (mlir::failed(runLowerDSDLSerializationLowering(getOperation())))
+        {
+            signalPassFailure();
+        }
+    }
+};
+
+struct LowerDSDLExecPass : public mlir::PassWrapper<LowerDSDLExecPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    llvm::StringRef getArgument() const final
+    {
+        return "lower-dsdl-exec";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Lower DSDL serialization-plan ops into canonical executable-contract control-flow form";
+    }
+    void getDependentDialects(mlir::DialectRegistry& registry) const override
+    {
+        registry.insert<mlir::arith::ArithDialect, mlir::func::FuncDialect, mlir::scf::SCFDialect>();
+    }
+
+    void runOnOperation() override
+    {
+        if (mlir::failed(runLowerDSDLSerializationLowering(getOperation())))
+        {
+            signalPassFailure();
+        }
+    }
+};
+
+struct ProveDSDLZeroOverheadPass
+    : public mlir::PassWrapper<ProveDSDLZeroOverheadPass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    llvm::StringRef getArgument() const final
+    {
+        return "dsdl-prove-zero-overhead";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Annotate serialization plans with conservative zero-overhead aliasability facts";
+    }
+
+    void runOnOperation() override
+    {
+        auto            module = getOperation();
+        mlir::OpBuilder builder(module.getContext());
 
         for (mlir::Operation& op : module.getBodyRegion().front())
         {
-            if (op.getName().getStringRef() != "dsdl.schema")
+            if (op.getName().getStringRef() != "dsdl.schema" || op.getNumRegions() == 0 || op.getRegion(0).empty())
             {
                 continue;
             }
@@ -1215,69 +1333,148 @@ struct LowerDSDLSerializationPass
                 {
                     continue;
                 }
-                if (mlir::failed(canonicalizePlan(&child, builder)))
+
+                const auto fixedSize = child.hasAttr("fixed_size");
+                const auto sealed    = child.hasAttr("sealed");
+
+                std::string reason;
+                bool        hasPayloadFields = false;
+                std::int64_t offsetBits = 0;
+
+                if (child.getNumRegions() > 0 && !child.getRegion(0).empty())
                 {
-                    signalPassFailure();
-                    return;
+                    for (mlir::Operation& step : child.getRegion(0).front())
+                    {
+                        if (step.getName().getStringRef() == "dsdl.align")
+                        {
+                            const auto alignBits = nonNegative(intAttrOrDefault(&step, "bits", 1));
+                            if (alignBits > 1)
+                            {
+                                const auto rem = offsetBits % alignBits;
+                                if (rem != 0)
+                                {
+                                    offsetBits += (alignBits - rem);
+                                }
+                            }
+                            continue;
+                        }
+                        if (step.getName().getStringRef() != "dsdl.io")
+                        {
+                            continue;
+                        }
+                        const auto kindAttr = step.getAttrOfType<mlir::StringAttr>("kind");
+                        const auto kind     = kindAttr ? kindAttr.getValue() : llvm::StringRef("field");
+                        const auto bitLength = nonNegative(intAttrOrDefault(&step, "bit_length", 0));
+                        if (kind == "padding")
+                        {
+                            offsetBits += bitLength;
+                            continue;
+                        }
+
+                        hasPayloadFields = true;
+                        if ((offsetBits % 8) != 0)
+                        {
+                            reason = "unaligned-field";
+                            break;
+                        }
+                        if (bitLength <= 0)
+                        {
+                            reason = "invalid-bit-length";
+                            break;
+                        }
+                        if ((bitLength % 8) != 0)
+                        {
+                            reason = "sub-byte-field";
+                            break;
+                        }
+                        const auto arrayKindAttr = step.getAttrOfType<mlir::StringAttr>("array_kind");
+                        const auto arrayKind     = arrayKindAttr ? arrayKindAttr.getValue() : llvm::StringRef("none");
+                        if (arrayKind == "variable_inclusive" || arrayKind == "variable_exclusive")
+                        {
+                            reason = "variable-array";
+                            break;
+                        }
+                        const auto scalarCategoryAttr = step.getAttrOfType<mlir::StringAttr>("scalar_category");
+                        const auto scalarCategory =
+                            scalarCategoryAttr ? scalarCategoryAttr.getValue() : llvm::StringRef("void");
+                        if (scalarCategory == "composite")
+                        {
+                            reason = "composite-field";
+                            break;
+                        }
+                        if (scalarCategory == "float" && bitLength != 16 && bitLength != 32 && bitLength != 64)
+                        {
+                            reason = "unsupported-float-width";
+                            break;
+                        }
+                        offsetBits += bitLength;
+                    }
                 }
-                sawPlan = true;
-                plans.push_back(&child);
-            }
-        }
 
-        if (sawPlan)
-        {
-            stampLoweredContractAttributes(module, builder);
-        }
+                if (reason.empty() && !fixedSize)
+                {
+                    reason = "not-fixed-size";
+                }
+                if (reason.empty() && !sealed)
+                {
+                    reason = "not-sealed";
+                }
+                if (reason.empty() && child.hasAttr("is_union"))
+                {
+                    reason = "union-type";
+                }
+                if (reason.empty() && !hasPayloadFields)
+                {
+                    reason = "empty-layout";
+                }
 
-        for (mlir::Operation* plan : plans)
-        {
-            if (mlir::failed(createPlanCapacityCheckFunction(module, plan, builder)))
-            {
-                signalPassFailure();
-                return;
-            }
-            if (mlir::failed(createUnionTagValidationFunction(module, plan, builder)))
-            {
-                signalPassFailure();
-                return;
-            }
-            if (mlir::failed(createScalarUnsignedFieldHelpers(module, plan, builder)))
-            {
-                signalPassFailure();
-                return;
-            }
-            if (mlir::failed(createScalarSignedFieldHelpers(module, plan, builder)))
-            {
-                signalPassFailure();
-                return;
-            }
-            if (mlir::failed(createScalarFloatFieldHelpers(module, plan, builder)))
-            {
-                signalPassFailure();
-                return;
-            }
-            if (mlir::failed(createUnionTagIoHelpers(module, plan, builder)))
-            {
-                signalPassFailure();
-                return;
-            }
-            if (mlir::failed(createArrayLengthValidationHelpers(module, plan, builder)))
-            {
-                signalPassFailure();
-                return;
-            }
-            if (mlir::failed(createArrayLengthPrefixHelpers(module, plan, builder)))
-            {
-                signalPassFailure();
-                return;
-            }
-            if (mlir::failed(createDelimiterHeaderValidationHelpers(module, plan, builder)))
-            {
-                signalPassFailure();
-                return;
+                const bool eligible = reason.empty();
+                if (eligible)
+                {
+                    child.setAttr("zoh_alias_eligible", builder.getUnitAttr());
+                    child.removeAttr("zoh_alias_reason");
+                }
+                else
+                {
+                    child.removeAttr("zoh_alias_eligible");
+                    child.setAttr("zoh_alias_reason", builder.getStringAttr(reason));
+                }
             }
         }
+    }
+};
+
+struct DSDLEndianLegalizePass
+    : public mlir::PassWrapper<DSDLEndianLegalizePass, mlir::OperationPass<mlir::ModuleOp>>
+{
+    llvm::StringRef getArgument() const final
+    {
+        return "dsdl-legalize-endianness";
+    }
+    llvm::StringRef getDescription() const final
+    {
+        return "Validate and stamp DSDL target endianness legalization metadata";
+    }
+
+    void runOnOperation() override
+    {
+        auto            module = getOperation();
+        mlir::OpBuilder builder(module.getContext());
+        const auto      targetEndianness = module->getAttrOfType<mlir::StringAttr>("llvmdsdl.target_endianness");
+        if (!targetEndianness)
+        {
+            module.emitError("missing required module attribute 'llvmdsdl.target_endianness'");
+            signalPassFailure();
+            return;
+        }
+        const auto endianValue = targetEndianness.getValue();
+        if (endianValue != "little" && endianValue != "big")
+        {
+            module.emitError("unsupported module target endianness (expected 'little' or 'big')");
+            signalPassFailure();
+            return;
+        }
+        module->setAttr("llvmdsdl.target_endianness_legalized", builder.getUnitAttr());
     }
 };
 
@@ -1286,6 +1483,21 @@ struct LowerDSDLSerializationPass
 std::unique_ptr<mlir::Pass> createLowerDSDLSerializationPass()
 {
     return std::make_unique<LowerDSDLSerializationPass>();
+}
+
+std::unique_ptr<mlir::Pass> createLowerDSDLExecPass()
+{
+    return std::make_unique<LowerDSDLExecPass>();
+}
+
+std::unique_ptr<mlir::Pass> createDSDLProveZeroOverheadPass()
+{
+    return std::make_unique<ProveDSDLZeroOverheadPass>();
+}
+
+std::unique_ptr<mlir::Pass> createDSDLEndianLegalizePass()
+{
+    return std::make_unique<DSDLEndianLegalizePass>();
 }
 
 void addOptimizeLoweredSerDesPipeline(mlir::OpPassManager& pm)
@@ -1304,6 +1516,9 @@ void registerDSDLPasses()
     }
     once = true;
     static mlir::PassRegistration<LowerDSDLSerializationPass> reg;
+    static mlir::PassRegistration<LowerDSDLExecPass>          regExec;
+    static mlir::PassRegistration<ProveDSDLZeroOverheadPass>  regZoh;
+    static mlir::PassRegistration<DSDLEndianLegalizePass>     regEndian;
     static mlir::PassPipelineRegistration<>
         optimizeLoweredSerDesPipeline("optimize-dsdl-lowered-serdes",
                                       "Apply semantics-preserving canonicalization and CSE to lowered DSDL SerDes IR",

@@ -76,4 +76,36 @@ def DSDL_IOOp : DSDL_Op<"io", [NoMemoryEffect]> {
   let hasVerifier = 1;
 }
 
+def DSDL_ExecPlanOp
+    : DSDL_Op<"exec_plan", [NoMemoryEffect, NoTerminator]> {
+  let summary = "Container for executable wire operations";
+  let regions = (region AnyRegion:$body);
+  let assemblyFormat = "attr-dict-with-keyword $body";
+}
+
+def DSDL_BitReadOp : DSDL_Op<"bit_read", [NoMemoryEffect]> {
+  let summary = "Executable bitstream read operation";
+  let arguments = (ins I64Attr:$width, UnitAttr:$saturating);
+  let assemblyFormat = "attr-dict";
+}
+
+def DSDL_BitWriteOp : DSDL_Op<"bit_write", [NoMemoryEffect]> {
+  let summary = "Executable bitstream write operation";
+  let arguments = (ins I64Attr:$width, UnitAttr:$saturating);
+  let assemblyFormat = "attr-dict";
+}
+
+def DSDL_UnionSwitchOp : DSDL_Op<"union_switch", [NoMemoryEffect, NoTerminator]> {
+  let summary = "Executable union tag dispatch operation";
+  let arguments = (ins I64Attr:$tag_bits);
+  let regions = (region AnyRegion:$body);
+  let assemblyFormat = "attr-dict-with-keyword $body";
+}
+
+def DSDL_ZOHCheckOp : DSDL_Op<"zoh_check", [NoMemoryEffect]> {
+  let summary = "Zero-overhead aliasability check";
+  let arguments = (ins StrAttr:$result);
+  let assemblyFormat = "attr-dict";
+}
+
 #endif // LLVMDSDL_IR_DSDL_OPS_TD

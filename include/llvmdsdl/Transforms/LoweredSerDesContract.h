@@ -25,7 +25,7 @@ namespace llvmdsdl
 /// @details Contract schema shared by lowering and backend code generators.
 
 /// @brief Current lowered-serdes contract version.
-inline constexpr std::int64_t kLoweredSerDesContractMajor = 1;
+inline constexpr std::int64_t kLoweredSerDesContractMajor = 2;
 
 /// @brief Current lowered-serdes contract minor version.
 inline constexpr std::int64_t kLoweredSerDesContractMinor = 0;
@@ -62,7 +62,7 @@ inline constexpr char kLoweredSerDesContractVersionAttr[] = "llvmdsdl.lowered_co
 inline constexpr char kLoweredSerDesContractProducerAttr[] = "llvmdsdl.lowered_contract_producer";
 
 /// @brief Expected producer pass identifier.
-inline constexpr char kLoweredSerDesContractProducer[] = "lower-dsdl-serialization";
+inline constexpr char kLoweredSerDesContractProducer[] = "lower-dsdl-exec";
 
 /// @brief Marker attribute for lowered section plans.
 inline constexpr char kLoweredPlanMarkerAttr[] = "lowered";

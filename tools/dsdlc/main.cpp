@@ -37,6 +37,7 @@
 #include "llvmdsdl/CodeGen/CppEmitter.h"
 #include "llvmdsdl/CodeGen/EmitCommon.h"
 #include "llvmdsdl/CodeGen/GoEmitter.h"
+#include "llvmdsdl/CodeGen/ObjectEmitter.h"
 #include "llvmdsdl/CodeGen/PythonEmitter.h"
 #include "llvmdsdl/CodeGen/RustEmitter.h"
 #include "llvmdsdl/CodeGen/TsEmitter.h"
@@ -95,6 +96,11 @@ struct CliOptions final
     llvmdsdl::TsRuntimeSpecialization     tsRuntimeSpecialization{llvmdsdl::TsRuntimeSpecialization::Portable};
     llvmdsdl::PythonRuntimeSpecialization pyRuntimeSpecialization{llvmdsdl::PythonRuntimeSpecialization::Portable};
     std::string                           pyPackageName{"dsdl_gen"};
+    std::string                           objTargetEndianness;
+    std::string                           objTargetTriple;
+    std::string                           objArchiveName{"llvmdsdl_generated"};
+    std::string                           objAbiLanguage{"c"};
+    bool                                  objNoArchive{false};
 
     bool sawCppProfile{false};
     bool sawRustCrateName{false};
@@ -107,6 +113,11 @@ struct CliOptions final
     bool sawTsRuntimeSpecialization{false};
     bool sawPyPackage{false};
     bool sawPyRuntimeSpecialization{false};
+    bool sawObjTargetEndianness{false};
+    bool sawObjTargetTriple{false};
+    bool sawObjArchiveName{false};
+    bool sawObjAbiLanguage{false};
+    bool sawObjNoArchive{false};
 
     std::uint32_t fileMode{0444U};
 };
@@ -124,7 +135,7 @@ bool isVersionToken(llvm::StringRef arg)
 bool isCodegenLanguage(llvm::StringRef language)
 {
     return language == "c" || language == "cpp" || language == "rust" || language == "go" || language == "ts" ||
-           language == "python";
+           language == "python" || language == "obj";
 }
 
 bool isKnownLanguage(llvm::StringRef language)
@@ -134,7 +145,7 @@ bool isKnownLanguage(llvm::StringRef language)
 
 void printUsage()
 {
-    llvm::errs() << "Usage: dsdlc --target-language <ast|mlir|c|cpp|rust|go|ts|python> [options] "
+    llvm::errs() << "Usage: dsdlc --target-language <ast|mlir|c|cpp|rust|go|ts|python|obj> [options] "
                     "[target_files_or_root_namespace ...]\n"
                  << "Try: dsdlc --help\n";
 }
@@ -148,7 +159,7 @@ void printHelp()
                  << "  dsdlc --help\n"
                  << "  dsdlc --version\n\n"
                  << "LANGUAGES\n"
-                 << "  ast | mlir | c | cpp | rust | go | ts | python\n\n"
+                 << "  ast | mlir | c | cpp | rust | go | ts | python | obj\n\n"
                  << "TARGET OPTIONS\n"
                  << "  target_files_or_root_namespace\n"
                  << "      One or more DSDL files or root-namespace folders.\n"
@@ -202,7 +213,12 @@ void printHelp()
                  << "  TS:     --ts-module <name>\n"
                  << "          --ts-runtime-specialization <portable|fast>\n"
                  << "  Python: --py-package <name>\n"
-                 << "          --py-runtime-specialization <portable|fast>\n";
+                 << "          --py-runtime-specialization <portable|fast>\n"
+                 << "  Obj:    --target-endianness <little|big>\n"
+                 << "          --target-triple <triple>\n"
+                 << "          --obj-archive-name <name>\n"
+                 << "          --obj-abi-language <c|cpp>\n"
+                 << "          --obj-no-archive\n";
 }
 
 void printDiagnostics(const llvmdsdl::DiagnosticEngine& diagnostics)
@@ -684,6 +700,56 @@ llvm::Expected<CliOptions> parseCli(int argc, char** argv)
             }
             continue;
         }
+        if (arg == "--target-endianness")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.sawObjTargetEndianness = true;
+            options.objTargetEndianness    = *value;
+            continue;
+        }
+        if (arg == "--target-triple")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.sawObjTargetTriple = true;
+            options.objTargetTriple    = *value;
+            continue;
+        }
+        if (arg == "--obj-archive-name")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.sawObjArchiveName = true;
+            options.objArchiveName    = *value;
+            continue;
+        }
+        if (arg == "--obj-abi-language")
+        {
+            auto value = requireValue(i, arg);
+            if (!value)
+            {
+                return value.takeError();
+            }
+            options.sawObjAbiLanguage = true;
+            options.objAbiLanguage    = *value;
+            continue;
+        }
+        if (arg == "--obj-no-archive")
+        {
+            options.sawObjNoArchive = true;
+            options.objNoArchive    = true;
+            continue;
+        }
 
         if (arg.starts_with('-'))
         {
@@ -741,11 +807,42 @@ llvm::Expected<int> validateLanguageGatedOptions(const CliOptions& options)
     {
         return r.takeError();
     }
+    if (auto r = failIf((options.sawObjTargetEndianness || options.sawObjTargetTriple || options.sawObjArchiveName ||
+                         options.sawObjAbiLanguage || options.sawObjNoArchive) &&
+                            language != "obj",
+                        "--target-endianness/--target-triple/--obj-abi-language/--obj-*",
+                        "obj");
+        !r)
+    {
+        return r.takeError();
+    }
+    if (language == "obj" && !options.sawObjTargetEndianness)
+    {
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "--target-endianness is required when --target-language is 'obj'");
+    }
+    if (language == "obj")
+    {
+        const auto endian = llvm::StringRef(options.objTargetEndianness);
+        if (endian != "little" && endian != "big")
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "invalid --target-endianness value: %s",
+                                           options.objTargetEndianness.c_str());
+        }
+        const auto abiLanguage = llvm::StringRef(options.objAbiLanguage);
+        if (abiLanguage != "c" && abiLanguage != "cpp")
+        {
+            return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                           "invalid --obj-abi-language value: %s",
+                                           options.objAbiLanguage.c_str());
+        }
+    }
     if (options.emitDepfiles && !isCodegenLanguage(language))
     {
         return llvm::
             createStringError(llvm::inconvertibleErrorCode(),
-                              "-MD is only valid when --target-language is one of: c, cpp, rust, go, ts, python");
+                              "-MD is only valid when --target-language is one of: c, cpp, rust, go, ts, python, obj");
     }
 
     return 0;
@@ -1391,6 +1488,33 @@ int main(int argc, char** argv)
         emitOptions.writePolicy           = writePolicy;
 
         if (auto err = llvmdsdl::emitPython(closureSemantic, *mlirModule, emitOptions, diagnostics))
+        {
+            llvm::errs() << llvm::toString(std::move(err)) << "\n";
+            return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
+        }
+        const std::vector<std::string> regularOutputs = generatedOutputs;
+        if (auto err = emitDepfilesForGeneratedOutputs(regularOutputs))
+        {
+            llvm::errs() << llvm::toString(std::move(err)) << "\n";
+            return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);
+        }
+        return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs));
+    }
+    if (options.targetLanguage == "obj")
+    {
+        llvmdsdl::ObjectEmitOptions emitOptions;
+        emitOptions.outDir                = options.outDir;
+        emitOptions.targetEndianness      = options.objTargetEndianness;
+        emitOptions.targetTriple          = options.objTargetTriple;
+        emitOptions.archiveName           = options.objArchiveName;
+        emitOptions.noArchive             = options.objNoArchive;
+        emitOptions.abiLanguage           = (options.objAbiLanguage == "cpp") ? llvmdsdl::ObjectAbiLanguage::Cpp
+                                                                                : llvmdsdl::ObjectAbiLanguage::C;
+        emitOptions.optimizeLoweredSerDes = options.optimizeLoweredSerDes;
+        emitOptions.selectedTypeKeys      = selectedTypeKeys;
+        emitOptions.writePolicy           = writePolicy;
+
+        if (auto err = llvmdsdl::emitObject(closureSemantic, *mlirModule, emitOptions, diagnostics))
         {
             llvm::errs() << llvm::toString(std::move(err)) << "\n";
             return finish(resolveOutputRoot(options.outDir), std::move(generatedOutputs), true);

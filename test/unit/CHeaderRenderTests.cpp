@@ -51,9 +51,9 @@ bool runCHeaderRenderTests()
 
     const auto aliasBridge =
         llvmdsdl::renderCServiceAliasBridgeLines("uavcan__srv__NodeInfo", "uavcan__srv__NodeInfo__Request");
-    if (aliasBridge.size() != 3U)
+    if (aliasBridge.size() != 5U)
     {
-        std::cerr << "renderCServiceAliasBridgeLines expected 3 lines\n";
+        std::cerr << "renderCServiceAliasBridgeLines expected 5 lines\n";
         return false;
     }
     if (aliasBridge[0] != "typedef uavcan__srv__NodeInfo__Request uavcan__srv__NodeInfo;")
@@ -64,9 +64,9 @@ bool runCHeaderRenderTests()
 
     const auto wrappers =
         llvmdsdl::renderCServiceAliasWrapperLines("uavcan__srv__NodeInfo", "uavcan__srv__NodeInfo__Request");
-    if (wrappers.size() != 8U)
+    if (wrappers.size() != 16U)
     {
-        std::cerr << "renderCServiceAliasWrapperLines expected 8 lines\n";
+        std::cerr << "renderCServiceAliasWrapperLines expected 16 lines\n";
         return false;
     }
     if (wrappers[0].find("uavcan__srv__NodeInfo__serialize_") == std::string::npos)

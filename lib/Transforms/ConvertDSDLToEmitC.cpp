@@ -1549,19 +1549,19 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
             case LoweredContractEnvelopeViolationKind::MissingVersion:
                 module.emitError("lowered SerDes contract missing module attribute '" +
                                  std::string(kLoweredSerDesContractVersionAttr) +
-                                 "'; run lower-dsdl-serialization before "
+                                 "'; run lower-dsdl-exec before "
                                  "convert-dsdl-to-emitc");
                 break;
             case LoweredContractEnvelopeViolationKind::UnsupportedMajorVersion:
                 module.emitError(
                     "unsupported lowered SerDes contract major version: " +
                     loweredSerDesUnsupportedMajorVersionDiagnosticDetail(envelopeViolation->encodedVersion) +
-                    "; run matching lower-dsdl-serialization before convert-dsdl-to-emitc");
+                    "; run matching lower-dsdl-exec before convert-dsdl-to-emitc");
                 break;
             case LoweredContractEnvelopeViolationKind::ProducerMismatch:
                 module.emitError("lowered SerDes contract producer mismatch: expected '" +
                                  std::string(kLoweredSerDesContractProducer) +
-                                 "'; run lower-dsdl-serialization before "
+                                 "'; run lower-dsdl-exec before "
                                  "convert-dsdl-to-emitc");
                 break;
             }
@@ -1612,17 +1612,17 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                     {
                     case LoweredContractEnvelopeViolationKind::MissingVersion:
                         child.emitOpError("missing lowered contract version; run "
-                                          "lower-dsdl-serialization before convert-dsdl-to-emitc");
+                                          "lower-dsdl-exec before convert-dsdl-to-emitc");
                         break;
                     case LoweredContractEnvelopeViolationKind::UnsupportedMajorVersion:
                         child.emitOpError(
                             "unsupported lowered contract major version: " +
                             loweredSerDesUnsupportedMajorVersionDiagnosticDetail(envelopeViolation->encodedVersion) +
-                            "; run matching lower-dsdl-serialization before convert-dsdl-to-emitc");
+                            "; run matching lower-dsdl-exec before convert-dsdl-to-emitc");
                         break;
                     case LoweredContractEnvelopeViolationKind::ProducerMismatch:
                         child.emitOpError("missing lowered contract producer marker; run "
-                                          "lower-dsdl-serialization before convert-dsdl-to-emitc");
+                                          "lower-dsdl-exec before convert-dsdl-to-emitc");
                         break;
                     }
                     signalPassFailure();
@@ -1821,7 +1821,7 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                             child.emitOpError("typed lowering requires lowered array-length validation helper "
                                               "for variable array field '" +
                                               step.cName +
-                                              "'; run lower-dsdl-serialization before "
+                                              "'; run lower-dsdl-exec before "
                                               "convert-dsdl-to-emitc");
                             signalPassFailure();
                             return;
@@ -1832,7 +1832,7 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                             child.emitOpError("typed lowering requires lowered array-length-prefix IO "
                                               "helpers for variable array field '" +
                                               step.cName +
-                                              "'; run lower-dsdl-serialization before "
+                                              "'; run lower-dsdl-exec before "
                                               "convert-dsdl-to-emitc");
                             signalPassFailure();
                             return;
@@ -1845,7 +1845,7 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                                 child.emitOpError("typed lowering requires lowered unsigned scalar helpers for "
                                                   "field '" +
                                                   step.cName +
-                                                  "'; run lower-dsdl-serialization before "
+                                                  "'; run lower-dsdl-exec before "
                                                   "convert-dsdl-to-emitc");
                                 signalPassFailure();
                                 return;
@@ -1858,7 +1858,7 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                                 child.emitOpError("typed lowering requires lowered signed scalar helpers for "
                                                   "field '" +
                                                   step.cName +
-                                                  "'; run lower-dsdl-serialization before "
+                                                  "'; run lower-dsdl-exec before "
                                                   "convert-dsdl-to-emitc");
                                 signalPassFailure();
                                 return;
@@ -1871,7 +1871,7 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                                 child.emitOpError("typed lowering requires lowered float scalar helpers for "
                                                   "field '" +
                                                   step.cName +
-                                                  "'; run lower-dsdl-serialization before "
+                                                  "'; run lower-dsdl-exec before "
                                                   "convert-dsdl-to-emitc");
                                 signalPassFailure();
                                 return;
@@ -1884,7 +1884,7 @@ struct ConvertDSDLToEmitCPass : public mlir::PassWrapper<ConvertDSDLToEmitCPass,
                                 child.emitOpError("typed lowering requires lowered delimiter-header validation "
                                                   "helper for delimited composite field '" +
                                                   step.cName +
-                                                  "'; run lower-dsdl-serialization before "
+                                                  "'; run lower-dsdl-exec before "
                                                   "convert-dsdl-to-emitc");
                                 signalPassFailure();
                                 return;

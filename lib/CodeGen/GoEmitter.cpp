@@ -1084,6 +1084,13 @@ void emitSectionType(std::ostringstream&                       out,
              0,
              "const " + typeConstPrefix +
                  "_SERIALIZATION_BUFFER_SIZE_BYTES = " + std::to_string((section.serializationBufferSizeBits + 7) / 8));
+    const bool zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
+    const std::string zohAliasReason =
+        (sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty()) ? sectionFacts->zohAliasReason : "not-proven";
+    emitLine(out,
+             0,
+             "const " + typeConstPrefix + "_ZOH_ALIAS_ELIGIBLE = " + std::string(zohAliasEligible ? "true" : "false"));
+    emitLine(out, 0, "const " + typeConstPrefix + "_ZOH_ALIAS_REASON = \"" + zohAliasReason + "\"");
 
     if (section.isUnion)
     {
@@ -1215,6 +1222,10 @@ std::string renderDefinitionFile(const SemanticDefinition& def,
         out << "\n";
     }
     emitLine(out, 0, "type " + baseType + " = " + reqType);
+    const auto baseConstPrefix = codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Go, baseType);
+    const auto reqConstPrefix  = codegenToUpperSnakeCaseIdentifier(CodegenNamingLanguage::Go, reqType);
+    emitLine(out, 0, "const " + baseConstPrefix + "_ZOH_ALIAS_ELIGIBLE = " + reqConstPrefix + "_ZOH_ALIAS_ELIGIBLE");
+    emitLine(out, 0, "const " + baseConstPrefix + "_ZOH_ALIAS_REASON = " + reqConstPrefix + "_ZOH_ALIAS_REASON");
     return out.str();
 }
 

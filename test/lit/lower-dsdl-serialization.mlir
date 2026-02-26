@@ -11,11 +11,11 @@ module {
   }
 }
 
-// CHECK: module attributes {llvmdsdl.lowered_contract_producer = "lower-dsdl-serialization", llvmdsdl.lowered_contract_version = 1 : i64}
+// CHECK: module attributes {llvmdsdl.lowered_contract_producer = "lower-dsdl-exec", llvmdsdl.lowered_contract_version = 2 : i64}
 // CHECK: dsdl.serialization_plan attributes {
 // CHECK-DAG: lowered,
-// CHECK-DAG: llvmdsdl.lowered_contract_producer = "lower-dsdl-serialization"
-// CHECK-DAG: llvmdsdl.lowered_contract_version = 1 : i64
+// CHECK-DAG: llvmdsdl.lowered_contract_producer = "lower-dsdl-exec"
+// CHECK-DAG: llvmdsdl.lowered_contract_version = 2 : i64
 // CHECK-DAG: lowered_align_count = 1 : i64
 // CHECK-DAG: lowered_capacity_check_helper = "__llvmdsdl_plan_capacity_check__test_Type_1_0"
 // CHECK-DAG: lowered_field_count = 1 : i64
@@ -42,7 +42,7 @@ module {
 // CHECK: %[[CMP:[^ ]+]] = arith.cmpi ugt, %[[REQ]], %[[CAP]] : i64
 // CHECK: %[[SEL:[^ ]+]] = scf.if %[[CMP]] -> (i8)
 // CHECK: return %[[SEL]] : i8
-// CHECK: func.func @__llvmdsdl_plan_validate_union_tag__test_Type_1_0(%[[TAG:[^:]+]]: i64) -> i8 attributes {llvmdsdl.plan_origin = "lower-dsdl-serialization", llvmdsdl.schema_sym = "test_Type_1_0", llvmdsdl.union_tag_validate
+// CHECK: func.func @__llvmdsdl_plan_validate_union_tag__test_Type_1_0(%[[TAG:[^:]+]]: i64) -> i8 attributes {llvmdsdl.plan_origin = "lower-dsdl-exec", llvmdsdl.schema_sym = "test_Type_1_0", llvmdsdl.union_tag_validate
 // CHECK: %[[OPT:[^ ]+]] = arith.constant 3 : i64
 // CHECK: %[[EQ:[^ ]+]] = arith.cmpi eq, %[[TAG]], %[[OPT]] : i64
 // CHECK: %[[MASK:[^ ]+]] = arith.ori %[[ANY:[^ ]+]], %[[EQ]] : i1

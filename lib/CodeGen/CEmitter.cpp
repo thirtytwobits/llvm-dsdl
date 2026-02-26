@@ -47,6 +47,7 @@
 #include "llvmdsdl/CodeGen/ConstantLiteralRender.h"
 #include "llvmdsdl/CodeGen/DefinitionDependencies.h"
 #include "llvmdsdl/CodeGen/DefinitionIndex.h"
+#include "llvmdsdl/CodeGen/LoweredFactsLookup.h"
 #include "llvmdsdl/CodeGen/NamingPolicy.h"
 #include "llvmdsdl/CodeGen/StorageTypeTokens.h"
 #include "llvmdsdl/Transforms/Passes.h"
@@ -451,7 +452,8 @@ void emitSectionMetadata(std::ostringstream&    out,
                          const std::string&     fullName,
                          std::uint32_t          majorVersion,
                          std::uint32_t          minorVersion,
-                         const SemanticSection& section)
+                         const SemanticSection& section,
+                         const LoweredSectionFacts* const sectionFacts)
 {
     CHeaderTypeMetadata metadata;
     metadata.typeName                     = typeName;
@@ -464,6 +466,14 @@ void emitSectionMetadata(std::ostringstream&    out,
     {
         emitLine(out, 0, line);
     }
+    const bool zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
+    const std::string zohAliasReason = zohAliasEligible
+                                           ? std::string("eligible")
+                                           : ((sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty())
+                                                  ? sectionFacts->zohAliasReason
+                                                  : std::string("not-proven"));
+    emitLine(out, 0, "#define " + typeName + "_ZOH_ALIAS_ELIGIBLE_ " + std::string(zohAliasEligible ? "true" : "false"));
+    emitLine(out, 0, "#define " + typeName + "_ZOH_ALIAS_REASON_ \"" + zohAliasReason + "\"");
     out << "\n";
 }
 
@@ -474,9 +484,10 @@ void emitSection(std::ostringstream&       out,
                  const std::string&        fullName,
                  const std::string&        sectionName,
                  const SemanticSection&    section,
-                 const AttachedDoc&        typeDoc)
+                 const AttachedDoc&        typeDoc,
+                 const LoweredSectionFacts* const sectionFacts)
 {
-    emitSectionMetadata(out, typeName, fullName, def.info.majorVersion, def.info.minorVersion, section);
+    emitSectionMetadata(out, typeName, fullName, def.info.majorVersion, def.info.minorVersion, section, sectionFacts);
     emitSectionConstants(out, typeName, section);
     emitArrayMacros(out, typeName, section);
     emitAttachedDocC(out, 0, typeDoc);
@@ -514,6 +525,70 @@ void emitSection(std::ostringstream&       out,
     emitLine(out, 1, "return " + irStem + "__deserialize_ir_(out_obj, buffer, inout_buffer_size_bytes);");
     emitLine(out, 0, "}");
     out << "\n";
+
+    emitLine(out,
+             0,
+             "static inline int8_t " + typeName +
+                 "__try_deserialize_view_(const uint8_t* const buffer, size_t* const inout_buffer_size_bytes, "
+                 "const uint8_t** const out_view_bytes)");
+    emitLine(out, 0, "{");
+    emitLine(out, 1, "if ((buffer == NULL) || (inout_buffer_size_bytes == NULL) || (out_view_bytes == NULL)) {");
+    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "*out_view_bytes = NULL;");
+    emitLine(out, 1, "const size_t _required = " + typeName + "_SERIALIZATION_BUFFER_SIZE_BYTES_;");
+    emitLine(out, 1, "if (*inout_buffer_size_bytes < _required) {");
+    emitLine(out, 2, "*inout_buffer_size_bytes = _required;");
+    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "#if defined(LLVMDSDL_TARGET_ENDIANNESS_BIG)");
+    emitLine(out, 2, "(void)buffer;");
+    emitLine(out, 2, "(void)_required;");
+    emitLine(out, 2, "*inout_buffer_size_bytes = 0U;");
+    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    emitLine(out, 1, "#elif " + typeName + "_ZOH_ALIAS_ELIGIBLE_");
+    emitLine(out, 2, "*out_view_bytes = buffer;");
+    emitLine(out, 2, "*inout_buffer_size_bytes = _required;");
+    emitLine(out, 2, "return DSDL_RUNTIME_SUCCESS;");
+    emitLine(out, 1, "#else");
+    emitLine(out, 2, "*inout_buffer_size_bytes = 0U;");
+    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    emitLine(out, 1, "#endif");
+    emitLine(out, 0, "}");
+    out << "\n";
+
+    emitLine(out,
+             0,
+             "static inline int8_t " + typeName +
+                 "__try_serialize_view_(const uint8_t* const view_bytes, const size_t view_size_bytes, "
+                 "uint8_t* const buffer, size_t* const inout_buffer_size_bytes)");
+    emitLine(out, 0, "{");
+    emitLine(out, 1, "if ((view_bytes == NULL) || (buffer == NULL) || (inout_buffer_size_bytes == NULL)) {");
+    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "const size_t _required = " + typeName + "_SERIALIZATION_BUFFER_SIZE_BYTES_;");
+    emitLine(out, 1, "if (view_size_bytes != _required) {");
+    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "if (*inout_buffer_size_bytes < _required) {");
+    emitLine(out, 2, "*inout_buffer_size_bytes = _required;");
+    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;");
+    emitLine(out, 1, "}");
+    emitLine(out, 1, "#if defined(LLVMDSDL_TARGET_ENDIANNESS_BIG)");
+    emitLine(out, 2, "(void)buffer;");
+    emitLine(out, 2, "(void)view_bytes;");
+    emitLine(out, 2, "*inout_buffer_size_bytes = 0U;");
+    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    emitLine(out, 1, "#elif " + typeName + "_ZOH_ALIAS_ELIGIBLE_");
+    emitLine(out, 2, "(void)memcpy(buffer, view_bytes, _required);");
+    emitLine(out, 2, "*inout_buffer_size_bytes = _required;");
+    emitLine(out, 2, "return DSDL_RUNTIME_SUCCESS;");
+    emitLine(out, 1, "#else");
+    emitLine(out, 2, "*inout_buffer_size_bytes = 0U;");
+    emitLine(out, 2, "return -DSDL_RUNTIME_ERROR_INVALID_ARGUMENT;");
+    emitLine(out, 1, "#endif");
+    emitLine(out, 0, "}");
+    out << "\n";
 }
 
 llvm::Expected<std::string> loadRuntimeHeader()
@@ -536,7 +611,7 @@ llvm::Expected<std::string> loadRuntimeHeader()
     return content.str();
 }
 
-std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ctx)
+std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ctx, const LoweredFactsMap& loweredFacts)
 {
     std::ostringstream out;
     const auto         guard        = headerGuard(def.info);
@@ -550,6 +625,7 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     out << "#include <stddef.h>\n";
     out << "#include <stdint.h>\n";
     out << "#include <stdbool.h>\n";
+    out << "#include <string.h>\n";
     out << "#include \"dsdl_runtime.h\"\n";
 
     for (const auto& depRef : collectDefinitionCompositeDependencies(def))
@@ -575,7 +651,15 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
         }
         out << "\n";
 
-        emitSection(out, ctx, def, requestType, def.info.fullName + ".Request", "request", def.request, def.doc);
+        emitSection(out,
+                    ctx,
+                    def,
+                    requestType,
+                    def.info.fullName + ".Request",
+                    "request",
+                    def.request,
+                    def.doc,
+                    lookupLoweredSectionFacts(loweredFacts, def, "request"));
         if (def.response)
         {
             emitSection(out,
@@ -585,7 +669,8 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
                         def.info.fullName + ".Response",
                         "response",
                         *def.response,
-                        def.doc);
+                        def.doc,
+                        lookupLoweredSectionFacts(loweredFacts, def, "response"));
         }
         for (const auto& line : renderCServiceAliasBridgeLines(baseTypeName, requestType))
         {
@@ -600,7 +685,15 @@ std::string renderHeader(const SemanticDefinition& def, const EmitterContext& ct
     }
     else
     {
-        emitSection(out, ctx, def, baseTypeName, def.info.fullName, "", def.request, def.doc);
+        emitSection(out,
+                    ctx,
+                    def,
+                    baseTypeName,
+                    def.info.fullName,
+                    "",
+                    def.request,
+                    def.doc,
+                    lookupLoweredSectionFacts(loweredFacts, def, ""));
     }
 
     out << "#endif /* " << guard << " */\n";
@@ -624,7 +717,8 @@ llvm::Error emitC(const SemanticModule& semantic,
     const auto            selectedTypeKeys = makeTypeKeySet(options.selectedTypeKeys);
     const auto mlirCoverageDiagnostic = codegen_diagnostic_text::mlirSchemaCoverageValidationFailedForEmission("C");
 
-    if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "C", nullptr, options.optimizeLoweredSerDes))
+    LoweredFactsMap loweredFacts;
+    if (!collectLoweredFactsFromMlir(semantic, module, diagnostics, "C", &loweredFacts, options.optimizeLoweredSerDes))
     {
         diagnostics.error({"<mlir>", 1, 1}, mlirCoverageDiagnostic);
         return llvm::createStringError(llvm::inconvertibleErrorCode(), "%s", mlirCoverageDiagnostic.c_str());
@@ -669,7 +763,7 @@ llvm::Error emitC(const SemanticModule& semantic,
         perDefModule.getBodyRegion().front().push_back(targetIt->second->clone());
 
         mlir::PassManager pm(perDefModule.getContext());
-        pm.addPass(createLowerDSDLSerializationPass());
+        pm.addPass(createLowerDSDLExecPass());
         if (options.optimizeLoweredSerDes)
         {
             addOptimizeLoweredSerDesPipeline(pm);
@@ -738,7 +832,7 @@ llvm::Error emitC(const SemanticModule& semantic,
             dir /= ns;
         }
         if (auto err = writeGeneratedFile(dir / headerFileName(def.info),
-                                          renderHeader(def, ctx),
+                                          renderHeader(def, ctx, loweredFacts),
                                           options.writePolicy,
                                           requiredTypeKeys))
         {

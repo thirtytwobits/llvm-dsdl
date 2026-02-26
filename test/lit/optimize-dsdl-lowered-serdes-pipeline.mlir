@@ -9,7 +9,7 @@ module {
   }
 }
 
-// CHECK: module attributes {llvmdsdl.lowered_contract_producer = "lower-dsdl-serialization", llvmdsdl.lowered_contract_version = 1 : i64}
+// CHECK: module attributes {llvmdsdl.lowered_contract_producer = "lower-dsdl-exec", llvmdsdl.lowered_contract_version = 2 : i64}
 // CHECK: dsdl.serialization_plan attributes {
 // CHECK-DAG: lowered
 // CHECK-DAG: lowered_step_count = 1 : i64

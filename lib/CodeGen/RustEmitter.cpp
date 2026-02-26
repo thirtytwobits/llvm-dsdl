@@ -1231,6 +1231,13 @@ void emitSectionType(std::ostringstream&              out,
              1,
              "pub const SERIALIZATION_BUFFER_SIZE_BYTES: usize = " +
                  std::to_string((section.serializationBufferSizeBits + 7) / 8) + ";");
+    const bool zohAliasEligible = sectionFacts != nullptr && sectionFacts->zohAliasEligible;
+    const std::string zohAliasReason =
+        (sectionFacts != nullptr && !sectionFacts->zohAliasReason.empty()) ? sectionFacts->zohAliasReason : "not-proven";
+    emitLine(out,
+             1,
+             std::string("pub const ZOH_ALIAS_ELIGIBLE: bool = ") + (zohAliasEligible ? "true;" : "false;"));
+    emitLine(out, 1, "pub const ZOH_ALIAS_REASON: &'static str = \"" + zohAliasReason + "\";");
     emitLine(out,
              1,
              "pub const __LLVMDSDL_MEMORY_MODE: crate::dsdl_runtime::DsdlMemoryMode = " +
@@ -1275,6 +1282,36 @@ void emitSectionType(std::ostringstream&              out,
     out << "\n";
     body.emitDeserialize(out, typeName, section, sectionFacts);
     out << "\n";
+
+    emitLine(out,
+             1,
+             "pub fn try_deserialize_view<'a>(buffer: &'a [u8]) -> core::result::Result<(&'a [u8], usize), i8> {");
+    emitLine(out, 2, "if !Self::ZOH_ALIAS_ELIGIBLE || cfg!(target_endian = \"big\") {");
+    emitLine(out, 3, "return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+    emitLine(out, 2, "}");
+    emitLine(out, 2, "let required = Self::SERIALIZATION_BUFFER_SIZE_BYTES;");
+    emitLine(out, 2, "if buffer.len() < required {");
+    emitLine(out, 3, "return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL);");
+    emitLine(out, 2, "}");
+    emitLine(out, 2, "Ok((&buffer[..required], required))");
+    emitLine(out, 1, "}\n");
+
+    emitLine(out,
+             1,
+             "pub fn try_serialize_view(view_bytes: &[u8], buffer: &mut [u8]) -> core::result::Result<usize, i8> {");
+    emitLine(out, 2, "if !Self::ZOH_ALIAS_ELIGIBLE || cfg!(target_endian = \"big\") {");
+    emitLine(out, 3, "return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+    emitLine(out, 2, "}");
+    emitLine(out, 2, "let required = Self::SERIALIZATION_BUFFER_SIZE_BYTES;");
+    emitLine(out, 2, "if view_bytes.len() != required {");
+    emitLine(out, 3, "return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_INVALID_ARGUMENT);");
+    emitLine(out, 2, "}");
+    emitLine(out, 2, "if buffer.len() < required {");
+    emitLine(out, 3, "return Err(-crate::dsdl_runtime::DSDL_RUNTIME_ERROR_SERIALIZATION_BUFFER_TOO_SMALL);");
+    emitLine(out, 2, "}");
+    emitLine(out, 2, "buffer[..required].copy_from_slice(&view_bytes[..required]);");
+    emitLine(out, 2, "Ok(required)");
+    emitLine(out, 1, "}\n");
 
     emitLine(out, 1, "pub fn to_bytes(&self) -> core::result::Result<crate::dsdl_runtime::DsdlVec<u8>, i8> {");
     emitLine(out,

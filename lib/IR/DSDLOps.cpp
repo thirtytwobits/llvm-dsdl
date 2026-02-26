@@ -18,10 +18,12 @@
 
 #include <algorithm>
 #include <set>
+#include <string>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/LogicalResult.h>
 #include <cstdint>
 
+#include "llvmdsdl/Transforms/LoweredSerDesContract.h"
 #include "mlir/IR/Builders.h"           // IWYU pragma: keep
 #include "mlir/IR/BuiltinAttributes.h"  // IWYU pragma: keep
 #include "mlir/IR/Diagnostics.h"        // IWYU pragma: keep
@@ -120,14 +122,17 @@ LogicalResult SerializationPlanOp::verify()
     if (loweredPlan)
     {
         const auto loweredContractVersion = (*this)->getAttrOfType<IntegerAttr>("llvmdsdl.lowered_contract_version");
-        if (!loweredContractVersion || loweredContractVersion.getInt() != 1)
+        if (!loweredContractVersion ||
+            !llvmdsdl::isSupportedLoweredSerDesContractVersion(loweredContractVersion.getInt()))
         {
             return emitOpError("lowered plan requires supported llvmdsdl.lowered_contract_version");
         }
         const auto loweredContractProducer = (*this)->getAttrOfType<StringAttr>("llvmdsdl.lowered_contract_producer");
-        if (!loweredContractProducer || loweredContractProducer.getValue() != "lower-dsdl-serialization")
+        if (!loweredContractProducer ||
+            loweredContractProducer.getValue() != llvmdsdl::kLoweredSerDesContractProducer)
         {
-            return emitOpError("lowered plan requires llvmdsdl.lowered_contract_producer=lower-dsdl-serialization");
+            return emitOpError("lowered plan requires llvmdsdl.lowered_contract_producer=" +
+                               std::string(llvmdsdl::kLoweredSerDesContractProducer));
         }
 
         loweredMinBits      = requireNonNegativePlanIntAttr("lowered_min_bits");

@@ -18,6 +18,7 @@ add_library(llvmdsdlCodeGen
   EmitCommon.cpp
   CEmitter.cpp
   CppEmitter.cpp
+  CppObjectAbiEmitter.cpp
   GoEmitter.cpp
   CodegenDiagnosticText.cpp
   HelperBindingNaming.cpp
@@ -31,6 +32,7 @@ add_library(llvmdsdlCodeGen
   NativeFunctionSkeleton.cpp
   NamingPolicy.cpp
   MlirLoweredFacts.cpp
+  ObjectEmitter.cpp
   RuntimeHelperBindings.cpp
   RuntimeLoweredPlan.cpp
   ScriptedBodyPlan.cpp

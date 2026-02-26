@@ -1577,6 +1577,31 @@ llvm::Expected<std::string> renderDefinitionFile(const SemanticDefinition& def,
     emitLine(out, 0, "export const DSDL_FULL_NAME = \"" + def.info.fullName + "\";");
     emitLine(out, 0, "export const DSDL_VERSION_MAJOR = " + std::to_string(def.info.majorVersion) + ";");
     emitLine(out, 0, "export const DSDL_VERSION_MINOR = " + std::to_string(def.info.minorVersion) + ";");
+    const bool requestZohEligible = requestSectionFacts != nullptr && requestSectionFacts->zohAliasEligible;
+    const std::string requestZohReason =
+        (requestSectionFacts != nullptr && !requestSectionFacts->zohAliasReason.empty())
+            ? requestSectionFacts->zohAliasReason
+            : "not-proven";
+    emitLine(out, 0, "export const DSDL_REQUEST_ZOH_ALIAS_ELIGIBLE = " +
+                         std::string(requestZohEligible ? "true" : "false") + ";");
+    emitLine(out, 0, "export const DSDL_REQUEST_ZOH_ALIAS_REASON = \"" + requestZohReason + "\";");
+    if (responseRuntimePlan != nullptr)
+    {
+        const auto* const responseSectionFacts = lookupLoweredSectionFacts(loweredFacts, def, "response");
+        const bool        responseZohEligible  = responseSectionFacts != nullptr && responseSectionFacts->zohAliasEligible;
+        const std::string responseZohReason =
+            (responseSectionFacts != nullptr && !responseSectionFacts->zohAliasReason.empty())
+                ? responseSectionFacts->zohAliasReason
+                : "not-proven";
+        emitLine(out, 0, "export const DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = " +
+                             std::string(responseZohEligible ? "true" : "false") + ";");
+        emitLine(out, 0, "export const DSDL_RESPONSE_ZOH_ALIAS_REASON = \"" + responseZohReason + "\";");
+    }
+    else
+    {
+        emitLine(out, 0, "export const DSDL_RESPONSE_ZOH_ALIAS_ELIGIBLE = false;");
+        emitLine(out, 0, "export const DSDL_RESPONSE_ZOH_ALIAS_REASON = \"not-applicable\";");
+    }
     emitLine(out, 0, "");
 
     if (!def.isService)

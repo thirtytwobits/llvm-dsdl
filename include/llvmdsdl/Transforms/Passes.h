@@ -33,6 +33,20 @@ namespace llvmdsdl
 /// @return Newly constructed pass instance.
 std::unique_ptr<mlir::Pass> createLowerDSDLSerializationPass();
 
+/// @brief Creates the executable-contract lowering pass alias.
+/// @details This pass is functionally equivalent to `createLowerDSDLSerializationPass`
+///          but is exposed under the `lower-dsdl-exec` pipeline name.
+/// @return Newly constructed pass instance.
+std::unique_ptr<mlir::Pass> createLowerDSDLExecPass();
+
+/// @brief Creates the pass that proves conservative zero-overhead aliasability.
+/// @return Newly constructed pass instance.
+std::unique_ptr<mlir::Pass> createDSDLProveZeroOverheadPass();
+
+/// @brief Creates the pass that legalizes target endianness attributes.
+/// @return Newly constructed pass instance.
+std::unique_ptr<mlir::Pass> createDSDLEndianLegalizePass();
+
 /// @brief Creates the pass that converts lowered DSDL IR to EmitC-oriented IR.
 /// @return Newly constructed pass instance.
 std::unique_ptr<mlir::Pass> createConvertDSDLToEmitCPass();

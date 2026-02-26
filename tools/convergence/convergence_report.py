@@ -211,7 +211,13 @@ def _detect_traits(repo_root: Path, cfg: Dict[str, object], text: str) -> Dict[s
 
     if kind == "c":
         convert_emitc_text = _load_text(repo_root, "lib/Transforms/ConvertDSDLToEmitC.cpp")
-        traits["lower_pass"] = _has_any(text, [r"createLowerDSDLSerializationPass\("])
+        traits["lower_pass"] = _has_any(
+            text,
+            [
+                r"createLowerDSDLSerializationPass\(",
+                r"createLowerDSDLExecPass\(",
+            ],
+        )
         traits["convert_pass"] = _has_any(text, [r"createConvertDSDLToEmitCPass\("])
         traits["schema_scan"] = _has_any(text, [r"dsdl\.schema", r"schemaByHeaderPath"])
         traits["schema_selection_guard"] = _has_any(text, [r"schema selection failed"])

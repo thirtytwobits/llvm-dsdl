@@ -73,8 +73,8 @@ endif()
 file(READ "${lowered_mlir}" lowered_text)
 file(READ "${lowered_optimized_mlir}" lowered_optimized_text)
 foreach(required
-    "llvmdsdl.lowered_contract_version = 1 : i64"
-    "llvmdsdl.lowered_contract_producer = \"lower-dsdl-serialization\""
+    "llvmdsdl.lowered_contract_version = 2 : i64"
+    "llvmdsdl.lowered_contract_producer = \"lower-dsdl-exec\""
     "lowered"
     "lowered_step_count ="
     "lowered_field_count ="
@@ -87,8 +87,8 @@ foreach(required
   endif()
 endforeach()
 foreach(required
-    "llvmdsdl.lowered_contract_version = 1 : i64"
-    "llvmdsdl.lowered_contract_producer = \"lower-dsdl-serialization\""
+    "llvmdsdl.lowered_contract_version = 2 : i64"
+    "llvmdsdl.lowered_contract_producer = \"lower-dsdl-exec\""
     "lowered"
     "lowered_step_count ="
     "lowered_field_count ="

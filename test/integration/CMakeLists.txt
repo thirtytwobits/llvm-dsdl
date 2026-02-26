@@ -318,6 +318,49 @@ if(EXISTS "${LLVMDSDL_FIXTURES_ROOT}")
       LABELS "integration;tools;mlir"
   )
 
+  if(CMAKE_C_COMPILER)
+    add_test(
+      NAME llvmdsdl-obj-backend-smoke
+      COMMAND
+        ${CMAKE_COMMAND}
+          -DDSDLC=$<TARGET_FILE:dsdlc>
+          -DFIXTURES_ROOT=${LLVMDSDL_FIXTURES_ROOT}
+          -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/obj-backend-smoke-out
+          -DC_COMPILER=${CMAKE_C_COMPILER}
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/RunObjBackendSmoke.cmake
+    )
+
+    set_tests_properties(
+      llvmdsdl-obj-backend-smoke
+      PROPERTIES
+        LABELS "integration;fixtures;obj"
+    )
+
+    if(CMAKE_CXX_COMPILER)
+      add_test(
+        NAME llvmdsdl-obj-cpp-backend-smoke
+        COMMAND
+          ${CMAKE_COMMAND}
+            -DDSDLC=$<TARGET_FILE:dsdlc>
+            -DFIXTURES_ROOT=${LLVMDSDL_FIXTURES_ROOT}
+            -DOUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/obj-cpp-backend-smoke-out
+            -DC_COMPILER=${CMAKE_C_COMPILER}
+            -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/RunObjCppBackendSmoke.cmake
+      )
+
+      set_tests_properties(
+        llvmdsdl-obj-cpp-backend-smoke
+        PROPERTIES
+          LABELS "integration;fixtures;obj;obj-cpp;release-blocking"
+      )
+    else()
+      message(STATUS "Skipping obj-cpp backend smoke test: C++ compiler unavailable")
+    endif()
+  else()
+    message(STATUS "Skipping obj backend smoke test: C compiler unavailable")
+  endif()
+
   add_test(
     NAME llvmdsdl-fixtures-ts-generation-hardening
     COMMAND

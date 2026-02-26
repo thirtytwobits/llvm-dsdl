@@ -52,6 +52,8 @@ std::vector<std::string> renderCServiceAliasBridgeLines(const std::string& baseT
         "#define " + baseTypeName + "_EXTENT_BYTES_ " + requestTypeName + "_EXTENT_BYTES_",
         "#define " + baseTypeName + "_SERIALIZATION_BUFFER_SIZE_BYTES_ " + requestTypeName +
             "_SERIALIZATION_BUFFER_SIZE_BYTES_",
+        "#define " + baseTypeName + "_ZOH_ALIAS_ELIGIBLE_ " + requestTypeName + "_ZOH_ALIAS_ELIGIBLE_",
+        "#define " + baseTypeName + "_ZOH_ALIAS_REASON_ " + requestTypeName + "_ZOH_ALIAS_REASON_",
     };
 }
 
@@ -70,6 +72,19 @@ std::vector<std::string> renderCServiceAliasWrapperLines(const std::string& base
         "{",
         "  return " + requestTypeName + "__deserialize_((" + requestTypeName +
             "*)out_obj, buffer, inout_buffer_size_bytes);",
+        "}",
+        "static inline int8_t " + baseTypeName +
+            "__try_deserialize_view_(const uint8_t* const buffer, size_t* const inout_buffer_size_bytes, "
+            "const uint8_t** const out_view_bytes)",
+        "{",
+        "  return " + requestTypeName + "__try_deserialize_view_(buffer, inout_buffer_size_bytes, out_view_bytes);",
+        "}",
+        "static inline int8_t " + baseTypeName +
+            "__try_serialize_view_(const uint8_t* const view_bytes, const size_t view_size_bytes, "
+            "uint8_t* const buffer, size_t* const inout_buffer_size_bytes)",
+        "{",
+        "  return " + requestTypeName +
+            "__try_serialize_view_(view_bytes, view_size_bytes, buffer, inout_buffer_size_bytes);",
         "}",
     };
 }
